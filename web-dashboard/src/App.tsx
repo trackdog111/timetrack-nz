@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword } from 'firebase/auth';
-import { getFirestore, collection, addDoc, updateDoc, doc, getDoc, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch } from 'firebase/firestore';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser } from 'firebase/auth';
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBcyz4DyzExGFRmjQ41W3SvQ3xgvYszzUE",
@@ -173,6 +173,10 @@ export default function App() {
   const [cleanupEnd, setCleanupEnd] = useState('');
   const [cleanupConfirm, setCleanupConfirm] = useState(false);
   
+  // Remove employee state
+  const [removeConfirm, setRemoveConfirm] = useState<string | null>(null);
+  const [removeDeleteShifts, setRemoveDeleteShifts] = useState(false);
+  
   // My Timesheet state
   const [myShift, setMyShift] = useState<Shift | null>(null);
   const [myShiftHistory, setMyShiftHistory] = useState<Shift[]>([]);
@@ -320,6 +324,39 @@ export default function App() {
       await updateDoc(doc(db, 'invites', inviteId), { status: 'cancelled' });
       setSuccess('Invite cancelled');
     } catch (err: any) { setError(err.message); }
+  };
+
+  // Remove employee function
+  const removeEmployee = async (empId: string) => {
+    const emp = employees.find(e => e.id === empId);
+    if (!emp) return;
+    
+    // Prevent removing yourself
+    if (empId === user?.uid) {
+      setError("You can't remove yourself");
+      setRemoveConfirm(null);
+      return;
+    }
+    
+    try {
+      // Delete employee document
+      await deleteDoc(doc(db, 'employees', empId));
+      
+      // Optionally delete their shifts
+      if (removeDeleteShifts) {
+        const batch = writeBatch(db);
+        const empShifts = allShifts.filter(s => s.userId === empId);
+        empShifts.forEach(s => batch.delete(doc(db, 'shifts', s.id)));
+        if (empShifts.length > 0) await batch.commit();
+      }
+      
+      setSuccess(`Removed ${emp.name || emp.email}`);
+      setRemoveConfirm(null);
+      setRemoveDeleteShifts(false);
+    } catch (err: any) { 
+      setError(err.message); 
+      setRemoveConfirm(null);
+    }
   };
 
   const updateSettings = async (empId: string, updates: Partial<EmployeeSettings>) => {
@@ -494,6 +531,33 @@ export default function App() {
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: theme.bg }}>
       {mapModal && <MapModal locations={mapModal.locations} title={mapModal.title} onClose={() => setMapModal(null)} theme={theme} />}
+      
+      {/* Remove Employee Confirmation Modal */}
+      {removeConfirm && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={() => { setRemoveConfirm(null); setRemoveDeleteShifts(false); }}>
+          <div style={{ background: theme.card, borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ color: theme.danger, margin: '0 0 16px', fontSize: '18px' }}>⚠️ Remove Employee</h2>
+            <p style={{ color: theme.text, marginBottom: '16px' }}>
+              Are you sure you want to remove <strong>{employees.find(e => e.id === removeConfirm)?.name || employees.find(e => e.id === removeConfirm)?.email}</strong>?
+            </p>
+            <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
+              This will remove their account. They won't be able to clock in anymore.
+            </p>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, cursor: 'pointer', marginBottom: '20px' }}>
+              <input 
+                type="checkbox" 
+                checked={removeDeleteShifts} 
+                onChange={e => setRemoveDeleteShifts(e.target.checked)} 
+              />
+              Also delete all their shift history
+            </label>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button onClick={() => { setRemoveConfirm(null); setRemoveDeleteShifts(false); }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: 'transparent', color: theme.text, cursor: 'pointer', fontWeight: '600' }}>Cancel</button>
+              <button onClick={() => removeEmployee(removeConfirm)} style={{ ...styles.btnDanger, flex: 1 }}>Remove</button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Mobile Header */}
       {isMobile && (
@@ -744,6 +808,8 @@ export default function App() {
                 <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '12px' }}>Employees join via the mobile app using their invited email.</p>
               </div>
             )}
+            
+            {/* Employee List */}
             {employees.map(emp => (
               <div key={emp.id} style={styles.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
@@ -751,9 +817,28 @@ export default function App() {
                     <p style={{ color: theme.text, fontWeight: '600', marginBottom: '4px' }}>{emp.name || emp.email}</p>
                     <p style={{ color: theme.textMuted, fontSize: '14px', wordBreak: 'break-all' }}>{emp.email}</p>
                   </div>
-                  {emp.role === 'manager' && (
-                    <span style={{ background: theme.primary, color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600' }}>Manager</span>
-                  )}
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {emp.role === 'manager' && (
+                      <span style={{ background: theme.primary, color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600' }}>Manager</span>
+                    )}
+                    {emp.id !== user?.uid && (
+                      <button 
+                        onClick={() => setRemoveConfirm(emp.id)} 
+                        style={{ 
+                          padding: '6px 10px', 
+                          borderRadius: '6px', 
+                          border: `1px solid ${theme.danger}`, 
+                          background: 'transparent', 
+                          color: theme.danger, 
+                          cursor: 'pointer', 
+                          fontSize: '11px',
+                          fontWeight: '600'
+                        }}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
