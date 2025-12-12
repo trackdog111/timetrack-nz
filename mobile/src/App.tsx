@@ -5,6 +5,7 @@ import {
   signInWithEmailAndPassword, 
   signOut, 
   onAuthStateChanged,
+  createUserWithEmailAndPassword,
   User 
 } from 'firebase/auth';
 import {
@@ -20,6 +21,7 @@ import {
   orderBy,
   limit,
   onSnapshot,
+  getDocs,
   Timestamp,
   arrayUnion
 } from 'firebase/firestore';
@@ -95,6 +97,14 @@ interface ChatMessage {
   text: string;
   timestamp: Timestamp;
   participants?: string[];
+}
+
+interface Invite {
+  id: string;
+  email: string;
+  name: string;
+  status: 'pending' | 'accepted' | 'cancelled';
+  createdAt: Timestamp;
 }
 
 // Theme definitions - matching dashboard
@@ -243,7 +253,7 @@ function BreakRulesInfo({ isOpen, onToggle, theme }: { isOpen: boolean; onToggle
                   <tr key={i} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
                     <td style={{ padding: '10px', color: theme.text }}>{hours}</td>
                     <td style={{ padding: '10px', color: theme.success }}>{paid}</td>
-                    <td style={{ padding: '10px', color: unpaid === '—' ? theme.textLight : theme.warning }}>{unpaid}</td>
+                    <td style={{ padding: '10px', color: theme.textLight }}>{unpaid}</td>
                   </tr>
                 ))}
               </tbody>
@@ -270,7 +280,13 @@ export default function App() {
   const [dark, setDark] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
+  const [authMode, setAuthMode] = useState<'signin' | 'invite'>('signin');
+  const [inviteStep, setInviteStep] = useState<'email' | 'password'>('email');
+  const [foundInvite, setFoundInvite] = useState<Invite | null>(null);
+  const [checkingInvite, setCheckingInvite] = useState(false);
+  const [creatingAccount, setCreatingAccount] = useState(false);
   const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [shiftHistory, setShiftHistory] = useState<Shift[]>([]);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
@@ -528,6 +544,86 @@ export default function App() {
       await signInWithEmailAndPassword(auth, email, password);
     } catch (err: any) {
       setError(err.message || 'Login failed');
+    }
+  };
+
+  // Check for invite
+  const handleCheckInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setCheckingInvite(true);
+    
+    try {
+      const q = query(
+        collection(db, 'invites'),
+        where('email', '==', email.toLowerCase()),
+        where('status', '==', 'pending')
+      );
+      
+      const snapshot = await getDocs(q);
+      
+      if (snapshot.empty) {
+        setError('No pending invite found for this email. Ask your employer to send you an invite.');
+        setCheckingInvite(false);
+        return;
+      }
+      
+      const inviteDoc = snapshot.docs[0];
+      setFoundInvite({ id: inviteDoc.id, ...inviteDoc.data() } as Invite);
+      setInviteStep('password');
+    } catch (err: any) {
+      setError(err.message || 'Failed to check invite');
+    }
+    
+    setCheckingInvite(false);
+  };
+
+  // Accept invite and create account
+  const handleAcceptInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      return;
+    }
+    
+    if (!foundInvite) {
+      setError('No invite found');
+      return;
+    }
+    
+    setCreatingAccount(true);
+    
+    try {
+      // Create Firebase Auth account
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Create employee document
+      await setDoc(doc(db, 'employees', cred.user.uid), {
+        email: email.toLowerCase(),
+        name: foundInvite.name || email.split('@')[0],
+        role: 'employee',
+        settings: defaultSettings,
+        createdAt: Timestamp.now()
+      });
+      
+      // Update invite status
+      await updateDoc(doc(db, 'invites', foundInvite.id), {
+        status: 'accepted',
+        acceptedAt: Timestamp.now(),
+        userId: cred.user.uid
+      });
+      
+      // User is automatically signed in
+    } catch (err: any) {
+      setError(err.message || 'Failed to create account');
+      setCreatingAccount(false);
     }
   };
 
@@ -1032,29 +1128,144 @@ export default function App() {
           </div>
           
           <div style={styles.card}>
-            <form onSubmit={handleLogin}>
-              <div style={{ marginBottom: '16px' }}>
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  style={styles.input}
-                />
-              </div>
-              <div style={{ marginBottom: '16px' }}>
-                <input
-                  type="password"
-                  placeholder="Password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  style={styles.input}
-                />
-              </div>
-              {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
-              <button type="submit" style={{ ...styles.btn, width: '100%' }}>Sign In</button>
-            </form>
+            {/* Auth Mode Toggle */}
+            <div style={{ display: 'flex', marginBottom: '24px', background: theme.cardAlt, borderRadius: '10px', padding: '4px' }}>
+              <button 
+                onClick={() => { setAuthMode('signin'); setError(''); setInviteStep('email'); setFoundInvite(null); }} 
+                style={{ 
+                  flex: 1, 
+                  padding: '10px', 
+                  borderRadius: '8px', 
+                  border: 'none', 
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  background: authMode === 'signin' ? theme.primary : 'transparent',
+                  color: authMode === 'signin' ? 'white' : theme.textMuted
+                }}
+              >
+                Sign In
+              </button>
+              <button 
+                onClick={() => { setAuthMode('invite'); setError(''); }} 
+                style={{ 
+                  flex: 1, 
+                  padding: '10px', 
+                  borderRadius: '8px', 
+                  border: 'none', 
+                  cursor: 'pointer',
+                  fontWeight: '600',
+                  fontSize: '14px',
+                  background: authMode === 'invite' ? theme.primary : 'transparent',
+                  color: authMode === 'invite' ? 'white' : theme.textMuted
+                }}
+              >
+                Accept Invite
+              </button>
+            </div>
+
+            {authMode === 'signin' ? (
+              <form onSubmit={handleLogin}>
+                <div style={{ marginBottom: '16px' }}>
+                  <input
+                    type="email"
+                    placeholder="Email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    style={styles.input}
+                  />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <input
+                    type="password"
+                    placeholder="Password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    style={styles.input}
+                  />
+                </div>
+                {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
+                <button type="submit" style={{ ...styles.btn, width: '100%' }}>Sign In</button>
+              </form>
+            ) : inviteStep === 'email' ? (
+              <form onSubmit={handleCheckInvite}>
+                <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px' }}>
+                  Enter the email your employer used to invite you:
+                </p>
+                <div style={{ marginBottom: '16px' }}>
+                  <input
+                    type="email"
+                    placeholder="Your email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    style={styles.input}
+                    required
+                  />
+                </div>
+                {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
+                <button 
+                  type="submit" 
+                  disabled={checkingInvite}
+                  style={{ ...styles.btn, width: '100%', opacity: checkingInvite ? 0.7 : 1 }}
+                >
+                  {checkingInvite ? 'Checking...' : 'Check Invite'}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleAcceptInvite}>
+                <div style={{ background: theme.successBg, padding: '12px', borderRadius: '10px', marginBottom: '16px' }}>
+                  <p style={{ color: theme.successText, fontSize: '14px', margin: 0 }}>
+                    ✓ Invite found for <strong>{foundInvite?.name || email}</strong>
+                  </p>
+                </div>
+                <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px' }}>
+                  Create a password for your account:
+                </p>
+                <div style={{ marginBottom: '16px' }}>
+                  <input
+                    type="password"
+                    placeholder="Create password (min 6 characters)"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    style={styles.input}
+                    required
+                    minLength={6}
+                  />
+                </div>
+                <div style={{ marginBottom: '16px' }}>
+                  <input
+                    type="password"
+                    placeholder="Confirm password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    style={styles.input}
+                    required
+                  />
+                </div>
+                {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
+                <button 
+                  type="submit" 
+                  disabled={creatingAccount}
+                  style={{ ...styles.btn, width: '100%', background: theme.success, opacity: creatingAccount ? 0.7 : 1 }}
+                >
+                  {creatingAccount ? 'Creating Account...' : 'Create Account'}
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => { setInviteStep('email'); setFoundInvite(null); setPassword(''); setConfirmPassword(''); setError(''); }}
+                  style={{ width: '100%', marginTop: '12px', padding: '10px', background: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '14px' }}
+                >
+                  ← Back
+                </button>
+              </form>
+            )}
           </div>
+          
+          {authMode === 'invite' && inviteStep === 'email' && (
+            <p style={{ color: theme.textMuted, fontSize: '13px', textAlign: 'center', marginTop: '16px' }}>
+              Don't have an invite? Ask your employer to add you from the dashboard.
+            </p>
+          )}
           
           {/* Theme toggle on login */}
           <div style={{ textAlign: 'center', marginTop: '24px' }}>
@@ -1207,29 +1418,13 @@ export default function App() {
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>Start Time</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <select
-                      value={manualStartHour}
-                      onChange={(e) => setManualStartHour(e.target.value)}
-                      style={{ ...styles.select, flex: 1 }}
-                    >
-                      {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (
-                        <option key={h} value={h}>{h}</option>
-                      ))}
+                    <select value={manualStartHour} onChange={(e) => setManualStartHour(e.target.value)} style={{ ...styles.select, flex: 1 }}>
+                      {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (<option key={h} value={h}>{h}</option>))}
                     </select>
-                    <select
-                      value={manualStartMinute}
-                      onChange={(e) => setManualStartMinute(e.target.value)}
-                      style={{ ...styles.select, flex: 1 }}
-                    >
-                      {['00', '15', '30', '45'].map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
+                    <select value={manualStartMinute} onChange={(e) => setManualStartMinute(e.target.value)} style={{ ...styles.select, flex: 1 }}>
+                      {['00', '15', '30', '45'].map(m => (<option key={m} value={m}>{m}</option>))}
                     </select>
-                    <select
-                      value={manualStartAmPm}
-                      onChange={(e) => setManualStartAmPm(e.target.value as 'AM' | 'PM')}
-                      style={{ ...styles.select, flex: 1 }}
-                    >
+                    <select value={manualStartAmPm} onChange={(e) => setManualStartAmPm(e.target.value as 'AM' | 'PM')} style={{ ...styles.select, flex: 1 }}>
                       <option value="AM">AM</option>
                       <option value="PM">PM</option>
                     </select>
@@ -1240,29 +1435,13 @@ export default function App() {
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>End Time</label>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <select
-                      value={manualEndHour}
-                      onChange={(e) => setManualEndHour(e.target.value)}
-                      style={{ ...styles.select, flex: 1 }}
-                    >
-                      {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (
-                        <option key={h} value={h}>{h}</option>
-                      ))}
+                    <select value={manualEndHour} onChange={(e) => setManualEndHour(e.target.value)} style={{ ...styles.select, flex: 1 }}>
+                      {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (<option key={h} value={h}>{h}</option>))}
                     </select>
-                    <select
-                      value={manualEndMinute}
-                      onChange={(e) => setManualEndMinute(e.target.value)}
-                      style={{ ...styles.select, flex: 1 }}
-                    >
-                      {['00', '15', '30', '45'].map(m => (
-                        <option key={m} value={m}>{m}</option>
-                      ))}
+                    <select value={manualEndMinute} onChange={(e) => setManualEndMinute(e.target.value)} style={{ ...styles.select, flex: 1 }}>
+                      {['00', '15', '30', '45'].map(m => (<option key={m} value={m}>{m}</option>))}
                     </select>
-                    <select
-                      value={manualEndAmPm}
-                      onChange={(e) => setManualEndAmPm(e.target.value as 'AM' | 'PM')}
-                      style={{ ...styles.select, flex: 1 }}
-                    >
+                    <select value={manualEndAmPm} onChange={(e) => setManualEndAmPm(e.target.value as 'AM' | 'PM')} style={{ ...styles.select, flex: 1 }}>
                       <option value="AM">AM</option>
                       <option value="PM">PM</option>
                     </select>
@@ -1272,66 +1451,20 @@ export default function App() {
                 {/* Breaks */}
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>Breaks</label>
-                  
-                  {/* Quick add buttons */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
                     {[10, 15, 20, 30].map((mins) => (
-                      <button
-                        key={mins}
-                        type="button"
-                        onClick={() => setManualBreaks([...manualBreaks, mins])}
-                        style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontWeight: '600' }}
-                      >
-                        +{mins}m
-                      </button>
+                      <button key={mins} type="button" onClick={() => setManualBreaks([...manualBreaks, mins])} style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontWeight: '600' }}>+{mins}m</button>
                     ))}
                   </div>
-                  
-                  {/* Custom minutes input */}
                   {!showManualCustomBreak ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowManualCustomBreak(true)}
-                      style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'transparent', color: theme.textMuted, border: `1px dashed ${theme.cardBorder}`, cursor: 'pointer' }}
-                    >
-                      + Custom minutes
-                    </button>
+                    <button type="button" onClick={() => setShowManualCustomBreak(true)} style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'transparent', color: theme.textMuted, border: `1px dashed ${theme.cardBorder}`, cursor: 'pointer' }}>+ Custom minutes</button>
                   ) : (
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
-                        type="number"
-                        placeholder="Minutes"
-                        value={manualCustomBreak}
-                        onChange={(e) => setManualCustomBreak(e.target.value)}
-                        style={{ ...styles.input, flex: 1 }}
-                        min="1"
-                        max="120"
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          const mins = parseInt(manualCustomBreak);
-                          if (!isNaN(mins) && mins > 0) {
-                            setManualBreaks([...manualBreaks, mins]);
-                            setManualCustomBreak('');
-                            setShowManualCustomBreak(false);
-                          }
-                        }} 
-                        style={{ ...styles.btn, padding: '12px 20px' }}
-                      >
-                        Add
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setShowManualCustomBreak(false); setManualCustomBreak(''); }}
-                        style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.textMuted, border: 'none', cursor: 'pointer' }}
-                      >
-                        ✕
-                      </button>
+                      <input type="number" placeholder="Minutes" value={manualCustomBreak} onChange={(e) => setManualCustomBreak(e.target.value)} style={{ ...styles.input, flex: 1 }} min="1" max="120" />
+                      <button type="button" onClick={() => { const mins = parseInt(manualCustomBreak); if (!isNaN(mins) && mins > 0) { setManualBreaks([...manualBreaks, mins]); setManualCustomBreak(''); setShowManualCustomBreak(false); }}} style={{ ...styles.btn, padding: '12px 20px' }}>Add</button>
+                      <button type="button" onClick={() => { setShowManualCustomBreak(false); setManualCustomBreak(''); }} style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.textMuted, border: 'none', cursor: 'pointer' }}>✕</button>
                     </div>
                   )}
-                  
-                  {/* List of added breaks */}
                   {manualBreaks.length > 0 && (
                     <div style={{ marginTop: '12px', background: theme.cardAlt, borderRadius: '10px', padding: '12px' }}>
                       {manualBreaks.map((mins, i) => (
@@ -1339,13 +1472,7 @@ export default function App() {
                           <span style={{ color: theme.text, fontSize: '14px' }}>Break {i + 1}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{ color: theme.text, fontWeight: '600' }}>{mins}m</span>
-                            <button
-                              type="button"
-                              onClick={() => setManualBreaks(manualBreaks.filter((_, idx) => idx !== i))}
-                              style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}
-                            >
-                              ✕
-                            </button>
+                            <button type="button" onClick={() => setManualBreaks(manualBreaks.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}>✕</button>
                           </div>
                         </div>
                       ))}
@@ -1360,78 +1487,26 @@ export default function App() {
                 {/* Notes */}
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>Notes (optional)</label>
-                  <textarea
-                    value={manualNotes}
-                    onChange={(e) => setManualNotes(e.target.value)}
-                    placeholder="What did you work on?"
-                    rows={2}
-                    style={{ ...styles.input, resize: 'vertical', fontFamily: 'inherit' }}
-                  />
+                  <textarea value={manualNotes} onChange={(e) => setManualNotes(e.target.value)} placeholder="What did you work on?" rows={2} style={{ ...styles.input, resize: 'vertical', fontFamily: 'inherit' }} />
                 </div>
                 
                 {/* Travel */}
                 <div style={{ marginBottom: '16px' }}>
                   <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>Travel</label>
-                  
-                  {/* Quick add buttons */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
                     {[10, 15, 20, 30].map((mins) => (
-                      <button
-                        key={mins}
-                        type="button"
-                        onClick={() => setManualTravel([...manualTravel, mins])}
-                        style={{ padding: '12px', borderRadius: '10px', background: '#dbeafe', color: '#1d4ed8', border: `1px solid #bfdbfe`, cursor: 'pointer', fontWeight: '600' }}
-                      >
-                        +{mins}m
-                      </button>
+                      <button key={mins} type="button" onClick={() => setManualTravel([...manualTravel, mins])} style={{ padding: '12px', borderRadius: '10px', background: '#dbeafe', color: '#1d4ed8', border: `1px solid #bfdbfe`, cursor: 'pointer', fontWeight: '600' }}>+{mins}m</button>
                     ))}
                   </div>
-                  
-                  {/* Custom minutes input */}
                   {!showManualCustomTravel ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowManualCustomTravel(true)}
-                      style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'transparent', color: theme.textMuted, border: `1px dashed ${theme.cardBorder}`, cursor: 'pointer' }}
-                    >
-                      + Custom travel minutes
-                    </button>
+                    <button type="button" onClick={() => setShowManualCustomTravel(true)} style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'transparent', color: theme.textMuted, border: `1px dashed ${theme.cardBorder}`, cursor: 'pointer' }}>+ Custom travel minutes</button>
                   ) : (
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <input
-                        type="number"
-                        placeholder="Minutes"
-                        value={manualCustomTravel}
-                        onChange={(e) => setManualCustomTravel(e.target.value)}
-                        style={{ ...styles.input, flex: 1 }}
-                        min="1"
-                        max="180"
-                      />
-                      <button 
-                        type="button"
-                        onClick={() => {
-                          const mins = parseInt(manualCustomTravel);
-                          if (!isNaN(mins) && mins > 0) {
-                            setManualTravel([...manualTravel, mins]);
-                            setManualCustomTravel('');
-                            setShowManualCustomTravel(false);
-                          }
-                        }} 
-                        style={{ ...styles.btn, padding: '12px 20px', background: '#2563eb' }}
-                      >
-                        Add
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setShowManualCustomTravel(false); setManualCustomTravel(''); }}
-                        style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.textMuted, border: 'none', cursor: 'pointer' }}
-                      >
-                        ✕
-                      </button>
+                      <input type="number" placeholder="Minutes" value={manualCustomTravel} onChange={(e) => setManualCustomTravel(e.target.value)} style={{ ...styles.input, flex: 1 }} min="1" max="180" />
+                      <button type="button" onClick={() => { const mins = parseInt(manualCustomTravel); if (!isNaN(mins) && mins > 0) { setManualTravel([...manualTravel, mins]); setManualCustomTravel(''); setShowManualCustomTravel(false); }}} style={{ ...styles.btn, padding: '12px 20px', background: '#2563eb' }}>Add</button>
+                      <button type="button" onClick={() => { setShowManualCustomTravel(false); setManualCustomTravel(''); }} style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.textMuted, border: 'none', cursor: 'pointer' }}>✕</button>
                     </div>
                   )}
-                  
-                  {/* List of added travel */}
                   {manualTravel.length > 0 && (
                     <div style={{ marginTop: '12px', background: '#dbeafe', borderRadius: '10px', padding: '12px' }}>
                       {manualTravel.map((mins, i) => (
@@ -1439,13 +1514,7 @@ export default function App() {
                           <span style={{ color: '#1d4ed8', fontSize: '14px' }}>🚗 Travel {i + 1}</span>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <span style={{ color: '#1d4ed8', fontWeight: '600' }}>{mins}m</span>
-                            <button
-                              type="button"
-                              onClick={() => setManualTravel(manualTravel.filter((_, idx) => idx !== i))}
-                              style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}
-                            >
-                              ✕
-                            </button>
+                            <button type="button" onClick={() => setManualTravel(manualTravel.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '16px', padding: '0 4px' }}>✕</button>
                           </div>
                         </div>
                       ))}
@@ -1460,9 +1529,7 @@ export default function App() {
                 {/* Preview */}
                 <div style={{ background: theme.cardAlt, borderRadius: '10px', padding: '12px', marginBottom: '16px' }}>
                   <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '4px' }}>Preview:</p>
-                  <p style={{ color: theme.text, fontSize: '14px', fontWeight: '600' }}>
-                    {manualStartHour}:{manualStartMinute} {manualStartAmPm} → {manualEndHour}:{manualEndMinute} {manualEndAmPm}
-                  </p>
+                  <p style={{ color: theme.text, fontSize: '14px', fontWeight: '600' }}>{manualStartHour}:{manualStartMinute} {manualStartAmPm} → {manualEndHour}:{manualEndMinute} {manualEndAmPm}</p>
                   {(manualBreaks.length > 0 || manualTravel.length > 0) && (
                     <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '4px' }}>
                       {manualBreaks.length > 0 && <span style={{ color: theme.warning }}>{manualBreaks.reduce((a, b) => a + b, 0)}m breaks</span>}
@@ -1472,19 +1539,7 @@ export default function App() {
                   )}
                 </div>
                 
-                {/* Submit button */}
-                <button
-                  onClick={handleAddManualShift}
-                  disabled={addingShift}
-                  style={{ 
-                    ...styles.btn, 
-                    width: '100%', 
-                    background: theme.success,
-                    opacity: addingShift ? 0.7 : 1 
-                  }}
-                >
-                  {addingShift ? 'Adding...' : 'Add Shift'}
-                </button>
+                <button onClick={handleAddManualShift} disabled={addingShift} style={{ ...styles.btn, width: '100%', background: theme.success, opacity: addingShift ? 0.7 : 1 }}>{addingShift ? 'Adding...' : 'Add Shift'}</button>
               </div>
             )}
           </div>
@@ -1495,44 +1550,16 @@ export default function App() {
           <div style={styles.card}>
             <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '8px' }}>Quick Add Break</h3>
             <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Forgot to start timer? Add break time:</p>
-            
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
-              {[10, 15, 20, 30].map((mins) => (
-                <button
-                  key={mins}
-                  onClick={() => handleAddPresetBreak(mins)}
-                  style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontWeight: '600' }}
-                >
-                  {mins}m
-                </button>
-              ))}
+              {[10, 15, 20, 30].map((mins) => (<button key={mins} onClick={() => handleAddPresetBreak(mins)} style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontWeight: '600' }}>{mins}m</button>))}
             </div>
-            
             {!showManualEntry ? (
-              <button
-                onClick={() => setShowManualEntry(true)}
-                style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'transparent', color: theme.textMuted, border: `1px dashed ${theme.cardBorder}`, cursor: 'pointer' }}
-              >
-                + Custom minutes
-              </button>
+              <button onClick={() => setShowManualEntry(true)} style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'transparent', color: theme.textMuted, border: `1px dashed ${theme.cardBorder}`, cursor: 'pointer' }}>+ Custom minutes</button>
             ) : (
               <div style={{ display: 'flex', gap: '8px' }}>
-                <input
-                  type="number"
-                  placeholder="Minutes"
-                  value={manualMinutes}
-                  onChange={(e) => setManualMinutes(e.target.value)}
-                  style={{ ...styles.input, flex: 1 }}
-                  min="1"
-                  max="120"
-                />
+                <input type="number" placeholder="Minutes" value={manualMinutes} onChange={(e) => setManualMinutes(e.target.value)} style={{ ...styles.input, flex: 1 }} min="1" max="120" />
                 <button onClick={handleAddManualBreak} style={{ ...styles.btn, padding: '12px 20px' }}>Add</button>
-                <button
-                  onClick={() => { setShowManualEntry(false); setManualMinutes(''); }}
-                  style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.textMuted, border: 'none', cursor: 'pointer' }}
-                >
-                  ✕
-                </button>
+                <button onClick={() => { setShowManualEntry(false); setManualMinutes(''); }} style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.textMuted, border: 'none', cursor: 'pointer' }}>✕</button>
               </div>
             )}
           </div>
@@ -1542,197 +1569,73 @@ export default function App() {
         {currentShift && breakAllocation && (
           <div style={styles.card}>
             <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '12px' }}>Break & Travel Summary</h3>
-            
             <div style={{ background: theme.cardAlt, borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
               <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '4px' }}>Your entitlement for {fmtDur(shiftHours * 60)} shift:</p>
-              <p style={{ color: theme.text, fontSize: '14px' }}>
-                {entitlements.paidMinutes / 10}× paid rest ({entitlements.paidMinutes}m) + {entitlements.unpaidMinutes / 30}× unpaid meal ({entitlements.unpaidMinutes}m)
-              </p>
+              <p style={{ color: theme.text, fontSize: '14px' }}>{entitlements.paidMinutes / 10}× paid rest ({entitlements.paidMinutes}m) + {entitlements.unpaidMinutes / 30}× unpaid meal ({entitlements.unpaidMinutes}m)</p>
             </div>
 
-            {/* Breaks list */}
             {(currentShift.breaks || []).length === 0 && (currentShift.travelSegments || []).length === 0 && (
               <p style={{ color: theme.textLight, fontSize: '14px', marginBottom: '12px' }}>No breaks or travel recorded yet</p>
             )}
             
             {((currentShift.breaks || []).length > 0 || (currentShift.travelSegments || []).length > 0) && (
               <>
-                {/* Breaks */}
                 {(currentShift.breaks || []).length > 0 && (
                   <>
                     <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>BREAKS</p>
                     {currentShift.breaks.map((b, i) => (
                       <div key={`break-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
-                        <span style={{ color: theme.textMuted, fontSize: '14px' }}>
-                          {b.manualEntry ? `Break ${i + 1}: (added)` : `Break ${i + 1}: ${fmtTime(b.startTime)} - ${b.endTime ? fmtTime(b.endTime) : 'ongoing'}`}
-                        </span>
+                        <span style={{ color: theme.textMuted, fontSize: '14px' }}>{b.manualEntry ? `Break ${i + 1}: (added)` : `Break ${i + 1}: ${fmtTime(b.startTime)} - ${b.endTime ? fmtTime(b.endTime) : 'ongoing'}`}</span>
                         <span style={{ color: theme.text, fontWeight: '600' }}>{b.durationMinutes ? `${b.durationMinutes}m` : '...'}</span>
                       </div>
                     ))}
                   </>
                 )}
-                
-                {/* Travel segments */}
                 {(currentShift.travelSegments || []).length > 0 && (
                   <>
                     <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '16px', marginBottom: '8px', fontWeight: '600' }}>TRAVEL</p>
                     {currentShift.travelSegments!.map((t, i) => (
                       <div key={`travel-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
-                        <span style={{ color: theme.textMuted, fontSize: '14px' }}>
-                          🚗 Travel {i + 1}: {fmtTime(t.startTime)} - {t.endTime ? fmtTime(t.endTime) : 'ongoing'}
-                        </span>
+                        <span style={{ color: theme.textMuted, fontSize: '14px' }}>🚗 Travel {i + 1}: {fmtTime(t.startTime)} - {t.endTime ? fmtTime(t.endTime) : 'ongoing'}</span>
                         <span style={{ color: '#2563eb', fontWeight: '600' }}>{t.durationMinutes ? `${t.durationMinutes}m` : '...'}</span>
                       </div>
                     ))}
                   </>
                 )}
-                
-                {/* Totals */}
                 <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '12px', marginTop: '12px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
-                    <span style={{ color: theme.success }}>Paid breaks:</span>
-                    <span style={{ color: theme.success, fontWeight: '600' }}>{breakAllocation.paid}m</span>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
-                    <span style={{ color: theme.warning }}>Unpaid breaks:</span>
-                    <span style={{ color: theme.warning, fontWeight: '600' }}>{breakAllocation.unpaid}m</span>
-                  </div>
-                  {calcTravel(currentShift.travelSegments || []) > 0 && (
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                      <span style={{ color: '#2563eb' }}>Travel time:</span>
-                      <span style={{ color: '#2563eb', fontWeight: '600' }}>{calcTravel(currentShift.travelSegments || [])}m</span>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}><span style={{ color: theme.success }}>Paid breaks:</span><span style={{ color: theme.success, fontWeight: '600' }}>{breakAllocation.paid}m</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}><span style={{ color: theme.warning }}>Unpaid breaks:</span><span style={{ color: theme.warning, fontWeight: '600' }}>{breakAllocation.unpaid}m</span></div>
+                  {calcTravel(currentShift.travelSegments || []) > 0 && (<div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}><span style={{ color: '#2563eb' }}>Travel time:</span><span style={{ color: '#2563eb', fontWeight: '600' }}>{calcTravel(currentShift.travelSegments || [])}m</span></div>)}
                 </div>
               </>
             )}
             
-            {/* Add Travel with specific times to current shift */}
             {!traveling && !onBreak && (
               <>
                 {editingShiftId !== currentShift.id ? (
-                  <button
-                    onClick={() => setEditingShiftId(currentShift.id)}
-                    style={{ 
-                      marginTop: '12px',
-                      width: '100%', 
-                      padding: '10px', 
-                      borderRadius: '10px', 
-                      background: 'transparent', 
-                      color: '#2563eb', 
-                      border: `1px dashed #bfdbfe`, 
-                      cursor: 'pointer',
-                      fontSize: '13px',
-                      fontWeight: '500'
-                    }}
-                  >
-                    + Add Travel (with times)
-                  </button>
+                  <button onClick={() => setEditingShiftId(currentShift.id)} style={{ marginTop: '12px', width: '100%', padding: '10px', borderRadius: '10px', background: 'transparent', color: '#2563eb', border: `1px dashed #bfdbfe`, cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>+ Add Travel (with times)</button>
                 ) : (
                   <div style={{ marginTop: '12px', background: '#dbeafe', borderRadius: '10px', padding: '12px' }}>
                     <p style={{ color: '#1d4ed8', fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>Add Travel Time</p>
-                    
-                    {/* Start Time */}
                     <div style={{ marginBottom: '12px' }}>
                       <label style={{ display: 'block', color: '#1d4ed8', fontSize: '12px', marginBottom: '4px' }}>Start</label>
                       <div style={{ display: 'flex', gap: '6px' }}>
-                        <select
-                          value={addTravelStartHour}
-                          onChange={(e) => setAddTravelStartHour(e.target.value)}
-                          style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                        >
-                          {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (
-                            <option key={h} value={h}>{h}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={addTravelStartMinute}
-                          onChange={(e) => setAddTravelStartMinute(e.target.value)}
-                          style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                        >
-                          {['00', '15', '30', '45'].map(m => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={addTravelStartAmPm}
-                          onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')}
-                          style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                        >
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
+                        <select value={addTravelStartHour} onChange={(e) => setAddTravelStartHour(e.target.value)} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}>{[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (<option key={h} value={h}>{h}</option>))}</select>
+                        <select value={addTravelStartMinute} onChange={(e) => setAddTravelStartMinute(e.target.value)} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}>{['00', '15', '30', '45'].map(m => (<option key={m} value={m}>{m}</option>))}</select>
+                        <select value={addTravelStartAmPm} onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}><option value="AM">AM</option><option value="PM">PM</option></select>
                       </div>
                     </div>
-                    
-                    {/* End Time */}
                     <div style={{ marginBottom: '12px' }}>
                       <label style={{ display: 'block', color: '#1d4ed8', fontSize: '12px', marginBottom: '4px' }}>End</label>
                       <div style={{ display: 'flex', gap: '6px' }}>
-                        <select
-                          value={addTravelEndHour}
-                          onChange={(e) => setAddTravelEndHour(e.target.value)}
-                          style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                        >
-                          {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (
-                            <option key={h} value={h}>{h}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={addTravelEndMinute}
-                          onChange={(e) => setAddTravelEndMinute(e.target.value)}
-                          style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                        >
-                          {['00', '15', '30', '45'].map(m => (
-                            <option key={m} value={m}>{m}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={addTravelEndAmPm}
-                          onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')}
-                          style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                        >
-                          <option value="AM">AM</option>
-                          <option value="PM">PM</option>
-                        </select>
+                        <select value={addTravelEndHour} onChange={(e) => setAddTravelEndHour(e.target.value)} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}>{[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (<option key={h} value={h}>{h}</option>))}</select>
+                        <select value={addTravelEndMinute} onChange={(e) => setAddTravelEndMinute(e.target.value)} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}>{['00', '15', '30', '45'].map(m => (<option key={m} value={m}>{m}</option>))}</select>
+                        <select value={addTravelEndAmPm} onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}><option value="AM">AM</option><option value="PM">PM</option></select>
                       </div>
                     </div>
-                    
-                    {/* Buttons */}
                     <div style={{ display: 'flex', gap: '8px' }}>
-                      <button
-                        onClick={() => handleAddTravelToShift(currentShift.id, currentShift.clockIn.toDate())}
-                        disabled={addingTravelToShift}
-                        style={{ 
-                          flex: 1, 
-                          padding: '10px', 
-                          borderRadius: '8px', 
-                          background: '#2563eb', 
-                          color: 'white', 
-                          border: 'none', 
-                          cursor: 'pointer',
-                          fontWeight: '600',
-                          fontSize: '14px',
-                          opacity: addingTravelToShift ? 0.7 : 1
-                        }}
-                      >
-                        {addingTravelToShift ? 'Adding...' : 'Add Travel'}
-                      </button>
-                      <button
-                        onClick={() => setEditingShiftId(null)}
-                        style={{ 
-                          padding: '10px 16px', 
-                          borderRadius: '8px', 
-                          background: 'white', 
-                          color: '#64748b', 
-                          border: '1px solid #e2e8f0', 
-                          cursor: 'pointer',
-                          fontWeight: '500',
-                          fontSize: '14px'
-                        }}
-                      >
-                        Cancel
-                      </button>
+                      <button onClick={() => handleAddTravelToShift(currentShift.id, currentShift.clockIn.toDate())} disabled={addingTravelToShift} style={{ flex: 1, padding: '10px', borderRadius: '8px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '14px', opacity: addingTravelToShift ? 0.7 : 1 }}>{addingTravelToShift ? 'Adding...' : 'Add Travel'}</button>
+                      <button onClick={() => setEditingShiftId(null)} style={{ padding: '10px 16px', borderRadius: '8px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: '500', fontSize: '14px' }}>Cancel</button>
                     </div>
                   </div>
                 )}
@@ -1741,19 +1644,13 @@ export default function App() {
           </div>
         )}
 
-        {/* NZ Break Rules */}
         <BreakRulesInfo isOpen={showBreakRules} onToggle={() => setShowBreakRules(!showBreakRules)} theme={theme} />
 
-        {/* Location */}
         {currentLocation && (
           <div style={{ ...styles.card, marginTop: '16px' }}>
             <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '8px' }}>Current Location</h3>
-            <p style={{ color: theme.textMuted, fontSize: '14px' }}>
-              {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
-            </p>
-            <p style={{ color: theme.textLight, fontSize: '12px' }}>
-              Accuracy: ±{Math.round(currentLocation.accuracy)}m
-            </p>
+            <p style={{ color: theme.textMuted, fontSize: '14px' }}>{currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}</p>
+            <p style={{ color: theme.textLight, fontSize: '12px' }}>Accuracy: ±{Math.round(currentLocation.accuracy)}m</p>
           </div>
         )}
       </div>
@@ -1763,40 +1660,18 @@ export default function App() {
   // Job Log View
   const renderJobLogView = () => {
     if (!currentShift) {
-      return (
-        <div style={{ padding: '16px' }}>
-          <div style={{ ...styles.card, textAlign: 'center' }}>
-            <p style={{ color: theme.textMuted }}>Clock in to add job notes</p>
-          </div>
-        </div>
-      );
+      return (<div style={{ padding: '16px' }}><div style={{ ...styles.card, textAlign: 'center' }}><p style={{ color: theme.textMuted }}>Clock in to add job notes</p></div></div>);
     }
 
     return (
       <div style={{ padding: '16px' }}>
         <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>Job Log</h2>
-
         <div style={styles.card}>
-          <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '12px' }}>
-            Today's Notes
-            {settings.requireNotes && <span style={{ color: theme.danger, marginLeft: '4px' }}>*</span>}
-          </h3>
-          
-          <textarea
-            placeholder="Describe what you did today..."
-            value={jobNotes}
-            onChange={(e) => setJobNotes(e.target.value)}
-            onBlur={handleSaveNotes}
-            rows={6}
-            style={{ ...styles.input, resize: 'vertical', fontFamily: 'inherit' }}
-          />
+          <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '12px' }}>Today's Notes{settings.requireNotes && <span style={{ color: theme.danger, marginLeft: '4px' }}>*</span>}</h3>
+          <textarea placeholder="Describe what you did today..." value={jobNotes} onChange={(e) => setJobNotes(e.target.value)} onBlur={handleSaveNotes} rows={6} style={{ ...styles.input, resize: 'vertical', fontFamily: 'inherit' }} />
           <p style={{ color: theme.textLight, fontSize: '12px', marginTop: '8px' }}>Auto-saves when you tap away</p>
-          
-          {settings.requireNotes && (
-            <p style={{ color: theme.warning, fontSize: '12px', marginTop: '8px' }}>* Notes required before clocking out</p>
-          )}
+          {settings.requireNotes && (<p style={{ color: theme.warning, fontSize: '12px', marginTop: '8px' }}>* Notes required before clocking out</p>)}
         </div>
-
         <div style={styles.card}>
           <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '12px' }}>💡 Tips</h3>
           <ul style={{ color: theme.textMuted, fontSize: '14px', paddingLeft: '20px', margin: 0 }}>
@@ -1813,60 +1688,25 @@ export default function App() {
   // Chat View
   const renderChatView = () => {
     if (!settings.chatEnabled) {
-      return (
-        <div style={{ padding: '16px' }}>
-          <div style={{ ...styles.card, textAlign: 'center' }}>
-            <p style={{ color: theme.textMuted }}>Chat is disabled for your account</p>
-          </div>
-        </div>
-      );
+      return (<div style={{ padding: '16px' }}><div style={{ ...styles.card, textAlign: 'center' }}><p style={{ color: theme.textMuted }}>Chat is disabled for your account</p></div></div>);
     }
 
-    const filteredMessages = messages.filter(m => 
-      chatTab === 'team' ? m.type === 'team' : 
-      (m.type === 'dm' && m.participants?.includes(user?.uid || ''))
-    );
+    const filteredMessages = messages.filter(m => chatTab === 'team' ? m.type === 'team' : (m.type === 'dm' && m.participants?.includes(user?.uid || '')));
 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)' }}>
-        {/* Chat Tabs */}
         <div style={{ display: 'flex', margin: '16px', background: theme.card, borderRadius: '12px', padding: '4px', border: `1px solid ${theme.cardBorder}` }}>
-          <button
-            onClick={() => setChatTab('team')}
-            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: chatTab === 'team' ? theme.primary : 'transparent', color: chatTab === 'team' ? 'white' : theme.textMuted, fontWeight: '600', cursor: 'pointer' }}
-          >
-            Team Chat
-          </button>
-          <button
-            onClick={() => setChatTab('employer')}
-            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: chatTab === 'employer' ? theme.primary : 'transparent', color: chatTab === 'employer' ? 'white' : theme.textMuted, fontWeight: '600', cursor: 'pointer' }}
-          >
-            Employer DM
-          </button>
+          <button onClick={() => setChatTab('team')} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: chatTab === 'team' ? theme.primary : 'transparent', color: chatTab === 'team' ? 'white' : theme.textMuted, fontWeight: '600', cursor: 'pointer' }}>Team Chat</button>
+          <button onClick={() => setChatTab('employer')} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: chatTab === 'employer' ? theme.primary : 'transparent', color: chatTab === 'employer' ? 'white' : theme.textMuted, fontWeight: '600', cursor: 'pointer' }}>Employer DM</button>
         </div>
-
-        {/* Messages */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px' }}>
           {filteredMessages.length === 0 ? (
-            <div style={{ textAlign: 'center', color: theme.textLight, marginTop: '40px' }}>
-              No messages yet. Start the conversation!
-            </div>
+            <div style={{ textAlign: 'center', color: theme.textLight, marginTop: '40px' }}>No messages yet. Start the conversation!</div>
           ) : (
             filteredMessages.map((msg) => (
-              <div
-                key={msg.id}
-                style={{ display: 'flex', justifyContent: msg.senderId === user?.uid ? 'flex-end' : 'flex-start', marginBottom: '12px' }}
-              >
-                <div style={{ 
-                  maxWidth: '75%', 
-                  borderRadius: '16px', 
-                  padding: '10px 14px',
-                  background: msg.senderId === user?.uid ? theme.primary : theme.card,
-                  border: msg.senderId === user?.uid ? 'none' : `1px solid ${theme.cardBorder}`
-                }}>
-                  {msg.senderId !== user?.uid && (
-                    <p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>{msg.senderEmail}</p>
-                  )}
+              <div key={msg.id} style={{ display: 'flex', justifyContent: msg.senderId === user?.uid ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
+                <div style={{ maxWidth: '75%', borderRadius: '16px', padding: '10px 14px', background: msg.senderId === user?.uid ? theme.primary : theme.card, border: msg.senderId === user?.uid ? 'none' : `1px solid ${theme.cardBorder}` }}>
+                  {msg.senderId !== user?.uid && (<p style={{ fontSize: '11px', color: theme.textMuted, marginBottom: '4px' }}>{msg.senderEmail}</p>)}
                   <p style={{ fontSize: '14px', color: msg.senderId === user?.uid ? 'white' : theme.text }}>{msg.text}</p>
                   <p style={{ fontSize: '10px', color: msg.senderId === user?.uid ? 'rgba(255,255,255,0.6)' : theme.textLight, marginTop: '4px' }}>{fmtTime(msg.timestamp)}</p>
                 </div>
@@ -1874,21 +1714,10 @@ export default function App() {
             ))
           )}
         </div>
-
-        {/* Message Input */}
         <div style={{ padding: '16px', background: theme.nav, borderTop: `1px solid ${theme.navBorder}` }}>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <input
-              type="text"
-              placeholder="Type a message..."
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()}
-              style={{ ...styles.input, flex: 1, borderRadius: '24px' }}
-            />
-            <button onClick={handleSendMessage} style={{ ...styles.btn, borderRadius: '24px', padding: '12px 20px' }}>
-              Send
-            </button>
+            <input type="text" placeholder="Type a message..." value={newMessage} onChange={(e) => setNewMessage(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && handleSendMessage()} style={{ ...styles.input, flex: 1, borderRadius: '24px' }} />
+            <button onClick={handleSendMessage} style={{ ...styles.btn, borderRadius: '24px', padding: '12px 20px' }}>Send</button>
           </div>
         </div>
       </div>
@@ -1899,11 +1728,8 @@ export default function App() {
   const renderHistoryView = () => (
     <div style={{ padding: '16px' }}>
       <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>Shift History</h2>
-      
       {shiftHistory.length === 0 ? (
-        <div style={{ ...styles.card, textAlign: 'center' }}>
-          <p style={{ color: theme.textMuted }}>No completed shifts yet</p>
-        </div>
+        <div style={{ ...styles.card, textAlign: 'center' }}><p style={{ color: theme.textMuted }}>No completed shifts yet</p></div>
       ) : (
         shiftHistory.map((shift) => {
           const shiftHours = getHours(shift.clockIn, shift.clockOut);
@@ -1917,184 +1743,48 @@ export default function App() {
                 <div>
                   <p style={{ color: theme.text, fontWeight: '600' }}>
                     {fmtDate(shift.clockIn)}
-                    {shift.manualEntry && (
-                      <span style={{ 
-                        marginLeft: '8px', 
-                        fontSize: '11px', 
-                        background: theme.cardAlt, 
-                        color: theme.textMuted, 
-                        padding: '2px 8px', 
-                        borderRadius: '4px' 
-                      }}>
-                        Manual
-                      </span>
-                    )}
+                    {shift.manualEntry && (<span style={{ marginLeft: '8px', fontSize: '11px', background: theme.cardAlt, color: theme.textMuted, padding: '2px 8px', borderRadius: '4px' }}>Manual</span>)}
                   </p>
-                  <p style={{ color: theme.textMuted, fontSize: '14px' }}>
-                    {fmtTime(shift.clockIn)} - {fmtTime(shift.clockOut)}
-                  </p>
+                  <p style={{ color: theme.textMuted, fontSize: '14px' }}>{fmtTime(shift.clockIn)} - {fmtTime(shift.clockOut)}</p>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <p style={{ color: theme.text, fontWeight: '700', fontSize: '18px' }}>{fmtDur(workingMinutes)}</p>
                   <p style={{ color: theme.textLight, fontSize: '12px' }}>worked</p>
                 </div>
               </div>
-              
               <div style={{ background: theme.cardAlt, borderRadius: '10px', padding: '10px 12px', marginTop: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                  <span style={{ color: theme.textMuted }}>Total shift:</span>
-                  <span style={{ color: theme.text }}>{fmtDur(shiftHours * 60)}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                  <span style={{ color: theme.success }}>Paid breaks:</span>
-                  <span style={{ color: theme.success }}>{breakAllocation.paid}m</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                  <span style={{ color: theme.warning }}>Unpaid breaks:</span>
-                  <span style={{ color: theme.warning }}>{breakAllocation.unpaid}m</span>
-                </div>
-                {travelMinutes > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
-                    <span style={{ color: '#2563eb' }}>Travel time:</span>
-                    <span style={{ color: '#2563eb' }}>{travelMinutes}m</span>
-                  </div>
-                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span style={{ color: theme.textMuted }}>Total shift:</span><span style={{ color: theme.text }}>{fmtDur(shiftHours * 60)}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span style={{ color: theme.success }}>Paid breaks:</span><span style={{ color: theme.success }}>{breakAllocation.paid}m</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span style={{ color: theme.warning }}>Unpaid breaks:</span><span style={{ color: theme.warning }}>{breakAllocation.unpaid}m</span></div>
+                {travelMinutes > 0 && (<div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}><span style={{ color: '#2563eb' }}>Travel time:</span><span style={{ color: '#2563eb' }}>{travelMinutes}m</span></div>)}
               </div>
-
-              {shift.jobLog?.notes && (
-                <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '8px' }}>📝 {shift.jobLog.notes}</p>
-              )}
-
-              {shift.locationHistory?.length > 0 && (
-                <p style={{ color: theme.textLight, fontSize: '12px', marginTop: '8px' }}>
-                  📍 {shift.locationHistory.length} location points recorded
-                </p>
-              )}
+              {shift.jobLog?.notes && (<p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '8px' }}>📝 {shift.jobLog.notes}</p>)}
+              {shift.locationHistory?.length > 0 && (<p style={{ color: theme.textLight, fontSize: '12px', marginTop: '8px' }}>📍 {shift.locationHistory.length} location points recorded</p>)}
               
-              {/* Add Travel Button/Form */}
               {editingShiftId !== shift.id ? (
-                <button
-                  onClick={() => setEditingShiftId(shift.id)}
-                  style={{ 
-                    marginTop: '12px',
-                    width: '100%', 
-                    padding: '10px', 
-                    borderRadius: '10px', 
-                    background: 'transparent', 
-                    color: '#2563eb', 
-                    border: `1px dashed #bfdbfe`, 
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: '500'
-                  }}
-                >
-                  + Add Travel
-                </button>
+                <button onClick={() => setEditingShiftId(shift.id)} style={{ marginTop: '12px', width: '100%', padding: '10px', borderRadius: '10px', background: 'transparent', color: '#2563eb', border: `1px dashed #bfdbfe`, cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>+ Add Travel</button>
               ) : (
                 <div style={{ marginTop: '12px', background: '#dbeafe', borderRadius: '10px', padding: '12px' }}>
                   <p style={{ color: '#1d4ed8', fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>Add Travel Time</p>
-                  
-                  {/* Start Time */}
                   <div style={{ marginBottom: '12px' }}>
                     <label style={{ display: 'block', color: '#1d4ed8', fontSize: '12px', marginBottom: '4px' }}>Start</label>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <select
-                        value={addTravelStartHour}
-                        onChange={(e) => setAddTravelStartHour(e.target.value)}
-                        style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                      >
-                        {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (
-                          <option key={h} value={h}>{h}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={addTravelStartMinute}
-                        onChange={(e) => setAddTravelStartMinute(e.target.value)}
-                        style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                      >
-                        {['00', '15', '30', '45'].map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={addTravelStartAmPm}
-                        onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')}
-                        style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                      >
-                        <option value="AM">AM</option>
-                        <option value="PM">PM</option>
-                      </select>
+                      <select value={addTravelStartHour} onChange={(e) => setAddTravelStartHour(e.target.value)} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}>{[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (<option key={h} value={h}>{h}</option>))}</select>
+                      <select value={addTravelStartMinute} onChange={(e) => setAddTravelStartMinute(e.target.value)} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}>{['00', '15', '30', '45'].map(m => (<option key={m} value={m}>{m}</option>))}</select>
+                      <select value={addTravelStartAmPm} onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}><option value="AM">AM</option><option value="PM">PM</option></select>
                     </div>
                   </div>
-                  
-                  {/* End Time */}
                   <div style={{ marginBottom: '12px' }}>
                     <label style={{ display: 'block', color: '#1d4ed8', fontSize: '12px', marginBottom: '4px' }}>End</label>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <select
-                        value={addTravelEndHour}
-                        onChange={(e) => setAddTravelEndHour(e.target.value)}
-                        style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                      >
-                        {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (
-                          <option key={h} value={h}>{h}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={addTravelEndMinute}
-                        onChange={(e) => setAddTravelEndMinute(e.target.value)}
-                        style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                      >
-                        {['00', '15', '30', '45'].map(m => (
-                          <option key={m} value={m}>{m}</option>
-                        ))}
-                      </select>
-                      <select
-                        value={addTravelEndAmPm}
-                        onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')}
-                        style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}
-                      >
-                        <option value="AM">AM</option>
-                        <option value="PM">PM</option>
-                      </select>
+                      <select value={addTravelEndHour} onChange={(e) => setAddTravelEndHour(e.target.value)} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}>{[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map(h => (<option key={h} value={h}>{h}</option>))}</select>
+                      <select value={addTravelEndMinute} onChange={(e) => setAddTravelEndMinute(e.target.value)} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}>{['00', '15', '30', '45'].map(m => (<option key={m} value={m}>{m}</option>))}</select>
+                      <select value={addTravelEndAmPm} onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '14px' }}><option value="AM">AM</option><option value="PM">PM</option></select>
                     </div>
                   </div>
-                  
-                  {/* Buttons */}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button
-                      onClick={() => handleAddTravelToShift(shift.id, shift.clockIn.toDate())}
-                      disabled={addingTravelToShift}
-                      style={{ 
-                        flex: 1, 
-                        padding: '10px', 
-                        borderRadius: '8px', 
-                        background: '#2563eb', 
-                        color: 'white', 
-                        border: 'none', 
-                        cursor: 'pointer',
-                        fontWeight: '600',
-                        fontSize: '14px',
-                        opacity: addingTravelToShift ? 0.7 : 1
-                      }}
-                    >
-                      {addingTravelToShift ? 'Adding...' : 'Add Travel'}
-                    </button>
-                    <button
-                      onClick={() => setEditingShiftId(null)}
-                      style={{ 
-                        padding: '10px 16px', 
-                        borderRadius: '8px', 
-                        background: 'white', 
-                        color: '#64748b', 
-                        border: '1px solid #e2e8f0', 
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        fontSize: '14px'
-                      }}
-                    >
-                      Cancel
-                    </button>
+                    <button onClick={() => handleAddTravelToShift(shift.id, shift.clockIn.toDate())} disabled={addingTravelToShift} style={{ flex: 1, padding: '10px', borderRadius: '8px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '14px', opacity: addingTravelToShift ? 0.7 : 1 }}>{addingTravelToShift ? 'Adding...' : 'Add Travel'}</button>
+                    <button onClick={() => setEditingShiftId(null)} style={{ padding: '10px 16px', borderRadius: '8px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: '500', fontSize: '14px' }}>Cancel</button>
                   </div>
                 </div>
               )}
@@ -2102,52 +1792,33 @@ export default function App() {
           );
         })
       )}
-      
-      <div style={{ marginTop: '16px' }}>
-        <BreakRulesInfo isOpen={showBreakRules} onToggle={() => setShowBreakRules(!showBreakRules)} theme={theme} />
-      </div>
+      <div style={{ marginTop: '16px' }}><BreakRulesInfo isOpen={showBreakRules} onToggle={() => setShowBreakRules(!showBreakRules)} theme={theme} /></div>
     </div>
   );
 
   // Main layout
   return (
     <div style={{ minHeight: '100vh', background: theme.bg, paddingBottom: '80px' }}>
-      {/* Header */}
       <div style={{ background: theme.nav, padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.navBorder}` }}>
         <h1 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>TimeTrack NZ</h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button 
-            onClick={() => setDark(!dark)}
-            style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '18px', padding: '4px' }}
-          >
-            {dark ? '☀️' : '🌙'}
-          </button>
-          <button
-            onClick={() => signOut(auth)}
-            style={{ color: theme.textMuted, fontSize: '14px', background: 'none', border: 'none', cursor: 'pointer' }}
-          >
-            Sign Out
-          </button>
+          <button onClick={() => setDark(!dark)} style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '18px', padding: '4px' }}>{dark ? '☀️' : '🌙'}</button>
+          <button onClick={() => signOut(auth)} style={{ color: theme.textMuted, fontSize: '14px', background: 'none', border: 'none', cursor: 'pointer' }}>Sign Out</button>
         </div>
       </div>
 
-      {/* Error display */}
       {error && (
         <div style={{ margin: '16px', padding: '12px 16px', background: theme.dangerBg, border: `1px solid ${theme.danger}`, borderRadius: '12px' }}>
           <p style={{ color: theme.danger, fontSize: '14px', margin: 0 }}>{error}</p>
-          <button onClick={() => setError('')} style={{ color: theme.danger, fontSize: '12px', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', marginTop: '4px' }}>
-            Dismiss
-          </button>
+          <button onClick={() => setError('')} style={{ color: theme.danger, fontSize: '12px', background: 'none', border: 'none', textDecoration: 'underline', cursor: 'pointer', marginTop: '4px' }}>Dismiss</button>
         </div>
       )}
 
-      {/* Content */}
       {view === 'clock' && renderClockView()}
       {view === 'joblog' && renderJobLogView()}
       {view === 'chat' && renderChatView()}
       {view === 'history' && renderHistoryView()}
 
-      {/* Bottom Navigation */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: theme.nav, borderTop: `1px solid ${theme.navBorder}`, paddingBottom: 'env(safe-area-inset-bottom)' }}>
         <div style={{ display: 'flex' }}>
           {[
@@ -2156,25 +1827,9 @@ export default function App() {
             ...(settings.chatEnabled ? [{ id: 'chat', label: 'Chat', icon: '💬' }] : []),
             { id: 'history', label: 'History', icon: '📋' },
           ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setView(item.id as any)}
-              style={{ 
-                flex: 1, 
-                padding: '12px 0', 
-                background: 'none', 
-                border: 'none', 
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '4px'
-              }}
-            >
+            <button key={item.id} onClick={() => setView(item.id as any)} style={{ flex: 1, padding: '12px 0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
               <span style={{ fontSize: '20px' }}>{item.icon}</span>
-              <span style={{ fontSize: '11px', color: view === item.id ? theme.primary : theme.textMuted, fontWeight: view === item.id ? '600' : '400' }}>
-                {item.label}
-              </span>
+              <span style={{ fontSize: '11px', color: view === item.id ? theme.primary : theme.textMuted, fontWeight: view === item.id ? '600' : '400' }}>{item.label}</span>
             </button>
           ))}
         </div>

@@ -155,13 +155,13 @@ export default function App() {
   const [success, setSuccess] = useState('');
   const [view, setView] = useState('live');
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [invites, setInvites] = useState<any[]>([]);
   const [activeShifts, setActiveShifts] = useState<Shift[]>([]);
   const [allShifts, setAllShifts] = useState<Shift[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedShift, setSelectedShift] = useState<string | null>(null);
   const [mapModal, setMapModal] = useState<{ locations: Location[], title: string } | null>(null);
   const [newEmpEmail, setNewEmpEmail] = useState('');
-  const [newEmpPassword, setNewEmpPassword] = useState('');
   const [newEmpName, setNewEmpName] = useState('');
   const [reportStart, setReportStart] = useState('');
   const [reportEnd, setReportEnd] = useState('');
@@ -196,6 +196,13 @@ export default function App() {
     if (!user) return;
     return onSnapshot(collection(db, 'employees'), (snap) => {
       setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() } as Employee)));
+    });
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(collection(db, 'invites'), (snap) => {
+      setInvites(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
   }, [user]);
 
@@ -281,13 +288,37 @@ export default function App() {
     }
   };
 
-  const addEmployee = async (e: React.FormEvent) => {
+  const inviteEmployee = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setSuccess('');
+    // Check if invite already exists
+    const existingInvite = invites.find(i => i.email.toLowerCase() === newEmpEmail.toLowerCase() && i.status === 'pending');
+    if (existingInvite) {
+      setError('Invite already sent to this email');
+      return;
+    }
+    // Check if employee already exists
+    const existingEmp = employees.find(emp => emp.email.toLowerCase() === newEmpEmail.toLowerCase());
+    if (existingEmp) {
+      setError('Employee with this email already exists');
+      return;
+    }
     try {
-      const cred = await createUserWithEmailAndPassword(auth, newEmpEmail, newEmpPassword);
-      await setDoc(doc(db, 'employees', cred.user.uid), { email: newEmpEmail, name: newEmpName || newEmpEmail.split('@')[0], role: 'employee', settings: defaultSettings, createdAt: Timestamp.now() });
-      setSuccess(`Created ${newEmpEmail}`); setNewEmpEmail(''); setNewEmpPassword(''); setNewEmpName('');
-      await signInWithEmailAndPassword(auth, email, password);
+      await addDoc(collection(db, 'invites'), {
+        email: newEmpEmail.toLowerCase(),
+        name: newEmpName || newEmpEmail.split('@')[0],
+        status: 'pending',
+        createdAt: Timestamp.now(),
+        createdBy: user?.uid
+      });
+      setSuccess(`Invite sent to ${newEmpEmail}`);
+      setNewEmpEmail(''); setNewEmpName('');
+    } catch (err: any) { setError(err.message); }
+  };
+
+  const cancelInvite = async (inviteId: string) => {
+    try {
+      await updateDoc(doc(db, 'invites', inviteId), { status: 'cancelled' });
+      setSuccess('Invite cancelled');
     } catch (err: any) { setError(err.message); }
   };
 
@@ -686,14 +717,33 @@ export default function App() {
           <div>
             <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Employees</h1>
             <div style={styles.card}>
-              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Add Employee</h3>
-              <form onSubmit={addEmployee} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Invite Employee</h3>
+              <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Send an invite - they'll set their own password in the mobile app.</p>
+              <form onSubmit={inviteEmployee} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                 <input placeholder="Name" value={newEmpName} onChange={e => setNewEmpName(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '120px' }} />
                 <input type="email" placeholder="Email" required value={newEmpEmail} onChange={e => setNewEmpEmail(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '180px' }} />
-                <input type="password" placeholder="Password" required value={newEmpPassword} onChange={e => setNewEmpPassword(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '120px' }} />
-                <button type="submit" style={styles.btn}>Add</button>
+                <button type="submit" style={styles.btn}>Send Invite</button>
               </form>
             </div>
+            
+            {/* Pending Invites */}
+            {invites.filter(i => i.status === 'pending').length > 0 && (
+              <div style={styles.card}>
+                <h3 style={{ color: theme.warning, marginBottom: '16px', fontSize: '16px' }}>⏳ Pending Invites</h3>
+                {invites.filter(i => i.status === 'pending').map(inv => (
+                  <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: theme.cardAlt, borderRadius: '8px', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
+                    <div>
+                      <p style={{ color: theme.text, fontWeight: '600' }}>{inv.name || inv.email}</p>
+                      <p style={{ color: theme.textMuted, fontSize: '13px' }}>{inv.email}</p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <button onClick={() => cancelInvite(inv.id)} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '12px' }}>Cancel</button>
+                    </div>
+                  </div>
+                ))}
+                <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '12px' }}>Employees join via the mobile app using their invited email.</p>
+              </div>
+            )}
             {employees.map(emp => (
               <div key={emp.id} style={styles.card}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
