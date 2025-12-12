@@ -149,6 +149,8 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [signupName, setSignupName] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [view, setView] = useState('live');
@@ -253,7 +255,31 @@ export default function App() {
     });
   }, [user]);
 
-  const handleLogin = async (e: React.FormEvent) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch (err: any) { setError(err.message); } };
+  const handleLogin = async (e: React.FormEvent) => { e.preventDefault(); setError(''); try { await signInWithEmailAndPassword(auth, email, password); } catch (err: any) { setError(err.message); } };
+
+  const handleSignUp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    if (password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      // Add to employees collection as manager
+      await setDoc(doc(db, 'employees', cred.user.uid), {
+        email: email,
+        name: signupName || email.split('@')[0],
+        role: 'manager',
+        settings: defaultSettings,
+        createdAt: Timestamp.now()
+      });
+      // User is automatically signed in after createUserWithEmailAndPassword
+      setSuccess('Account created!');
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
 
   const addEmployee = async (e: React.FormEvent) => {
     e.preventDefault(); setError(''); setSuccess('');
@@ -355,12 +381,68 @@ export default function App() {
       <div style={{ ...styles.card, width: '100%', maxWidth: '400px' }}>
         <h1 style={{ color: theme.text, textAlign: 'center', marginBottom: '8px' }}>TimeTrack NZ</h1>
         <p style={{ color: theme.textMuted, textAlign: 'center', marginBottom: '24px' }}>Manager Dashboard</p>
-        <form onSubmit={handleLogin}>
-          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />
-          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />
+        
+        {/* Auth Mode Toggle */}
+        <div style={{ display: 'flex', marginBottom: '24px', background: theme.cardAlt, borderRadius: '8px', padding: '4px' }}>
+          <button 
+            onClick={() => { setAuthMode('signin'); setError(''); }} 
+            style={{ 
+              flex: 1, 
+              padding: '10px', 
+              borderRadius: '6px', 
+              border: 'none', 
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '14px',
+              background: authMode === 'signin' ? theme.primary : 'transparent',
+              color: authMode === 'signin' ? 'white' : theme.textMuted
+            }}
+          >
+            Sign In
+          </button>
+          <button 
+            onClick={() => { setAuthMode('signup'); setError(''); }} 
+            style={{ 
+              flex: 1, 
+              padding: '10px', 
+              borderRadius: '6px', 
+              border: 'none', 
+              cursor: 'pointer',
+              fontWeight: '600',
+              fontSize: '14px',
+              background: authMode === 'signup' ? theme.primary : 'transparent',
+              color: authMode === 'signup' ? 'white' : theme.textMuted
+            }}
+          >
+            Sign Up
+          </button>
+        </div>
+
+        <form onSubmit={authMode === 'signin' ? handleLogin : handleSignUp}>
+          {authMode === 'signup' && (
+            <input 
+              type="text" 
+              placeholder="Your Name (optional)" 
+              value={signupName} 
+              onChange={e => setSignupName(e.target.value)} 
+              style={{ ...styles.input, marginBottom: '12px' }} 
+            />
+          )}
+          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} required />
+          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} required />
           {error && <p style={{ color: theme.danger, marginBottom: '12px', fontSize: '14px' }}>{error}</p>}
-          <button type="submit" style={{ ...styles.btn, width: '100%' }}>Sign In</button>
+          {success && <p style={{ color: theme.success, marginBottom: '12px', fontSize: '14px' }}>{success}</p>}
+          <button type="submit" style={{ ...styles.btn, width: '100%' }}>
+            {authMode === 'signin' ? 'Sign In' : 'Create Account'}
+          </button>
         </form>
+        
+        {authMode === 'signup' && (
+          <p style={{ color: theme.textMuted, fontSize: '13px', textAlign: 'center', marginTop: '16px' }}>
+            By signing up, you'll create a manager account and can add employees.
+          </p>
+        )}
+        
         <div style={{ textAlign: 'center', marginTop: '16px' }}>
           <button onClick={() => setDark(!dark)} style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer' }}>{dark ? '☀️ Light Mode' : '🌙 Dark Mode'}</button>
         </div>
@@ -614,8 +696,15 @@ export default function App() {
             </div>
             {employees.map(emp => (
               <div key={emp.id} style={styles.card}>
-                <p style={{ color: theme.text, fontWeight: '600', marginBottom: '4px' }}>{emp.name || emp.email}</p>
-                <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px', wordBreak: 'break-all' }}>{emp.email}</p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
+                  <div>
+                    <p style={{ color: theme.text, fontWeight: '600', marginBottom: '4px' }}>{emp.name || emp.email}</p>
+                    <p style={{ color: theme.textMuted, fontSize: '14px', wordBreak: 'break-all' }}>{emp.email}</p>
+                  </div>
+                  {emp.role === 'manager' && (
+                    <span style={{ background: theme.primary, color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600' }}>Manager</span>
+                  )}
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
                     <span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Tracking</span>
