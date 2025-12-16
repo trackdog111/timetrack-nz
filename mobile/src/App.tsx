@@ -6,6 +6,7 @@ import {
   signOut, 
   onAuthStateChanged,
   createUserWithEmailAndPassword,
+  sendPasswordResetEmail,
   User 
 } from 'firebase/auth';
 import {
@@ -304,6 +305,12 @@ export default function App() {
   const [newMessage, setNewMessage] = useState('');
   const [chatTab, setChatTab] = useState<'team' | 'employer'>('team');
   
+  // Forgot password state
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [sendingReset, setSendingReset] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  
   // Manual time entry state
   const [showAddShift, setShowAddShift] = useState(false);
   const [manualDate, setManualDate] = useState(() => {
@@ -560,6 +567,28 @@ export default function App() {
     } catch (err: any) {
       setError(err.message || 'Login failed');
     }
+  };
+
+  // Forgot password handler
+  const handleForgotPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSendingReset(true);
+    
+    try {
+      await sendPasswordResetEmail(auth, forgotEmail);
+      setResetSent(true);
+    } catch (err: any) {
+      if (err.code === 'auth/user-not-found') {
+        setError('No account found with this email');
+      } else if (err.code === 'auth/invalid-email') {
+        setError('Please enter a valid email address');
+      } else {
+        setError(err.message || 'Failed to send reset email');
+      }
+    }
+    
+    setSendingReset(false);
   };
 
   // Check for invite
@@ -1143,140 +1172,209 @@ export default function App() {
           </div>
           
           <div style={styles.card}>
-            {/* Auth Mode Toggle */}
-            <div style={{ display: 'flex', marginBottom: '24px', background: theme.cardAlt, borderRadius: '10px', padding: '4px' }}>
-              <button 
-                onClick={() => { setAuthMode('signin'); setError(''); setInviteStep('email'); setFoundInvite(null); }} 
-                style={{ 
-                  flex: 1, 
-                  padding: '10px', 
-                  borderRadius: '8px', 
-                  border: 'none', 
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  background: authMode === 'signin' ? theme.primary : 'transparent',
-                  color: authMode === 'signin' ? 'white' : theme.textMuted
-                }}
-              >
-                Sign In
-              </button>
-              <button 
-                onClick={() => { setAuthMode('invite'); setError(''); }} 
-                style={{ 
-                  flex: 1, 
-                  padding: '10px', 
-                  borderRadius: '8px', 
-                  border: 'none', 
-                  cursor: 'pointer',
-                  fontWeight: '600',
-                  fontSize: '14px',
-                  background: authMode === 'invite' ? theme.primary : 'transparent',
-                  color: authMode === 'invite' ? 'white' : theme.textMuted
-                }}
-              >
-                Accept Invite
-              </button>
-            </div>
-
-            {authMode === 'signin' ? (
-              <form onSubmit={handleLogin}>
-                <div style={{ marginBottom: '16px' }}>
-                  <input
-                    type="email"
-                    placeholder="Email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    style={styles.input}
-                  />
+            {/* Forgot Password Modal */}
+            {showForgotPassword ? (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px' }}>
+                  <button 
+                    onClick={() => { setShowForgotPassword(false); setResetSent(false); setForgotEmail(''); setError(''); }}
+                    style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '20px', marginRight: '12px' }}
+                  >
+                    ←
+                  </button>
+                  <h2 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>Reset Password</h2>
                 </div>
-                <div style={{ marginBottom: '16px' }}>
-                  <input
-                    type="password"
-                    placeholder="Password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    style={styles.input}
-                  />
-                </div>
-                {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
-                <button type="submit" style={{ ...styles.btn, width: '100%' }}>Sign In</button>
-              </form>
-            ) : inviteStep === 'email' ? (
-              <form onSubmit={handleCheckInvite}>
-                <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px' }}>
-                  Enter the email your employer used to invite you:
-                </p>
-                <div style={{ marginBottom: '16px' }}>
-                  <input
-                    type="email"
-                    placeholder="Your email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    style={styles.input}
-                    required
-                  />
-                </div>
-                {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
-                <button 
-                  type="submit" 
-                  disabled={checkingInvite}
-                  style={{ ...styles.btn, width: '100%', opacity: checkingInvite ? 0.7 : 1 }}
-                >
-                  {checkingInvite ? 'Checking...' : 'Check Invite'}
-                </button>
-              </form>
+                
+                {resetSent ? (
+                  <div>
+                    <div style={{ background: theme.successBg, padding: '16px', borderRadius: '12px', marginBottom: '16px' }}>
+                      <p style={{ color: theme.successText, fontSize: '14px', margin: 0, lineHeight: '1.5' }}>
+                        ✓ Password reset email sent to <strong>{forgotEmail}</strong>
+                      </p>
+                    </div>
+                    <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px', lineHeight: '1.5' }}>
+                      Check your inbox (and spam folder) for a link to reset your password.
+                    </p>
+                    <button 
+                      onClick={() => { setShowForgotPassword(false); setResetSent(false); setForgotEmail(''); }}
+                      style={{ ...styles.btn, width: '100%' }}
+                    >
+                      Back to Sign In
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={handleForgotPassword}>
+                    <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px', lineHeight: '1.5' }}>
+                      Enter your email address and we'll send you a link to reset your password.
+                    </p>
+                    <div style={{ marginBottom: '16px' }}>
+                      <input
+                        type="email"
+                        placeholder="Your email"
+                        value={forgotEmail}
+                        onChange={(e) => setForgotEmail(e.target.value)}
+                        style={styles.input}
+                        required
+                      />
+                    </div>
+                    {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
+                    <button 
+                      type="submit" 
+                      disabled={sendingReset}
+                      style={{ ...styles.btn, width: '100%', opacity: sendingReset ? 0.7 : 1 }}
+                    >
+                      {sendingReset ? 'Sending...' : 'Send Reset Link'}
+                    </button>
+                  </form>
+                )}
+              </div>
             ) : (
-              <form onSubmit={handleAcceptInvite}>
-                <div style={{ background: theme.successBg, padding: '12px', borderRadius: '10px', marginBottom: '16px' }}>
-                  <p style={{ color: theme.successText, fontSize: '14px', margin: 0 }}>
-                    ✓ Invite found for <strong>{foundInvite?.name || email}</strong>
-                  </p>
+              <>
+                {/* Auth Mode Toggle */}
+                <div style={{ display: 'flex', marginBottom: '24px', background: theme.cardAlt, borderRadius: '10px', padding: '4px' }}>
+                  <button 
+                    onClick={() => { setAuthMode('signin'); setError(''); setInviteStep('email'); setFoundInvite(null); }} 
+                    style={{ 
+                      flex: 1, 
+                      padding: '10px', 
+                      borderRadius: '8px', 
+                      border: 'none', 
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      fontSize: '14px',
+                      background: authMode === 'signin' ? theme.primary : 'transparent',
+                      color: authMode === 'signin' ? 'white' : theme.textMuted
+                    }}
+                  >
+                    Sign In
+                  </button>
+                  <button 
+                    onClick={() => { setAuthMode('invite'); setError(''); }} 
+                    style={{ 
+                      flex: 1, 
+                      padding: '10px', 
+                      borderRadius: '8px', 
+                      border: 'none', 
+                      cursor: 'pointer',
+                      fontWeight: '600',
+                      fontSize: '14px',
+                      background: authMode === 'invite' ? theme.primary : 'transparent',
+                      color: authMode === 'invite' ? 'white' : theme.textMuted
+                    }}
+                  >
+                    Accept Invite
+                  </button>
                 </div>
-                <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px' }}>
-                  Create a password for your account:
-                </p>
-                <div style={{ marginBottom: '16px' }}>
-                  <input
-                    type="password"
-                    placeholder="Create password (min 6 characters)"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    style={styles.input}
-                    required
-                    minLength={6}
-                  />
-                </div>
-                <div style={{ marginBottom: '16px' }}>
-                  <input
-                    type="password"
-                    placeholder="Confirm password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    style={styles.input}
-                    required
-                  />
-                </div>
-                {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
-                <button 
-                  type="submit" 
-                  disabled={creatingAccount}
-                  style={{ ...styles.btn, width: '100%', background: theme.success, opacity: creatingAccount ? 0.7 : 1 }}
-                >
-                  {creatingAccount ? 'Creating Account...' : 'Create Account'}
-                </button>
-                <button 
-                  type="button"
-                  onClick={() => { setInviteStep('email'); setFoundInvite(null); setPassword(''); setConfirmPassword(''); setError(''); }}
-                  style={{ width: '100%', marginTop: '12px', padding: '10px', background: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '14px' }}
-                >
-                  ← Back
-                </button>
-              </form>
+
+                {authMode === 'signin' ? (
+                  <form onSubmit={handleLogin}>
+                    <div style={{ marginBottom: '16px' }}>
+                      <input
+                        type="email"
+                        placeholder="Email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '8px' }}>
+                      <input
+                        type="password"
+                        placeholder="Password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        style={styles.input}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '16px', textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        onClick={() => { setShowForgotPassword(true); setForgotEmail(email); setError(''); }}
+                        style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', padding: 0 }}
+                      >
+                        Forgot Password?
+                      </button>
+                    </div>
+                    {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
+                    <button type="submit" style={{ ...styles.btn, width: '100%' }}>Sign In</button>
+                  </form>
+                ) : inviteStep === 'email' ? (
+                  <form onSubmit={handleCheckInvite}>
+                    <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px' }}>
+                      Enter the email your employer used to invite you:
+                    </p>
+                    <div style={{ marginBottom: '16px' }}>
+                      <input
+                        type="email"
+                        placeholder="Your email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        style={styles.input}
+                        required
+                      />
+                    </div>
+                    {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
+                    <button 
+                      type="submit" 
+                      disabled={checkingInvite}
+                      style={{ ...styles.btn, width: '100%', opacity: checkingInvite ? 0.7 : 1 }}
+                    >
+                      {checkingInvite ? 'Checking...' : 'Check Invite'}
+                    </button>
+                  </form>
+                ) : (
+                  <form onSubmit={handleAcceptInvite}>
+                    <div style={{ background: theme.successBg, padding: '12px', borderRadius: '10px', marginBottom: '16px' }}>
+                      <p style={{ color: theme.successText, fontSize: '14px', margin: 0 }}>
+                        ✓ Invite found for <strong>{foundInvite?.name || email}</strong>
+                      </p>
+                    </div>
+                    <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '16px' }}>
+                      Create a password for your account:
+                    </p>
+                    <div style={{ marginBottom: '16px' }}>
+                      <input
+                        type="password"
+                        placeholder="Create password (min 6 characters)"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        style={styles.input}
+                        required
+                        minLength={6}
+                      />
+                    </div>
+                    <div style={{ marginBottom: '16px' }}>
+                      <input
+                        type="password"
+                        placeholder="Confirm password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        style={styles.input}
+                        required
+                      />
+                    </div>
+                    {error && <p style={{ color: theme.danger, fontSize: '14px', marginBottom: '16px' }}>{error}</p>}
+                    <button 
+                      type="submit" 
+                      disabled={creatingAccount}
+                      style={{ ...styles.btn, width: '100%', background: theme.success, opacity: creatingAccount ? 0.7 : 1 }}
+                    >
+                      {creatingAccount ? 'Creating Account...' : 'Create Account'}
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => { setInviteStep('email'); setFoundInvite(null); setPassword(''); setConfirmPassword(''); setError(''); }}
+                      style={{ width: '100%', marginTop: '12px', padding: '10px', background: 'transparent', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '14px' }}
+                    >
+                      ← Back
+                    </button>
+                  </form>
+                )}
+              </>
             )}
           </div>
           
-          {authMode === 'invite' && inviteStep === 'email' && (
+          {authMode === 'invite' && inviteStep === 'email' && !showForgotPassword && (
             <p style={{ color: theme.textMuted, fontSize: '13px', textAlign: 'center', marginTop: '16px' }}>
               Don't have an invite? Ask your employer to add you from the dashboard.
             </p>
