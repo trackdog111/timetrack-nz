@@ -1,0 +1,494 @@
+// TimeTrack NZ - Shift Management Hook
+
+import { useState, useEffect, useRef } from 'react';
+import { User } from 'firebase/auth';
+import {
+  collection,
+  addDoc,
+  updateDoc,
+  doc,
+  getDoc,
+  query,
+  where,
+  onSnapshot,
+  Timestamp,
+  arrayUnion
+} from 'firebase/firestore';
+import { db } from '../firebase';
+import { Shift, Location, Material } from '../types';
+import { EmployeeSettings } from '../types';
+
+export function useShift(user: User | null, settings: EmployeeSettings) {
+  const [currentShift, setCurrentShift] = useState<Shift | null>(null);
+  const [shiftHistory, setShiftHistory] = useState<Shift[]>([]);
+  const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
+  const [onBreak, setOnBreak] = useState(false);
+  const [currentBreakStart, setCurrentBreakStart] = useState<Date | null>(null);
+  const [traveling, setTraveling] = useState(false);
+  const [currentTravelStart, setCurrentTravelStart] = useState<Date | null>(null);
+  const [jobNotes, setJobNotes] = useState('');
+  const [materials, setMaterials] = useState<Material[]>([]);
+  const [error, setError] = useState('');
+
+  const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Get current GPS location
+  const getCurrentLocation = (): Promise<Location | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const loc: Location = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: Date.now()
+          };
+          setCurrentLocation(loc);
+          resolve(loc);
+        },
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+  };
+
+  // Initial location fetch
+  useEffect(() => { getCurrentLocation(); }, []);
+
+  // GPS tracking interval
+  useEffect(() => {
+    if (!user || !currentShift || !settings.gpsTracking) {
+      if (gpsIntervalRef.current) {
+        clearInterval(gpsIntervalRef.current);
+        gpsIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const trackLocation = async () => {
+      const location = await getCurrentLocation();
+      if (location && currentShift) {
+        try {
+          await updateDoc(doc(db, 'shifts', currentShift.id), {
+            locationHistory: arrayUnion(location)
+          });
+        } catch (err) {
+          console.error('Error updating location:', err);
+        }
+      }
+    };
+
+    trackLocation();
+    gpsIntervalRef.current = setInterval(trackLocation, settings.gpsInterval * 60 * 1000);
+
+    return () => {
+      if (gpsIntervalRef.current) {
+        clearInterval(gpsIntervalRef.current);
+        gpsIntervalRef.current = null;
+      }
+    };
+  }, [user, currentShift?.id, settings.gpsTracking, settings.gpsInterval]);
+
+  // Subscribe to active shift
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'shifts'), where('userId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const activeShift = snapshot.docs.find(d => d.data().status === 'active');
+      if (activeShift) {
+        const shift = { id: activeShift.id, ...activeShift.data() } as Shift;
+        setCurrentShift(shift);
+        setJobNotes(shift.jobLog?.notes || '');
+        setMaterials(shift.jobLog?.materials || []);
+        
+        const activeBreak = shift.breaks?.find(b => !b.endTime && !b.manualEntry);
+        setOnBreak(!!activeBreak);
+        setCurrentBreakStart(activeBreak ? activeBreak.startTime.toDate() : null);
+        
+        const activeTravel = shift.travelSegments?.find(t => !t.endTime);
+        setTraveling(!!activeTravel);
+        setCurrentTravelStart(activeTravel ? activeTravel.startTime.toDate() : null);
+      } else {
+        setCurrentShift(null);
+        setOnBreak(false);
+        setCurrentBreakStart(null);
+        setTraveling(false);
+        setCurrentTravelStart(null);
+        setJobNotes('');
+        setMaterials([]);
+      }
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Subscribe to shift history
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'shifts'), where('userId', '==', user.uid));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const shifts = snapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }) as Shift)
+        .filter(s => s.status === 'completed')
+        .sort((a, b) => (b.clockIn?.toDate?.()?.getTime() || 0) - (a.clockIn?.toDate?.()?.getTime() || 0))
+        .slice(0, 10);
+      setShiftHistory(shifts);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // Clock in
+  const clockIn = async () => {
+    if (!user) return;
+    try {
+      const location = await getCurrentLocation();
+      await addDoc(collection(db, 'shifts'), {
+        userId: user.uid,
+        userEmail: user.email,
+        clockIn: Timestamp.now(),
+        clockInLocation: location,
+        locationHistory: location ? [location] : [],
+        breaks: [],
+        travelSegments: [],
+        jobLog: { notes: '', materials: [] },
+        status: 'active'
+      });
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // Clock out
+  const clockOut = async (requireNotes: boolean) => {
+    if (!currentShift) return;
+    if (requireNotes && !jobNotes.trim()) {
+      setError('Please add job notes before clocking out');
+      return false;
+    }
+
+    try {
+      const location = await getCurrentLocation();
+      let updatedBreaks = [...(currentShift.breaks || [])];
+      let updatedTravel = [...(currentShift.travelSegments || [])];
+
+      // End any active break
+      const activeBreakIndex = updatedBreaks.findIndex(b => !b.endTime && !b.manualEntry);
+      if (activeBreakIndex !== -1) {
+        const durationMinutes = Math.round(
+          (new Date().getTime() - updatedBreaks[activeBreakIndex].startTime.toDate().getTime()) / 60000
+        );
+        updatedBreaks[activeBreakIndex] = {
+          ...updatedBreaks[activeBreakIndex],
+          endTime: Timestamp.now(),
+          durationMinutes
+        };
+      }
+
+      // End any active travel
+      const activeTravelIndex = updatedTravel.findIndex(t => !t.endTime);
+      if (activeTravelIndex !== -1) {
+        const durationMinutes = Math.round(
+          (new Date().getTime() - updatedTravel[activeTravelIndex].startTime.toDate().getTime()) / 60000
+        );
+        updatedTravel[activeTravelIndex] = {
+          ...updatedTravel[activeTravelIndex],
+          endTime: Timestamp.now(),
+          endLocation: location || undefined,
+          durationMinutes
+        };
+      }
+
+      await updateDoc(doc(db, 'shifts', currentShift.id), {
+        clockOut: Timestamp.now(),
+        clockOutLocation: location,
+        breaks: updatedBreaks,
+        travelSegments: updatedTravel,
+        'jobLog.notes': jobNotes,
+        'jobLog.materials': materials,
+        status: 'completed'
+      });
+
+      setOnBreak(false);
+      setCurrentBreakStart(null);
+      setTraveling(false);
+      setCurrentTravelStart(null);
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
+    }
+  };
+
+  // Start break
+  const startBreak = async () => {
+    if (!currentShift) return;
+    try {
+      await updateDoc(doc(db, 'shifts', currentShift.id), {
+        breaks: [...(currentShift.breaks || []), { startTime: Timestamp.now(), manualEntry: false }]
+      });
+      setOnBreak(true);
+      setCurrentBreakStart(new Date());
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // End break
+  const endBreak = async () => {
+    if (!currentShift || !currentBreakStart) return;
+    try {
+      const durationMinutes = Math.round((new Date().getTime() - currentBreakStart.getTime()) / 60000);
+      const updatedBreaks = currentShift.breaks.map((b, i) =>
+        i === currentShift.breaks.length - 1 && !b.endTime && !b.manualEntry
+          ? { ...b, endTime: Timestamp.now(), durationMinutes }
+          : b
+      );
+      await updateDoc(doc(db, 'shifts', currentShift.id), { breaks: updatedBreaks });
+      setOnBreak(false);
+      setCurrentBreakStart(null);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // Add preset break
+  const addPresetBreak = async (minutes: number) => {
+    if (!currentShift) return;
+    try {
+      const now = Timestamp.now();
+      await updateDoc(doc(db, 'shifts', currentShift.id), {
+        breaks: [...(currentShift.breaks || []), {
+          startTime: now,
+          endTime: now,
+          durationMinutes: minutes,
+          manualEntry: true
+        }]
+      });
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
+    }
+  };
+
+  // Delete break
+  const deleteBreak = async (breakIndex: number) => {
+    if (!currentShift) return;
+    try {
+      const updatedBreaks = currentShift.breaks.filter((_, i) => i !== breakIndex);
+      await updateDoc(doc(db, 'shifts', currentShift.id), { breaks: updatedBreaks });
+      return true;
+    } catch (err: any) {
+      setError(err.message);
+      return false;
+    }
+  };
+
+  // Start travel
+  const startTravel = async () => {
+    if (!currentShift) return;
+    try {
+      const location = await getCurrentLocation();
+      await updateDoc(doc(db, 'shifts', currentShift.id), {
+        travelSegments: [...(currentShift.travelSegments || []), {
+          startTime: Timestamp.now(),
+          startLocation: location || undefined
+        }]
+      });
+      setTraveling(true);
+      setCurrentTravelStart(new Date());
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // End travel
+  const endTravel = async () => {
+    if (!currentShift || !currentTravelStart) return;
+    try {
+      const location = await getCurrentLocation();
+      const durationMinutes = Math.round((new Date().getTime() - currentTravelStart.getTime()) / 60000);
+      const updatedTravel = (currentShift.travelSegments || []).map((t, i) =>
+        i === (currentShift.travelSegments || []).length - 1 && !t.endTime
+          ? { ...t, endTime: Timestamp.now(), endLocation: location || undefined, durationMinutes }
+          : t
+      );
+      await updateDoc(doc(db, 'shifts', currentShift.id), { travelSegments: updatedTravel });
+      setTraveling(false);
+      setCurrentTravelStart(null);
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // Save job notes
+  const saveNotes = async () => {
+    if (!currentShift) return;
+    try {
+      await updateDoc(doc(db, 'shifts', currentShift.id), {
+        'jobLog.notes': jobNotes
+      });
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // Save materials
+  const saveMaterials = async (newMaterials: Material[]) => {
+    if (!currentShift) return;
+    setMaterials(newMaterials);
+    try {
+      await updateDoc(doc(db, 'shifts', currentShift.id), {
+        'jobLog.materials': newMaterials
+      });
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  // Add travel to historical shift
+  const addTravelToShift = async (
+    shiftId: string,
+    shiftDate: Date,
+    startHour: string,
+    startMinute: string,
+    startAmPm: 'AM' | 'PM',
+    endHour: string,
+    endMinute: string,
+    endAmPm: 'AM' | 'PM'
+  ) => {
+    try {
+      let sHour = parseInt(startHour);
+      if (startAmPm === 'PM' && sHour !== 12) sHour += 12;
+      if (startAmPm === 'AM' && sHour === 12) sHour = 0;
+
+      let eHour = parseInt(endHour);
+      if (endAmPm === 'PM' && eHour !== 12) eHour += 12;
+      if (endAmPm === 'AM' && eHour === 12) eHour = 0;
+
+      const travelStart = new Date(shiftDate);
+      travelStart.setHours(sHour, parseInt(startMinute), 0, 0);
+
+      const travelEnd = new Date(shiftDate);
+      travelEnd.setHours(eHour, parseInt(endMinute), 0, 0);
+
+      if (travelEnd <= travelStart) travelEnd.setDate(travelEnd.getDate() + 1);
+
+      const durationMinutes = Math.round((travelEnd.getTime() - travelStart.getTime()) / 60000);
+      if (durationMinutes <= 0 || durationMinutes > 480) {
+        setError('Invalid travel duration');
+        return false;
+      }
+
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      if (shiftSnap.exists()) {
+        await updateDoc(shiftRef, {
+          travelSegments: [...(shiftSnap.data().travelSegments || []), {
+            startTime: Timestamp.fromDate(travelStart),
+            endTime: Timestamp.fromDate(travelEnd),
+            durationMinutes
+          }]
+        });
+      }
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to add travel');
+      return false;
+    }
+  };
+
+  // Add manual shift
+  const addManualShift = async (
+    date: string,
+    startHour: string,
+    startMinute: string,
+    startAmPm: 'AM' | 'PM',
+    endHour: string,
+    endMinute: string,
+    endAmPm: 'AM' | 'PM',
+    breaks: number[],
+    travel: number[],
+    notes: string
+  ) => {
+    if (!user) return false;
+
+    try {
+      let sHour = parseInt(startHour);
+      if (startAmPm === 'PM' && sHour !== 12) sHour += 12;
+      if (startAmPm === 'AM' && sHour === 12) sHour = 0;
+
+      let eHour = parseInt(endHour);
+      if (endAmPm === 'PM' && eHour !== 12) eHour += 12;
+      if (endAmPm === 'AM' && eHour === 12) eHour = 0;
+
+      const clockIn = new Date(date);
+      clockIn.setHours(sHour, parseInt(startMinute), 0, 0);
+
+      const clockOut = new Date(date);
+      clockOut.setHours(eHour, parseInt(endMinute), 0, 0);
+
+      if (clockOut <= clockIn) clockOut.setDate(clockOut.getDate() + 1);
+
+      const shiftBreaks = breaks.map(() => {
+        const now = Timestamp.fromDate(clockIn);
+        return { startTime: now, endTime: now, durationMinutes: 0, manualEntry: true };
+      });
+      breaks.forEach((mins, i) => { shiftBreaks[i].durationMinutes = mins; });
+
+      const travelSegments = travel.map((mins) => {
+        const now = Timestamp.fromDate(clockIn);
+        return { startTime: now, endTime: now, durationMinutes: mins };
+      });
+
+      await addDoc(collection(db, 'shifts'), {
+        userId: user.uid,
+        userEmail: user.email,
+        clockIn: Timestamp.fromDate(clockIn),
+        clockOut: Timestamp.fromDate(clockOut),
+        locationHistory: [],
+        breaks: shiftBreaks,
+        travelSegments,
+        jobLog: { notes, materials: [] },
+        status: 'completed',
+        manualEntry: true
+      });
+
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to add shift');
+      return false;
+    }
+  };
+
+  return {
+    currentShift,
+    shiftHistory,
+    currentLocation,
+    onBreak,
+    currentBreakStart,
+    traveling,
+    currentTravelStart,
+    jobNotes,
+    setJobNotes,
+    materials,
+    setMaterials,
+    saveMaterials,
+    error,
+    setError,
+    clockIn,
+    clockOut,
+    startBreak,
+    endBreak,
+    addPresetBreak,
+    deleteBreak,
+    startTravel,
+    endTravel,
+    saveNotes,
+    addTravelToShift,
+    addManualShift,
+    getCurrentLocation
+  };
+}
