@@ -48,7 +48,8 @@ export function useSettings(user: User | null) {
             field1Label: companyData.field1Label || defaultLabels.field1Label,
             field2Label: companyData.field2Label || defaultLabels.field2Label,
             field3Label: companyData.field3Label || defaultLabels.field3Label,
-            managerDisplayName: companyData.managerDisplayName || defaultLabels.managerDisplayName
+            managerDisplayName: companyData.managerDisplayName || defaultLabels.managerDisplayName,
+            paidRestMinutes: companyData.paidRestMinutes || defaultLabels.paidRestMinutes
           });
         }
       } catch (err) {
@@ -67,7 +68,8 @@ export function useSettings(user: User | null) {
           field1Label: data.field1Label || defaultLabels.field1Label,
           field2Label: data.field2Label || defaultLabels.field2Label,
           field3Label: data.field3Label || defaultLabels.field3Label,
-          managerDisplayName: data.managerDisplayName || defaultLabels.managerDisplayName
+          managerDisplayName: data.managerDisplayName || defaultLabels.managerDisplayName,
+          paidRestMinutes: data.paidRestMinutes || defaultLabels.paidRestMinutes
         });
       }
     });

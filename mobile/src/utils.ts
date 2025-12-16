@@ -12,24 +12,37 @@ export const defaultSettings: EmployeeSettings = {
 
 /**
  * Calculate break entitlements based on NZ Employment Relations Act 2000
+ * @param hoursWorked - Hours worked in the shift
+ * @param paidRestMinutes - Minutes per paid rest break (default 10, can be increased by employer)
  */
-export function getBreakEntitlements(hoursWorked: number) {
-  let paid = 0, unpaid = 0;
-  if (hoursWorked >= 14) { paid = 5; unpaid = 2; }
-  else if (hoursWorked >= 12) { paid = 4; unpaid = 2; }
-  else if (hoursWorked >= 10) { paid = 3; unpaid = 1; }
-  else if (hoursWorked >= 6) { paid = 2; unpaid = 1; }
-  else if (hoursWorked >= 4) { paid = 1; unpaid = 1; }
-  else if (hoursWorked >= 2) { paid = 1; unpaid = 0; }
-  return { paidMinutes: paid * 10, unpaidMinutes: unpaid * 30 };
+export function getBreakEntitlements(hoursWorked: number, paidRestMinutes: number = 10) {
+  let paidBreaks = 0, unpaidBreaks = 0;
+  
+  if (hoursWorked >= 14) { paidBreaks = 5; unpaidBreaks = 2; }
+  else if (hoursWorked >= 12) { paidBreaks = 4; unpaidBreaks = 2; }
+  else if (hoursWorked >= 10) { paidBreaks = 3; unpaidBreaks = 1; }
+  else if (hoursWorked >= 6) { paidBreaks = 2; unpaidBreaks = 1; }
+  else if (hoursWorked >= 4) { paidBreaks = 1; unpaidBreaks = 1; }
+  else if (hoursWorked >= 2) { paidBreaks = 1; unpaidBreaks = 0; }
+  
+  return { 
+    paidBreaks,
+    unpaidBreaks,
+    paidMinutes: paidBreaks * paidRestMinutes, 
+    unpaidMinutes: unpaidBreaks * 30,
+    paidRestMinutes // Include the per-break duration for display
+  };
 }
 
 /**
  * Calculate paid vs unpaid breaks based on entitlements
+ * @param breaks - Array of breaks taken
+ * @param hours - Hours worked in the shift
+ * @param paidRestMinutes - Minutes per paid rest break (default 10)
  */
-export function calcBreaks(breaks: Break[], hours: number) {
+export function calcBreaks(breaks: Break[], hours: number, paidRestMinutes: number = 10) {
   const total = breaks.reduce((s, b) => s + (b.durationMinutes || 0), 0);
-  const ent = getBreakEntitlements(hours);
+  const ent = getBreakEntitlements(hours, paidRestMinutes);
   const paid = Math.min(total, ent.paidMinutes);
   return { paid, unpaid: Math.max(0, total - paid), total };
 }

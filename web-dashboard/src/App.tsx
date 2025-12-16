@@ -27,12 +27,12 @@ interface Shift { id: string; userId: string; userEmail: string; clockIn: Timest
 interface EmployeeSettings { gpsTracking: boolean; gpsInterval: number; requireNotes: boolean; chatEnabled: boolean; }
 interface Employee { id: string; email: string; name: string; role: string; settings: EmployeeSettings; createdAt: Timestamp; }
 interface ChatMessage { id: string; type: string; senderId: string; senderEmail: string; text: string; timestamp: Timestamp; participants?: string[]; }
-interface CompanySettings { field1Label: string; field2Label: string; field3Label: string; managerDisplayName: string; }
+interface CompanySettings { field1Label: string; field2Label: string; field3Label: string; managerDisplayName: string; paidRestMinutes: number; }
 
 const defaultSettings: EmployeeSettings = { gpsTracking: true, gpsInterval: 10, requireNotes: false, chatEnabled: true };
-const defaultCompanySettings: CompanySettings = { field1Label: 'Notes', field2Label: 'Materials', field3Label: 'Other', managerDisplayName: 'Manager' };
+const defaultCompanySettings: CompanySettings = { field1Label: 'Notes', field2Label: 'Materials', field3Label: 'Other', managerDisplayName: 'Manager', paidRestMinutes: 10 };
 
-function getBreakEntitlements(hoursWorked: number) {
+function getBreakEntitlements(hoursWorked: number, paidRestMinutes: number = 10) {
   let paid = 0, unpaid = 0;
   if (hoursWorked >= 14) { paid = 5; unpaid = 2; }
   else if (hoursWorked >= 12) { paid = 4; unpaid = 2; }
@@ -40,12 +40,12 @@ function getBreakEntitlements(hoursWorked: number) {
   else if (hoursWorked >= 6) { paid = 2; unpaid = 1; }
   else if (hoursWorked >= 4) { paid = 1; unpaid = 1; }
   else if (hoursWorked >= 2) { paid = 1; unpaid = 0; }
-  return { paidMinutes: paid * 10, unpaidMinutes: unpaid * 30 };
+  return { paidMinutes: paid * paidRestMinutes, unpaidMinutes: unpaid * 30 };
 }
 
-function calcBreaks(breaks: Break[], hours: number) {
+function calcBreaks(breaks: Break[], hours: number, paidRestMinutes: number = 10) {
   const total = breaks.reduce((s, b) => s + (b.durationMinutes || 0), 0);
-  const ent = getBreakEntitlements(hours);
+  const ent = getBreakEntitlements(hours, paidRestMinutes);
   const paid = Math.min(total, ent.paidMinutes);
   return { paid, unpaid: Math.max(0, total - paid), total };
 }
@@ -710,7 +710,7 @@ export default function App() {
     const rows = [['Date','Employee','In','Out','Worked','Paid','Unpaid','Travel', companySettings.field1Label, companySettings.field2Label, companySettings.field3Label]];
     reportData.forEach(sh => { 
       const h = getHours(sh.clockIn, sh.clockOut); 
-      const b = calcBreaks(sh.breaks || [], h); 
+      const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); 
       const travel = calcTravel(sh.travelSegments || []); 
       const empName = getEmployeeName(sh.userId, sh.userEmail);
       const f1 = getJobLogField(sh.jobLog, 'field1');
@@ -740,7 +740,7 @@ export default function App() {
     let total = 0, tPaid = 0, tUnpaid = 0, tTravel = 0;
     const rows = reportData.map(sh => { 
       const h = getHours(sh.clockIn, sh.clockOut); 
-      const b = calcBreaks(sh.breaks || [], h); 
+      const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); 
       const travel = calcTravel(sh.travelSegments || []); 
       const worked = (h*60) - b.unpaid; 
       const empName = getEmployeeName(sh.userId, sh.userEmail);
@@ -1022,7 +1022,7 @@ export default function App() {
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(350px, 1fr))', gap: '16px' }}>
                 {activeShifts.map(sh => {
                   const h = getHours(sh.clockIn, sh.clockOut);
-                  const b = calcBreaks(sh.breaks || [], h);
+                  const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
                   const activeBreak = sh.breaks?.find(br => !br.endTime && !br.manualEntry);
                   const travel = calcTravel(sh.travelSegments || []);
                   const isTraveling = hasActiveTravel(sh);
@@ -1131,7 +1131,7 @@ export default function App() {
                 <h3 style={{ color: theme.text, marginBottom: '16px' }}>Recent Shifts</h3>
                 {myShiftHistory.slice(0, 5).map(sh => {
                   const h = getHours(sh.clockIn, sh.clockOut);
-                  const b = calcBreaks(sh.breaks || [], h);
+                  const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
                   return (
                     <div key={sh.id} style={{ ...styles.card, padding: '16px' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -1297,7 +1297,7 @@ export default function App() {
           <div>
             <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Timesheets</h1>
             {allShifts.slice(0, 50).map(sh => {
-              const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h); const travel = calcTravel(sh.travelSegments || []); const worked = (h * 60) - b.unpaid; const isOpen = selectedShift === sh.id;
+              const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const travel = calcTravel(sh.travelSegments || []); const worked = (h * 60) - b.unpaid; const isOpen = selectedShift === sh.id;
               const empName = getEmployeeName(sh.userId, sh.userEmail);
               const f1 = getJobLogField(sh.jobLog, 'field1');
               const f2 = getJobLogField(sh.jobLog, 'field2');
@@ -1395,7 +1395,7 @@ export default function App() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                     <thead><tr style={{ borderBottom: `2px solid ${theme.cardBorder}` }}><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>Date</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>Employee</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>In</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>Out</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>Worked</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.success, fontSize: '13px' }}>Paid</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.warning, fontSize: '13px' }}>Unpaid</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.travel, fontSize: '13px' }}>🚗 Travel</th></tr></thead>
-                    <tbody>{reportData.map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks||[], h); const travel = calcTravel(sh.travelSegments || []); const empName = getEmployeeName(sh.userId, sh.userEmail); return <tr key={sh.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}><td style={{ padding: '12px 8px', color: theme.text, fontSize: '13px' }}>{fmtDateShort(sh.clockIn)}</td><td style={{ padding: '12px 8px', color: theme.text, fontSize: '13px' }}>{empName}</td><td style={{ padding: '12px 8px', color: theme.textMuted, fontSize: '13px' }}>{fmtTime(sh.clockIn)}</td><td style={{ padding: '12px 8px', color: theme.textMuted, fontSize: '13px' }}>{sh.clockOut ? fmtTime(sh.clockOut) : '-'}</td><td style={{ padding: '12px 8px', color: theme.text, fontWeight: '600', fontSize: '13px' }}>{fmtDur((h*60)-b.unpaid)}</td><td style={{ padding: '12px 8px', color: theme.success, fontSize: '13px' }}>{b.paid}m</td><td style={{ padding: '12px 8px', color: theme.warning, fontSize: '13px' }}>{b.unpaid}m</td><td style={{ padding: '12px 8px', color: theme.travel, fontSize: '13px' }}>{travel}m</td></tr>; })}</tbody>
+                    <tbody>{reportData.map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks||[], h, companySettings.paidRestMinutes); const travel = calcTravel(sh.travelSegments || []); const empName = getEmployeeName(sh.userId, sh.userEmail); return <tr key={sh.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}><td style={{ padding: '12px 8px', color: theme.text, fontSize: '13px' }}>{fmtDateShort(sh.clockIn)}</td><td style={{ padding: '12px 8px', color: theme.text, fontSize: '13px' }}>{empName}</td><td style={{ padding: '12px 8px', color: theme.textMuted, fontSize: '13px' }}>{fmtTime(sh.clockIn)}</td><td style={{ padding: '12px 8px', color: theme.textMuted, fontSize: '13px' }}>{sh.clockOut ? fmtTime(sh.clockOut) : '-'}</td><td style={{ padding: '12px 8px', color: theme.text, fontWeight: '600', fontSize: '13px' }}>{fmtDur((h*60)-b.unpaid)}</td><td style={{ padding: '12px 8px', color: theme.success, fontSize: '13px' }}>{b.paid}m</td><td style={{ padding: '12px 8px', color: theme.warning, fontSize: '13px' }}>{b.unpaid}m</td><td style={{ padding: '12px 8px', color: theme.travel, fontSize: '13px' }}>{travel}m</td></tr>; })}</tbody>
                   </table>
                 </div>
               </div>
@@ -1442,7 +1442,7 @@ export default function App() {
             {/* Company Settings - NEW */}
             <div style={styles.card}>
               <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>🏢 Company Settings</h3>
-              <p style={{ color: theme.textMuted, marginBottom: '16px', fontSize: '14px' }}>Customize field labels that employees see in the mobile app.</p>
+              <p style={{ color: theme.textMuted, marginBottom: '16px', fontSize: '14px' }}>Customize field labels and break policies for your employees.</p>
               
               <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
                 <div>
@@ -1481,6 +1481,25 @@ export default function App() {
                     style={styles.input} 
                   />
                 </div>
+              </div>
+
+              {/* Paid Rest Break Duration */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Paid Rest Break Duration</label>
+                <select 
+                  value={editingCompanySettings.paidRestMinutes || 10} 
+                  onChange={e => setEditingCompanySettings({ ...editingCompanySettings, paidRestMinutes: parseInt(e.target.value) })} 
+                  style={{ ...styles.input, cursor: 'pointer', maxWidth: isMobile ? '100%' : '300px' }}
+                >
+                  <option value={10}>10 minutes (NZ law minimum)</option>
+                  <option value={15}>15 minutes</option>
+                  <option value={20}>20 minutes</option>
+                  <option value={25}>25 minutes</option>
+                  <option value={30}>30 minutes</option>
+                </select>
+                <p style={{ color: theme.textMuted, fontSize: '11px', marginTop: '4px' }}>
+                  Sets duration per paid rest break. NZ law requires minimum 10 minutes. Employees see "Enhanced" if above 10.
+                </p>
               </div>
               
               <button 

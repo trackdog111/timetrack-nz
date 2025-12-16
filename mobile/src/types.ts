@@ -49,13 +49,15 @@ export interface CompanyLabels {
   field2Label: string;
   field3Label: string;
   managerDisplayName: string;
+  paidRestMinutes: number; // Minutes per paid rest break (default: 10, can be 10/15/20/25/30)
 }
 
 export const defaultLabels: CompanyLabels = {
   field1Label: 'Notes',
   field2Label: 'Materials',
   field3Label: 'Other',
-  managerDisplayName: 'Manager'
+  managerDisplayName: 'Manager',
+  paidRestMinutes: 10
 };
 
 export interface EmployeeSettings {

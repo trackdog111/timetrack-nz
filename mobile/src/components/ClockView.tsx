@@ -15,6 +15,7 @@ interface ClockViewProps {
   traveling: boolean;
   currentTravelStart: Date | null;
   settings: EmployeeSettings;
+  paidRestMinutes: number; // From company settings
   onClockIn: () => void;
   onClockOut: () => void;
   onStartBreak: () => void;
@@ -47,6 +48,7 @@ export function ClockView({
   traveling,
   currentTravelStart,
   settings,
+  paidRestMinutes,
   onClockIn,
   onClockOut,
   onStartBreak,
@@ -82,10 +84,10 @@ export function ClockView({
   const [manualNotes, setManualNotes] = useState('');
   const [addingShift, setAddingShift] = useState(false);
 
-  // Calculations
+  // Calculations - now using paidRestMinutes from company settings
   const shiftHours = currentShift ? getHours(currentShift.clockIn) : 0;
-  const breakAllocation = currentShift ? calcBreaks(currentShift.breaks || [], shiftHours) : null;
-  const entitlements = getBreakEntitlements(shiftHours);
+  const breakAllocation = currentShift ? calcBreaks(currentShift.breaks || [], shiftHours, paidRestMinutes) : null;
+  const entitlements = getBreakEntitlements(shiftHours, paidRestMinutes);
   const totalBreakMinutes = currentShift?.breaks?.reduce((s, b) => s + (b.durationMinutes || 0), 0) || 0;
 
   const handleAddPresetBreak = async (minutes: number) => {
@@ -526,8 +528,13 @@ export function ClockView({
               Your entitlement for {fmtDur(shiftHours * 60)} shift:
             </p>
             <p style={{ color: theme.text, fontSize: '14px' }}>
-              {entitlements.paidMinutes / 10}× paid rest ({entitlements.paidMinutes}m) + {entitlements.unpaidMinutes / 30}× unpaid meal ({entitlements.unpaidMinutes}m)
+              {entitlements.paidBreaks}× paid rest ({entitlements.paidMinutes}m) + {entitlements.unpaidBreaks}× unpaid meal ({entitlements.unpaidMinutes}m)
             </p>
+            {paidRestMinutes > 10 && (
+              <p style={{ color: theme.success, fontSize: '12px', marginTop: '4px' }}>
+                ✨ Enhanced: {paidRestMinutes}min paid rest breaks
+              </p>
+            )}
           </div>
 
           {(currentShift.breaks || []).length === 0 && (currentShift.travelSegments || []).length === 0 && (
@@ -599,8 +606,13 @@ export function ClockView({
         </div>
       )}
 
-      {/* Break Rules Info */}
-      <BreakRulesInfo isOpen={showBreakRules} onToggle={() => setShowBreakRules(!showBreakRules)} theme={theme} />
+      {/* Break Rules Info - now with paidRestMinutes */}
+      <BreakRulesInfo 
+        isOpen={showBreakRules} 
+        onToggle={() => setShowBreakRules(!showBreakRules)} 
+        theme={theme} 
+        paidRestMinutes={paidRestMinutes}
+      />
 
       {/* Current Location */}
       {currentLocation && (

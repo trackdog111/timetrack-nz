@@ -246,6 +246,7 @@ export default function App() {
           traveling={traveling}
           currentTravelStart={currentTravelStart}
           settings={settings}
+          paidRestMinutes={labels.paidRestMinutes}
           onClockIn={clockIn}
           onClockOut={handleClockOut}
           onStartBreak={startBreak}
