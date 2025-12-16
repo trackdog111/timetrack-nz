@@ -4,8 +4,8 @@ import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
 import { doc, getDoc, setDoc, onSnapshot, Timestamp } from 'firebase/firestore';
 import { db } from '../firebase';
-import { EmployeeSettings, CompanyLabels } from '../types';
-import { defaultSettings, defaultLabels } from '../utils';
+import { EmployeeSettings, CompanyLabels, defaultLabels } from '../types';
+import { defaultSettings } from '../utils';
 
 export function useSettings(user: User | null) {
   const [settings, setSettings] = useState<EmployeeSettings>(defaultSettings);
@@ -45,8 +45,9 @@ export function useSettings(user: User | null) {
         if (companySnap.exists()) {
           const companyData = companySnap.data();
           setLabels({
-            notesLabel: companyData.notesLabel || defaultLabels.notesLabel,
-            materialsLabel: companyData.materialsLabel || defaultLabels.materialsLabel,
+            field1Label: companyData.field1Label || defaultLabels.field1Label,
+            field2Label: companyData.field2Label || defaultLabels.field2Label,
+            field3Label: companyData.field3Label || defaultLabels.field3Label,
             managerDisplayName: companyData.managerDisplayName || defaultLabels.managerDisplayName
           });
         }
@@ -63,8 +64,9 @@ export function useSettings(user: User | null) {
       if (snap.exists()) {
         const data = snap.data();
         setLabels({
-          notesLabel: data.notesLabel || defaultLabels.notesLabel,
-          materialsLabel: data.materialsLabel || defaultLabels.materialsLabel,
+          field1Label: data.field1Label || defaultLabels.field1Label,
+          field2Label: data.field2Label || defaultLabels.field2Label,
+          field3Label: data.field3Label || defaultLabels.field3Label,
           managerDisplayName: data.managerDisplayName || defaultLabels.managerDisplayName
         });
       }

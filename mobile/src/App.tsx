@@ -34,10 +34,12 @@ export default function App() {
     currentBreakStart,
     traveling,
     currentTravelStart,
-    jobNotes,
-    setJobNotes,
-    materials,
-    saveMaterials,
+    field1,
+    field2,
+    field3,
+    setField1,
+    setField2,
+    setField3,
     error: shiftError,
     setError: setShiftError,
     clockIn,
@@ -48,7 +50,7 @@ export default function App() {
     deleteBreak,
     startTravel,
     endTravel,
-    saveNotes,
+    saveFields,
     addTravelToShift,
     addManualShift
   } = useShift(user, settings);
@@ -105,7 +107,7 @@ export default function App() {
   // Handle clock out with notes requirement check
   const handleClockOut = async () => {
     const success = await clockOut(settings.requireNotes);
-    if (!success && settings.requireNotes && !jobNotes.trim()) {
+    if (!success && settings.requireNotes && !field1.trim()) {
       setView('joblog');
     }
   };
@@ -261,11 +263,13 @@ export default function App() {
         <JobLogView
           theme={theme}
           currentShift={currentShift}
-          jobNotes={jobNotes}
-          setJobNotes={setJobNotes}
-          materials={materials}
-          onSaveNotes={saveNotes}
-          onSaveMaterials={saveMaterials}
+          field1={field1}
+          field2={field2}
+          field3={field3}
+          setField1={setField1}
+          setField2={setField2}
+          setField3={setField3}
+          onSave={saveFields}
           onShareToChat={sendJobUpdate}
           labels={labels}
           requireNotes={settings.requireNotes}

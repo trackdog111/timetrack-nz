@@ -129,17 +129,22 @@ export function HistoryView({
                 )}
               </div>
 
-              {/* Job notes */}
-              {shift.jobLog?.notes && (
+              {/* Job log fields */}
+              {shift.jobLog?.field1 && (
                 <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '8px' }}>
-                  📝 {shift.jobLog.notes}
+                  📝 {shift.jobLog.field1}
                 </p>
               )}
 
-              {/* Materials */}
-              {shift.jobLog?.materials && shift.jobLog.materials.length > 0 && (
+              {shift.jobLog?.field2 && (
                 <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '4px' }}>
-                  🔧 {shift.jobLog.materials.map(m => m.quantity ? `${m.quantity}× ${m.name}` : m.name).join(', ')}
+                  🔧 {shift.jobLog.field2}
+                </p>
+              )}
+
+              {shift.jobLog?.field3 && (
+                <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '4px' }}>
+                  📋 {shift.jobLog.field3}
                 </p>
               )}
 

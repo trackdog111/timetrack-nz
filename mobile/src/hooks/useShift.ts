@@ -15,7 +15,7 @@ import {
   arrayUnion
 } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Shift, Location, Material } from '../types';
+import { Shift, Location } from '../types';
 import { EmployeeSettings } from '../types';
 
 export function useShift(user: User | null, settings: EmployeeSettings) {
@@ -26,8 +26,9 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
   const [currentBreakStart, setCurrentBreakStart] = useState<Date | null>(null);
   const [traveling, setTraveling] = useState(false);
   const [currentTravelStart, setCurrentTravelStart] = useState<Date | null>(null);
-  const [jobNotes, setJobNotes] = useState('');
-  const [materials, setMaterials] = useState<Material[]>([]);
+  const [field1, setField1] = useState('');
+  const [field2, setField2] = useState('');
+  const [field3, setField3] = useState('');
   const [error, setError] = useState('');
 
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -100,8 +101,9 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
       if (activeShift) {
         const shift = { id: activeShift.id, ...activeShift.data() } as Shift;
         setCurrentShift(shift);
-        setJobNotes(shift.jobLog?.notes || '');
-        setMaterials(shift.jobLog?.materials || []);
+        setField1(shift.jobLog?.field1 || '');
+        setField2(shift.jobLog?.field2 || '');
+        setField3(shift.jobLog?.field3 || '');
         
         const activeBreak = shift.breaks?.find(b => !b.endTime && !b.manualEntry);
         setOnBreak(!!activeBreak);
@@ -116,8 +118,9 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
         setCurrentBreakStart(null);
         setTraveling(false);
         setCurrentTravelStart(null);
-        setJobNotes('');
-        setMaterials([]);
+        setField1('');
+        setField2('');
+        setField3('');
       }
     });
     return () => unsubscribe();
@@ -152,7 +155,7 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
         locationHistory: location ? [location] : [],
         breaks: [],
         travelSegments: [],
-        jobLog: { notes: '', materials: [] },
+        jobLog: { field1: '', field2: '', field3: '' },
         status: 'active'
       });
     } catch (err: any) {
@@ -163,8 +166,8 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
   // Clock out
   const clockOut = async (requireNotes: boolean) => {
     if (!currentShift) return;
-    if (requireNotes && !jobNotes.trim()) {
-      setError('Please add job notes before clocking out');
+    if (requireNotes && !field1.trim()) {
+      setError('Please add notes before clocking out');
       return false;
     }
 
@@ -205,8 +208,9 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
         clockOutLocation: location,
         breaks: updatedBreaks,
         travelSegments: updatedTravel,
-        'jobLog.notes': jobNotes,
-        'jobLog.materials': materials,
+        'jobLog.field1': field1,
+        'jobLog.field2': field2,
+        'jobLog.field3': field3,
         status: 'completed'
       });
 
@@ -323,25 +327,14 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     }
   };
 
-  // Save job notes
-  const saveNotes = async () => {
+  // Save job log fields
+  const saveFields = async () => {
     if (!currentShift) return;
     try {
       await updateDoc(doc(db, 'shifts', currentShift.id), {
-        'jobLog.notes': jobNotes
-      });
-    } catch (err: any) {
-      setError(err.message);
-    }
-  };
-
-  // Save materials
-  const saveMaterials = async (newMaterials: Material[]) => {
-    if (!currentShift) return;
-    setMaterials(newMaterials);
-    try {
-      await updateDoc(doc(db, 'shifts', currentShift.id), {
-        'jobLog.materials': newMaterials
+        'jobLog.field1': field1,
+        'jobLog.field2': field2,
+        'jobLog.field3': field3
       });
     } catch (err: any) {
       setError(err.message);
@@ -451,7 +444,7 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
         locationHistory: [],
         breaks: shiftBreaks,
         travelSegments,
-        jobLog: { notes, materials: [] },
+        jobLog: { field1: notes, field2: '', field3: '' },
         status: 'completed',
         manualEntry: true
       });
@@ -471,11 +464,12 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     currentBreakStart,
     traveling,
     currentTravelStart,
-    jobNotes,
-    setJobNotes,
-    materials,
-    setMaterials,
-    saveMaterials,
+    field1,
+    field2,
+    field3,
+    setField1,
+    setField2,
+    setField3,
     error,
     setError,
     clockIn,
@@ -486,7 +480,7 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     deleteBreak,
     startTravel,
     endTravel,
-    saveNotes,
+    saveFields,
     addTravelToShift,
     addManualShift,
     getCurrentLocation

@@ -10,13 +10,6 @@ export const defaultSettings: EmployeeSettings = {
   chatEnabled: true
 };
 
-// Default company labels
-export const defaultLabels = {
-  notesLabel: "Today's Notes",
-  materialsLabel: "Materials Used",
-  managerDisplayName: "Manager"
-};
-
 /**
  * Calculate break entitlements based on NZ Employment Relations Act 2000
  */

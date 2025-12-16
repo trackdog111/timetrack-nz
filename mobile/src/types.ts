@@ -22,14 +22,10 @@ export interface TravelSegment {
   endLocation?: Location;
 }
 
-export interface Material {
-  name: string;
-  quantity?: string;
-}
-
 export interface JobLog {
-  notes: string;
-  materials?: Material[];
+  field1: string;  // Default label: "Notes"
+  field2: string;  // Default label: "Materials"
+  field3: string;  // Default label: "Other"
 }
 
 export interface Shift {
@@ -49,10 +45,18 @@ export interface Shift {
 }
 
 export interface CompanyLabels {
-  notesLabel: string;
-  materialsLabel: string;
+  field1Label: string;
+  field2Label: string;
+  field3Label: string;
   managerDisplayName: string;
 }
+
+export const defaultLabels: CompanyLabels = {
+  field1Label: 'Notes',
+  field2Label: 'Materials',
+  field3Label: 'Other',
+  managerDisplayName: 'Manager'
+};
 
 export interface EmployeeSettings {
   gpsTracking: boolean;
