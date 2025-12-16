@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser } from 'firebase/auth';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch } from 'firebase/firestore';
@@ -81,42 +81,237 @@ function getHours(start: Timestamp, end?: Timestamp): number {
   return (e.getTime() - start.toDate().getTime()) / 3600000;
 }
 
-// Map Modal Component
-function MapModal({ locations, onClose, title, theme }: { locations: Location[], onClose: () => void, title: string, theme: any }) {
+// Enhanced Map Modal Component with multiple markers and interactivity
+function MapModal({ 
+  locations, 
+  onClose, 
+  title, 
+  theme,
+  clockInLocation,
+  clockOutLocation
+}: { 
+  locations: Location[], 
+  onClose: () => void, 
+  title: string, 
+  theme: any,
+  clockInLocation?: Location,
+  clockOutLocation?: Location
+}) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  
   if (!locations || locations.length === 0) return null;
+  
+  // Calculate bounds
   const lats = locations.map(l => l.latitude);
   const lngs = locations.map(l => l.longitude);
-  const minLat = Math.min(...lats) - 0.002;
-  const maxLat = Math.max(...lats) + 0.002;
-  const minLng = Math.min(...lngs) - 0.002;
-  const maxLng = Math.max(...lngs) + 0.002;
-  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${minLng},${minLat},${maxLng},${maxLat}&layer=mapnik&marker=${locations[locations.length-1].latitude},${locations[locations.length-1].longitude}`;
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
+  const centerLat = (minLat + maxLat) / 2;
+  const centerLng = (minLng + maxLng) / 2;
+  
+  // Calculate zoom level based on bounds
+  const latDiff = maxLat - minLat;
+  const lngDiff = maxLng - minLng;
+  const maxDiff = Math.max(latDiff, lngDiff);
+  let zoom = 15;
+  if (maxDiff > 0.1) zoom = 12;
+  else if (maxDiff > 0.05) zoom = 13;
+  else if (maxDiff > 0.02) zoom = 14;
+  else if (maxDiff > 0.01) zoom = 15;
+  else zoom = 16;
+  
+  // Determine marker type for each location
+  const getMarkerType = (loc: Location, index: number): 'clockIn' | 'clockOut' | 'tracking' => {
+    if (clockInLocation && loc.latitude === clockInLocation.latitude && loc.longitude === clockInLocation.longitude) {
+      return 'clockIn';
+    }
+    if (clockOutLocation && loc.latitude === clockOutLocation.latitude && loc.longitude === clockOutLocation.longitude) {
+      return 'clockOut';
+    }
+    if (index === 0) return 'clockIn';
+    if (index === locations.length - 1 && !clockOutLocation) return 'tracking';
+    return 'tracking';
+  };
+  
+  const markerColors = {
+    clockIn: '#16a34a',    // Green
+    clockOut: '#dc2626',   // Red
+    tracking: '#2563eb'    // Blue
+  };
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={onClose}>
-      <div style={{ background: theme.card, borderRadius: '12px', padding: '20px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background: theme.card, borderRadius: '12px', padding: '20px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
           <h2 style={{ color: theme.text, margin: 0, fontSize: '18px' }}>{title}</h2>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: theme.textMuted }}>×</button>
         </div>
-        <div style={{ height: '300px', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px' }}>
-          <iframe src={mapUrl} style={{ width: '100%', height: '100%', border: 'none' }} title="Location Map" />
+        
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.clockIn }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '12px' }}>Clock In</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.clockOut }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '12px' }}>Clock Out</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.tracking }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '12px' }}>Tracking Point</span>
+          </div>
         </div>
-        <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
+        
+        {/* Map Container with SVG overlay */}
+        <div style={{ height: '350px', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px', position: 'relative' }}>
+          {/* Base map from OpenStreetMap */}
+          <iframe 
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${minLng - 0.003},${minLat - 0.003},${maxLng + 0.003},${maxLat + 0.003}&layer=mapnik`}
+            style={{ width: '100%', height: '100%', border: 'none' }} 
+            title="Location Map"
+            onLoad={() => setMapLoaded(true)}
+          />
+          
+          {/* SVG Overlay for markers - positioned over the map */}
+          {mapLoaded && (
+            <svg 
+              style={{ 
+                position: 'absolute', 
+                top: 0, 
+                left: 0, 
+                width: '100%', 
+                height: '100%', 
+                pointerEvents: 'none' 
+              }}
+              viewBox="0 0 100 100"
+              preserveAspectRatio="none"
+            >
+              {/* Draw path line connecting points */}
+              <polyline
+                points={locations.map((loc, i) => {
+                  const x = ((loc.longitude - (minLng - 0.003)) / ((maxLng + 0.003) - (minLng - 0.003))) * 100;
+                  const y = (1 - (loc.latitude - (minLat - 0.003)) / ((maxLat + 0.003) - (minLat - 0.003))) * 100;
+                  return `${x},${y}`;
+                }).join(' ')}
+                fill="none"
+                stroke="#3b82f6"
+                strokeWidth="0.3"
+                strokeOpacity="0.6"
+                strokeDasharray="1,0.5"
+              />
+              
+              {/* Draw markers */}
+              {locations.map((loc, i) => {
+                const x = ((loc.longitude - (minLng - 0.003)) / ((maxLng + 0.003) - (minLng - 0.003))) * 100;
+                const y = (1 - (loc.latitude - (minLat - 0.003)) / ((maxLat + 0.003) - (minLat - 0.003))) * 100;
+                const type = getMarkerType(loc, i);
+                const isSelected = selectedIndex === i;
+                const size = isSelected ? 2.5 : (type === 'tracking' ? 1.2 : 2);
+                
+                return (
+                  <g key={i}>
+                    <circle
+                      cx={x}
+                      cy={y}
+                      r={size}
+                      fill={markerColors[type]}
+                      stroke="white"
+                      strokeWidth="0.3"
+                      opacity={isSelected ? 1 : 0.8}
+                    />
+                    {/* Number label for non-tracking points or selected */}
+                    {(type !== 'tracking' || isSelected) && (
+                      <text
+                        x={x}
+                        y={y + 0.4}
+                        textAnchor="middle"
+                        fill="white"
+                        fontSize="1.5"
+                        fontWeight="bold"
+                      >
+                        {i + 1}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </svg>
+          )}
+        </div>
+        
+        {/* Location History List */}
+        <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
           <h4 style={{ color: theme.text, marginBottom: '8px' }}>Location History ({locations.length} points)</h4>
-          {locations.map((loc, i) => (
-            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px', background: i % 2 === 0 ? theme.cardAlt : 'transparent', borderRadius: '4px', fontSize: '12px', flexWrap: 'wrap', gap: '4px' }}>
-              <span style={{ color: theme.textMuted }}>{new Date(loc.timestamp).toLocaleString('en-NZ')}</span>
-              <span style={{ color: theme.text }}>{loc.latitude.toFixed(5)}, {loc.longitude.toFixed(5)}</span>
-            </div>
-          ))}
+          <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '12px' }}>Click a row to highlight on map</p>
+          {locations.map((loc, i) => {
+            const type = getMarkerType(loc, i);
+            const isSelected = selectedIndex === i;
+            return (
+              <div 
+                key={i} 
+                onClick={() => setSelectedIndex(isSelected ? null : i)}
+                style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  padding: '10px 12px', 
+                  background: isSelected ? (theme.primary + '20') : (i % 2 === 0 ? theme.cardAlt : 'transparent'), 
+                  borderRadius: '6px', 
+                  fontSize: '13px', 
+                  cursor: 'pointer',
+                  border: isSelected ? `2px solid ${theme.primary}` : '2px solid transparent',
+                  marginBottom: '4px',
+                  transition: 'all 0.2s'
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ 
+                    width: '24px', 
+                    height: '24px', 
+                    borderRadius: '50%', 
+                    background: markerColors[type], 
+                    color: 'white', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center',
+                    fontSize: '11px',
+                    fontWeight: 'bold',
+                    flexShrink: 0
+                  }}>
+                    {i + 1}
+                  </span>
+                  <div>
+                    <span style={{ color: theme.text, fontWeight: type !== 'tracking' ? '600' : '400' }}>
+                      {type === 'clockIn' ? '🟢 Clock In' : type === 'clockOut' ? '🔴 Clock Out' : `Point ${i + 1}`}
+                    </span>
+                    <div style={{ color: theme.textMuted, fontSize: '12px' }}>
+                      {new Date(loc.timestamp).toLocaleString('en-NZ')}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ color: theme.text, fontFamily: 'monospace', fontSize: '12px' }}>
+                    {loc.latitude.toFixed(5)}, {loc.longitude.toFixed(5)}
+                  </span>
+                  {loc.accuracy && (
+                    <div style={{ color: theme.textMuted, fontSize: '11px' }}>±{Math.round(loc.accuracy)}m</div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
     </div>
   );
 }
 
-// Location Map Component
+// Location Map Component (simple preview)
 function LocationMap({ locations, height = '200px' }: { locations: Location[], height?: string }) {
   if (!locations || locations.length === 0) {
     return <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>No location data</div>;
@@ -163,7 +358,7 @@ export default function App() {
   const [allShifts, setAllShifts] = useState<Shift[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedShift, setSelectedShift] = useState<string | null>(null);
-  const [mapModal, setMapModal] = useState<{ locations: Location[], title: string } | null>(null);
+  const [mapModal, setMapModal] = useState<{ locations: Location[], title: string, clockInLocation?: Location, clockOutLocation?: Location } | null>(null);
   const [newEmpEmail, setNewEmpEmail] = useState('');
   const [newEmpName, setNewEmpName] = useState('');
   const [reportStart, setReportStart] = useState('');
@@ -191,6 +386,19 @@ export default function App() {
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
 
   const theme = dark ? darkTheme : lightTheme;
+
+  // Helper function to get employee name by ID or email
+  const getEmployeeName = (userId?: string, userEmail?: string): string => {
+    if (userId) {
+      const emp = employees.find(e => e.id === userId);
+      if (emp?.name) return emp.name;
+    }
+    if (userEmail) {
+      const emp = employees.find(e => e.email === userEmail);
+      if (emp?.name) return emp.name;
+    }
+    return userEmail || 'Unknown';
+  };
 
   // Check screen size
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -441,7 +649,13 @@ export default function App() {
   const exportCSV = () => {
     if (!reportData.length) { setError('No data'); return; }
     const rows = [['Date','Employee','In','Out','Worked','Paid','Unpaid','Travel','Notes']];
-    reportData.forEach(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h); const travel = calcTravel(sh.travelSegments || []); rows.push([fmtDateShort(sh.clockIn), sh.userEmail, fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : 'Active', fmtDur((h*60)-b.unpaid), b.paid+'m', b.unpaid+'m', travel+'m', `"${(sh.jobLog?.notes||'').replace(/"/g,'""')}"`]); });
+    reportData.forEach(sh => { 
+      const h = getHours(sh.clockIn, sh.clockOut); 
+      const b = calcBreaks(sh.breaks || [], h); 
+      const travel = calcTravel(sh.travelSegments || []); 
+      const empName = getEmployeeName(sh.userId, sh.userEmail);
+      rows.push([fmtDateShort(sh.clockIn), empName, fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : 'Active', fmtDur((h*60)-b.unpaid), b.paid+'m', b.unpaid+'m', travel+'m', `"${(sh.jobLog?.notes||'').replace(/"/g,'""')}"`]); 
+    });
     const csv = rows.map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `timetrack-${reportStart}-${reportEnd}.csv`; a.click();
@@ -450,7 +664,18 @@ export default function App() {
   const exportPDF = () => {
     if (!reportData.length) { setError('No data'); return; }
     let total = 0, tPaid = 0, tUnpaid = 0, tTravel = 0;
-    const rows = reportData.map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h); const travel = calcTravel(sh.travelSegments || []); const worked = (h*60) - b.unpaid; total += worked; tPaid += b.paid; tUnpaid += b.unpaid; tTravel += travel; return `<tr><td>${fmtDateShort(sh.clockIn)}</td><td>${sh.userEmail}</td><td>${fmtTime(sh.clockIn)}</td><td>${sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}</td><td>${fmtDur(worked)}</td><td>${b.paid}m</td><td>${b.unpaid}m</td><td>${travel}m</td></tr>${sh.jobLog?.notes ? `<tr><td colspan="8" style="background:#f5f5f5;font-size:12px;">📝 ${sh.jobLog.notes}</td></tr>` : ''}`; }).join('');
+    const rows = reportData.map(sh => { 
+      const h = getHours(sh.clockIn, sh.clockOut); 
+      const b = calcBreaks(sh.breaks || [], h); 
+      const travel = calcTravel(sh.travelSegments || []); 
+      const worked = (h*60) - b.unpaid; 
+      const empName = getEmployeeName(sh.userId, sh.userEmail);
+      total += worked; 
+      tPaid += b.paid; 
+      tUnpaid += b.unpaid; 
+      tTravel += travel; 
+      return `<tr><td>${fmtDateShort(sh.clockIn)}</td><td>${empName}</td><td>${fmtTime(sh.clockIn)}</td><td>${sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}</td><td>${fmtDur(worked)}</td><td>${b.paid}m</td><td>${b.unpaid}m</td><td>${travel}m</td></tr>${sh.jobLog?.notes ? `<tr><td colspan="8" style="background:#f5f5f5;font-size:12px;">📝 ${sh.jobLog.notes}</td></tr>` : ''}`; 
+    }).join('');
     const html = `<!DOCTYPE html><html><head><title>Report</title><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#1e40af;color:white}@media print{body{padding:0}}</style></head><body><h1>TimeTrack NZ Report</h1><p>${reportStart} to ${reportEnd}</p><table><tr><th>Date</th><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Paid</th><th>Unpaid</th><th>Travel</th></tr>${rows}</table><h3>Totals: ${fmtDur(total)} worked, ${tPaid}m paid breaks, ${tUnpaid}m unpaid, ${tTravel}m travel</h3></body></html>`;
     const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); }
   };
@@ -592,7 +817,16 @@ export default function App() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', background: theme.bg }}>
-      {mapModal && <MapModal locations={mapModal.locations} title={mapModal.title} onClose={() => setMapModal(null)} theme={theme} />}
+      {mapModal && (
+        <MapModal 
+          locations={mapModal.locations} 
+          title={mapModal.title} 
+          onClose={() => setMapModal(null)} 
+          theme={theme}
+          clockInLocation={mapModal.clockInLocation}
+          clockOutLocation={mapModal.clockOutLocation}
+        />
+      )}
       
       {/* Remove Employee Confirmation Modal */}
       {removeConfirm && (
@@ -685,12 +919,13 @@ export default function App() {
                 const isTraveling = hasActiveTravel(sh);
                 const isOnBreak = (sh.breaks || []).some(b => !b.endTime && !b.manualEntry);
                 const travelTime = calcTravel(sh.travelSegments || []);
+                const empName = getEmployeeName(sh.userId, sh.userEmail);
                 
                 return (
-                  <div key={sh.id} style={{ ...styles.card, cursor: 'pointer' }} onClick={() => sh.locationHistory?.length > 0 && setMapModal({ locations: sh.locationHistory, title: `${employees.find(e => e.id === sh.userId)?.name || sh.userEmail} - Location` })}>
+                  <div key={sh.id} style={{ ...styles.card, cursor: 'pointer' }} onClick={() => sh.locationHistory?.length > 0 && setMapModal({ locations: sh.locationHistory, title: `${empName} - Location`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
                       <div>
-                        <p style={{ color: theme.text, fontWeight: '600', fontSize: '16px', wordBreak: 'break-all' }}>{employees.find(e => e.id === sh.userId)?.name || sh.userEmail}</p>
+                        <p style={{ color: theme.text, fontWeight: '600', fontSize: '16px', wordBreak: 'break-all' }}>{empName}</p>
                         <p style={{ color: theme.textMuted, fontSize: '14px' }}>In: {fmtTime(sh.clockIn)}</p>
                       </div>
                       <span style={{ 
@@ -715,7 +950,7 @@ export default function App() {
                     {sh.locationHistory?.length > 0 && (
                       <>
                         <LocationMap locations={sh.locationHistory} height="150px" />
-                        <button onClick={(e) => { e.stopPropagation(); setMapModal({ locations: sh.locationHistory, title: `${employees.find(emp => emp.id === sh.userId)?.name || sh.userEmail} - Location` }); }} style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', width: '100%', fontSize: '13px' }}>📍 View Full Map ({sh.locationHistory.length} points)</button>
+                        <button onClick={(e) => { e.stopPropagation(); setMapModal({ locations: sh.locationHistory, title: `${empName} - Location`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation }); }} style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', width: '100%', fontSize: '13px' }}>📍 View Full Map ({sh.locationHistory.length} points)</button>
                       </>
                     )}
                   </div>
@@ -981,10 +1216,11 @@ export default function App() {
             <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Timesheets</h1>
             {allShifts.slice(0, 50).map(sh => {
               const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h); const travel = calcTravel(sh.travelSegments || []); const worked = (h * 60) - b.unpaid; const isOpen = selectedShift === sh.id;
+              const empName = getEmployeeName(sh.userId, sh.userEmail);
               return (
                 <div key={sh.id} style={{ ...styles.card, cursor: 'pointer' }} onClick={() => setSelectedShift(isOpen ? null : sh.id)}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                    <div><p style={{ color: theme.text, fontWeight: '600', wordBreak: 'break-all' }}>{sh.userEmail}</p><p style={{ color: theme.textMuted, fontSize: '14px' }}>{fmtDate(sh.clockIn)} • {fmtTime(sh.clockIn)} - {sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}</p></div>
+                    <div><p style={{ color: theme.text, fontWeight: '600', wordBreak: 'break-all' }}>{empName}</p><p style={{ color: theme.textMuted, fontSize: '14px' }}>{fmtDate(sh.clockIn)} • {fmtTime(sh.clockIn)} - {sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}</p></div>
                     <div style={{ textAlign: 'right' }}><p style={{ color: theme.text, fontWeight: '700' }}>{fmtDur(worked)}</p><p style={{ color: theme.textMuted, fontSize: '12px' }}>worked</p></div>
                   </div>
                   {travel > 0 && <p style={{ color: theme.travel, fontSize: '13px', marginTop: '4px' }}>🚗 {travel}m travel</p>}
@@ -1014,7 +1250,7 @@ export default function App() {
                       {sh.locationHistory?.length > 0 && (
                         <div>
                           <LocationMap locations={sh.locationHistory} />
-                          <button onClick={() => setMapModal({ locations: sh.locationHistory, title: `${sh.userEmail} - ${fmtDateShort(sh.clockIn)}` })} style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '13px' }}>View Full Map ({sh.locationHistory.length} points)</button>
+                          <button onClick={() => setMapModal({ locations: sh.locationHistory, title: `${empName} - ${fmtDateShort(sh.clockIn)}`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '13px' }}>View Full Map ({sh.locationHistory.length} points)</button>
                         </div>
                       )}
                     </div>
@@ -1034,7 +1270,7 @@ export default function App() {
               <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'end' }}>
                 <div style={{ flex: '1', minWidth: '140px' }}><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Start</label><input type="date" value={reportStart} onChange={e => setReportStart(e.target.value)} style={styles.input} /></div>
                 <div style={{ flex: '1', minWidth: '140px' }}><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>End</label><input type="date" value={reportEnd} onChange={e => setReportEnd(e.target.value)} style={styles.input} /></div>
-                <div style={{ flex: '1', minWidth: '180px' }}><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Employee</label><select value={reportEmp} onChange={e => setReportEmp(e.target.value)} style={styles.input}><option value="all">All</option>{employees.map(e => <option key={e.id} value={e.id}>{e.email}</option>)}</select></div>
+                <div style={{ flex: '1', minWidth: '180px' }}><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Employee</label><select value={reportEmp} onChange={e => setReportEmp(e.target.value)} style={styles.input}><option value="all">All</option>{employees.map(e => <option key={e.id} value={e.id}>{e.name || e.email}</option>)}</select></div>
                 <button onClick={genReport} style={styles.btn}>Generate</button>
               </div>
             </div>
@@ -1050,7 +1286,7 @@ export default function App() {
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '700px' }}>
                     <thead><tr style={{ borderBottom: `2px solid ${theme.cardBorder}` }}><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>Date</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>Employee</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>In</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>Out</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.textMuted, fontSize: '13px' }}>Worked</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.success, fontSize: '13px' }}>Paid</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.warning, fontSize: '13px' }}>Unpaid</th><th style={{ padding: '12px 8px', textAlign: 'left', color: theme.travel, fontSize: '13px' }}>🚗 Travel</th></tr></thead>
-                    <tbody>{reportData.map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks||[], h); const travel = calcTravel(sh.travelSegments || []); return <tr key={sh.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}><td style={{ padding: '12px 8px', color: theme.text, fontSize: '13px' }}>{fmtDateShort(sh.clockIn)}</td><td style={{ padding: '12px 8px', color: theme.text, fontSize: '13px' }}>{sh.userEmail}</td><td style={{ padding: '12px 8px', color: theme.textMuted, fontSize: '13px' }}>{fmtTime(sh.clockIn)}</td><td style={{ padding: '12px 8px', color: theme.textMuted, fontSize: '13px' }}>{sh.clockOut ? fmtTime(sh.clockOut) : '-'}</td><td style={{ padding: '12px 8px', color: theme.text, fontWeight: '600', fontSize: '13px' }}>{fmtDur((h*60)-b.unpaid)}</td><td style={{ padding: '12px 8px', color: theme.success, fontSize: '13px' }}>{b.paid}m</td><td style={{ padding: '12px 8px', color: theme.warning, fontSize: '13px' }}>{b.unpaid}m</td><td style={{ padding: '12px 8px', color: theme.travel, fontSize: '13px' }}>{travel}m</td></tr>; })}</tbody>
+                    <tbody>{reportData.map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks||[], h); const travel = calcTravel(sh.travelSegments || []); const empName = getEmployeeName(sh.userId, sh.userEmail); return <tr key={sh.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}><td style={{ padding: '12px 8px', color: theme.text, fontSize: '13px' }}>{fmtDateShort(sh.clockIn)}</td><td style={{ padding: '12px 8px', color: theme.text, fontSize: '13px' }}>{empName}</td><td style={{ padding: '12px 8px', color: theme.textMuted, fontSize: '13px' }}>{fmtTime(sh.clockIn)}</td><td style={{ padding: '12px 8px', color: theme.textMuted, fontSize: '13px' }}>{sh.clockOut ? fmtTime(sh.clockOut) : '-'}</td><td style={{ padding: '12px 8px', color: theme.text, fontWeight: '600', fontSize: '13px' }}>{fmtDur((h*60)-b.unpaid)}</td><td style={{ padding: '12px 8px', color: theme.success, fontSize: '13px' }}>{b.paid}m</td><td style={{ padding: '12px 8px', color: theme.warning, fontSize: '13px' }}>{b.unpaid}m</td><td style={{ padding: '12px 8px', color: theme.travel, fontSize: '13px' }}>{travel}m</td></tr>; })}</tbody>
                   </table>
                 </div>
               </div>
@@ -1069,15 +1305,18 @@ export default function App() {
             <div style={{ flex: 1, background: theme.card, borderRadius: '12px', padding: '16px', overflowY: 'auto', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` }}>
               {messages.filter(m => m.type === chatTab || (chatTab === 'dm' && m.type === 'dm')).length === 0 ? (
                 <p style={{ color: theme.textMuted, textAlign: 'center', marginTop: '40px' }}>No messages yet</p>
-              ) : messages.filter(m => m.type === chatTab || (chatTab === 'dm' && m.type === 'dm')).map(m => (
-                <div key={m.id} style={{ display: 'flex', justifyContent: m.senderId === 'employer' ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
-                  <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: '12px', background: m.senderId === 'employer' ? theme.primary : theme.cardAlt }}>
-                    {m.senderId !== 'employer' && <p style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '4px' }}>{m.senderEmail}</p>}
-                    <p style={{ color: m.senderId === 'employer' ? 'white' : theme.text, fontSize: '14px' }}>{m.text}</p>
-                    <p style={{ color: m.senderId === 'employer' ? 'rgba(255,255,255,0.6)' : theme.textLight, fontSize: '10px', marginTop: '4px' }}>{fmtTime(m.timestamp)}</p>
+              ) : messages.filter(m => m.type === chatTab || (chatTab === 'dm' && m.type === 'dm')).map(m => {
+                const senderName = m.senderId === 'employer' ? 'Employer' : getEmployeeName(m.senderId, m.senderEmail);
+                return (
+                  <div key={m.id} style={{ display: 'flex', justifyContent: m.senderId === 'employer' ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
+                    <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: '12px', background: m.senderId === 'employer' ? theme.primary : theme.cardAlt }}>
+                      {m.senderId !== 'employer' && <p style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '4px' }}>{senderName}</p>}
+                      <p style={{ color: m.senderId === 'employer' ? 'white' : theme.text, fontSize: '14px' }}>{m.text}</p>
+                      <p style={{ color: m.senderId === 'employer' ? 'rgba(255,255,255,0.6)' : theme.textLight, fontSize: '10px', marginTop: '4px' }}>{fmtTime(m.timestamp)}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
               <input placeholder="Message..." value={newMsg} onChange={e => setNewMsg(e.target.value)} onKeyPress={e => e.key === 'Enter' && sendMsg()} style={{ ...styles.input, flex: 1, borderRadius: '24px' }} />
