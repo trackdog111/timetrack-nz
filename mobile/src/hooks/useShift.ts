@@ -6,6 +6,7 @@ import {
   collection,
   addDoc,
   updateDoc,
+  deleteDoc,
   doc,
   getDoc,
   query,
@@ -136,7 +137,7 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
         .map(doc => ({ id: doc.id, ...doc.data() }) as Shift)
         .filter(s => s.status === 'completed')
         .sort((a, b) => (b.clockIn?.toDate?.()?.getTime() || 0) - (a.clockIn?.toDate?.()?.getTime() || 0))
-        .slice(0, 10);
+        .slice(0, 50);
       setShiftHistory(shifts);
     });
     return () => unsubscribe();
@@ -508,6 +509,17 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     }
   };
 
+  // Delete a completed shift
+  const deleteShift = async (shiftId: string): Promise<boolean> => {
+    try {
+      await deleteDoc(doc(db, 'shifts', shiftId));
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete shift');
+      return false;
+    }
+  };
+
   return {
     currentShift,
     shiftHistory,
@@ -537,6 +549,7 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     saveFields,
     addTravelToShift,
     addManualShift,
+    deleteShift,
     getCurrentLocation
   };
 }

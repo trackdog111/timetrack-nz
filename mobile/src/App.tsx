@@ -54,7 +54,8 @@ export default function App() {
     addTravelToShift,
     addBreakToShift,
     deleteBreakFromShift,
-    addManualShift
+    addManualShift,
+    deleteShift
   } = useShift(user, settings);
 
   // Chat hook
@@ -302,6 +303,7 @@ export default function App() {
           onAddTravelToShift={addTravelToShift}
           onAddBreakToShift={addBreakToShift}
           onDeleteBreakFromShift={deleteBreakFromShift}
+          onDeleteShift={deleteShift}
           showToast={showToast}
           paidRestMinutes={labels.paidRestMinutes}
           payWeekEndDay={labels.payWeekEndDay}

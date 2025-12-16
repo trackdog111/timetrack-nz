@@ -21,6 +21,7 @@ interface HistoryViewProps {
   ) => Promise<boolean>;
   onAddBreakToShift: (shiftId: string, minutes: number) => Promise<boolean>;
   onDeleteBreakFromShift: (shiftId: string, breakIndex: number) => Promise<boolean>;
+  onDeleteShift: (shiftId: string) => Promise<boolean>;
   showToast: (message: string) => void;
   paidRestMinutes?: number;
   payWeekEndDay?: number;
@@ -56,6 +57,7 @@ export function HistoryView({
   onAddTravelToShift,
   onAddBreakToShift,
   onDeleteBreakFromShift,
+  onDeleteShift,
   showToast,
   paidRestMinutes = 10,
   payWeekEndDay = 0
@@ -66,6 +68,7 @@ export function HistoryView({
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
   const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<'travel' | 'breaks' | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [addTravelStartHour, setAddTravelStartHour] = useState('9');
   const [addTravelStartMinute, setAddTravelStartMinute] = useState('00');
   const [addTravelStartAmPm, setAddTravelStartAmPm] = useState<'AM' | 'PM'>('AM');
@@ -74,6 +77,7 @@ export function HistoryView({
   const [addTravelEndAmPm, setAddTravelEndAmPm] = useState<'AM' | 'PM'>('AM');
   const [addingTravelToShift, setAddingTravelToShift] = useState(false);
   const [addingBreak, setAddingBreak] = useState(false);
+  const [deletingShift, setDeletingShift] = useState(false);
 
   // Group shifts by week ending date
   const groupedShifts = useMemo(() => {
@@ -157,6 +161,16 @@ export function HistoryView({
     if (success) {
       showToast('Break removed ✓');
     }
+  };
+
+  const handleDeleteShift = async (shiftId: string) => {
+    setDeletingShift(true);
+    const success = await onDeleteShift(shiftId);
+    if (success) {
+      showToast('Shift deleted ✓');
+      setDeleteConfirmId(null);
+    }
+    setDeletingShift(false);
   };
 
   const openEditPanel = (shiftId: string, mode: 'travel' | 'breaks') => {
@@ -379,7 +393,7 @@ export function HistoryView({
                         )}
 
                         {/* Action buttons when not editing */}
-                        {!isEditing && (
+                        {!isEditing && deleteConfirmId !== shift.id && (
                           <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
                             <button
                               onClick={() => openEditPanel(shift.id, 'breaks')}
@@ -413,6 +427,68 @@ export function HistoryView({
                             >
                               + Add Travel
                             </button>
+                            <button
+                              onClick={() => setDeleteConfirmId(shift.id)}
+                              style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                background: 'transparent',
+                                color: '#dc2626',
+                                border: '1px dashed #fca5a5',
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: '500'
+                              }}
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Delete confirmation */}
+                        {deleteConfirmId === shift.id && (
+                          <div style={{ marginTop: '10px', background: '#fee2e2', borderRadius: '8px', padding: '12px' }}>
+                            <p style={{ color: '#991b1b', fontSize: '13px', fontWeight: '600', margin: '0 0 10px 0' }}>
+                              Delete this shift?
+                            </p>
+                            <p style={{ color: '#b91c1c', fontSize: '12px', margin: '0 0 12px 0' }}>
+                              This cannot be undone.
+                            </p>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button
+                                onClick={() => handleDeleteShift(shift.id)}
+                                disabled={deletingShift}
+                                style={{
+                                  flex: 1,
+                                  padding: '10px',
+                                  borderRadius: '6px',
+                                  background: '#dc2626',
+                                  color: 'white',
+                                  border: 'none',
+                                  cursor: deletingShift ? 'not-allowed' : 'pointer',
+                                  fontWeight: '600',
+                                  fontSize: '13px',
+                                  opacity: deletingShift ? 0.7 : 1
+                                }}
+                              >
+                                {deletingShift ? 'Deleting...' : 'Yes, Delete'}
+                              </button>
+                              <button
+                                onClick={() => setDeleteConfirmId(null)}
+                                style={{
+                                  padding: '10px 16px',
+                                  borderRadius: '6px',
+                                  background: 'white',
+                                  color: '#64748b',
+                                  border: '1px solid #e2e8f0',
+                                  cursor: 'pointer',
+                                  fontWeight: '500',
+                                  fontSize: '13px'
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
                           </div>
                         )}
 
