@@ -13,7 +13,7 @@ const firebaseConfig = {
 };
 
 // API URL - UPDATE THIS after deploying timetrack-api to Vercel
-const API_URL = 'https://timetrack-dashboard-v2.vercel.app';
+const API_URL = 'https://timetrack-api.vercel.app';
 const MOBILE_APP_URL = 'https://timetrack-mobile-v2.vercel.app';
 
 const app = initializeApp(firebaseConfig);
