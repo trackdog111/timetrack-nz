@@ -22,13 +22,15 @@ const db = getFirestore(app);
 interface Location { latitude: number; longitude: number; accuracy: number; timestamp: number; }
 interface Break { startTime: Timestamp; endTime?: Timestamp; durationMinutes?: number; manualEntry?: boolean; }
 interface TravelSegment { startTime: Timestamp; endTime?: Timestamp; durationMinutes?: number; startLocation?: Location; endLocation?: Location; }
-interface JobLog { notes: string; }
+interface JobLog { field1?: string; field2?: string; field3?: string; notes?: string; }
 interface Shift { id: string; userId: string; userEmail: string; clockIn: Timestamp; clockOut?: Timestamp; clockInLocation?: Location; clockOutLocation?: Location; locationHistory: Location[]; breaks: Break[]; travelSegments?: TravelSegment[]; jobLog: JobLog; status: 'active' | 'completed'; manualEntry?: boolean; }
 interface EmployeeSettings { gpsTracking: boolean; gpsInterval: number; requireNotes: boolean; chatEnabled: boolean; }
 interface Employee { id: string; email: string; name: string; role: string; settings: EmployeeSettings; createdAt: Timestamp; }
 interface ChatMessage { id: string; type: string; senderId: string; senderEmail: string; text: string; timestamp: Timestamp; participants?: string[]; }
+interface CompanySettings { field1Label: string; field2Label: string; field3Label: string; managerDisplayName: string; }
 
 const defaultSettings: EmployeeSettings = { gpsTracking: true, gpsInterval: 10, requireNotes: false, chatEnabled: true };
+const defaultCompanySettings: CompanySettings = { field1Label: 'Notes', field2Label: 'Materials', field3Label: 'Other', managerDisplayName: 'Manager' };
 
 function getBreakEntitlements(hoursWorked: number) {
   let paid = 0, unpaid = 0;
@@ -79,6 +81,16 @@ function getHours(start: Timestamp, end?: Timestamp): number {
   if (!start?.toDate) return 0;
   const e = end?.toDate ? end.toDate() : new Date();
   return (e.getTime() - start.toDate().getTime()) / 3600000;
+}
+
+// Helper to get job log field value (handles old 'notes' format and new field1/2/3 format)
+function getJobLogField(jobLog: JobLog | undefined, field: 'field1' | 'field2' | 'field3'): string {
+  if (!jobLog) return '';
+  // For field1, also check legacy 'notes' field
+  if (field === 'field1') {
+    return jobLog.field1 || jobLog.notes || '';
+  }
+  return jobLog[field] || '';
 }
 
 // Enhanced Map Modal Component with multiple markers and interactivity
@@ -380,10 +392,15 @@ export default function App() {
   const [myShiftHistory, setMyShiftHistory] = useState<Shift[]>([]);
   const [onBreak, setOnBreak] = useState(false);
   const [breakStart, setBreakStart] = useState<Date | null>(null);
-  const [myNotes, setMyNotes] = useState('');
+  const [myField1, setMyField1] = useState('');
   
   // Email sending state
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
+
+  // Company settings state
+  const [companySettings, setCompanySettings] = useState<CompanySettings>(defaultCompanySettings);
+  const [editingCompanySettings, setEditingCompanySettings] = useState<CompanySettings>(defaultCompanySettings);
+  const [savingCompanySettings, setSavingCompanySettings] = useState(false);
 
   const theme = dark ? darkTheme : lightTheme;
 
@@ -445,6 +462,18 @@ export default function App() {
     });
   }, [user]);
 
+  // Company settings subscription
+  useEffect(() => {
+    if (!user) return;
+    return onSnapshot(doc(db, 'company', 'settings'), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data() as CompanySettings;
+        setCompanySettings({ ...defaultCompanySettings, ...data });
+        setEditingCompanySettings({ ...defaultCompanySettings, ...data });
+      }
+    });
+  }, [user]);
+
   // My active shift (simplified - filter client-side)
   useEffect(() => {
     if (!user) return;
@@ -454,11 +483,11 @@ export default function App() {
       if (activeDoc) {
         const shift = { id: activeDoc.id, ...activeDoc.data() } as Shift;
         setMyShift(shift);
-        setMyNotes(shift.jobLog?.notes || '');
+        setMyField1(getJobLogField(shift.jobLog, 'field1'));
         const activeBreak = shift.breaks?.find(b => !b.endTime && !b.manualEntry);
         if (activeBreak) { setOnBreak(true); setBreakStart(activeBreak.startTime.toDate()); }
         else { setOnBreak(false); setBreakStart(null); }
-      } else { setMyShift(null); setOnBreak(false); setBreakStart(null); setMyNotes(''); }
+      } else { setMyShift(null); setOnBreak(false); setBreakStart(null); setMyField1(''); }
     });
   }, [user]);
 
@@ -637,6 +666,20 @@ export default function App() {
     setSuccess('Updated!'); setTimeout(() => setSuccess(''), 2000);
   };
 
+  // Save company settings
+  const saveCompanySettings = async () => {
+    setSavingCompanySettings(true);
+    try {
+      await setDoc(doc(db, 'company', 'settings'), editingCompanySettings);
+      setSuccess('Company settings saved!');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSavingCompanySettings(false);
+    }
+  };
+
   const genReport = () => {
     if (!reportStart || !reportEnd) { setError('Select dates'); return; }
     const s = new Date(reportStart); s.setHours(0,0,0,0);
@@ -648,13 +691,28 @@ export default function App() {
 
   const exportCSV = () => {
     if (!reportData.length) { setError('No data'); return; }
-    const rows = [['Date','Employee','In','Out','Worked','Paid','Unpaid','Travel','Notes']];
+    const rows = [['Date','Employee','In','Out','Worked','Paid','Unpaid','Travel', companySettings.field1Label, companySettings.field2Label, companySettings.field3Label]];
     reportData.forEach(sh => { 
       const h = getHours(sh.clockIn, sh.clockOut); 
       const b = calcBreaks(sh.breaks || [], h); 
       const travel = calcTravel(sh.travelSegments || []); 
       const empName = getEmployeeName(sh.userId, sh.userEmail);
-      rows.push([fmtDateShort(sh.clockIn), empName, fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : 'Active', fmtDur((h*60)-b.unpaid), b.paid+'m', b.unpaid+'m', travel+'m', `"${(sh.jobLog?.notes||'').replace(/"/g,'""')}"`]); 
+      const f1 = getJobLogField(sh.jobLog, 'field1');
+      const f2 = getJobLogField(sh.jobLog, 'field2');
+      const f3 = getJobLogField(sh.jobLog, 'field3');
+      rows.push([
+        fmtDateShort(sh.clockIn), 
+        empName, 
+        fmtTime(sh.clockIn), 
+        sh.clockOut ? fmtTime(sh.clockOut) : 'Active', 
+        fmtDur((h*60)-b.unpaid), 
+        b.paid+'m', 
+        b.unpaid+'m', 
+        travel+'m', 
+        `"${(f1).replace(/"/g,'""')}"`,
+        `"${(f2).replace(/"/g,'""')}"`,
+        `"${(f3).replace(/"/g,'""')}"`
+      ]); 
     });
     const csv = rows.map(r => r.join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
@@ -670,11 +728,18 @@ export default function App() {
       const travel = calcTravel(sh.travelSegments || []); 
       const worked = (h*60) - b.unpaid; 
       const empName = getEmployeeName(sh.userId, sh.userEmail);
+      const f1 = getJobLogField(sh.jobLog, 'field1');
+      const f2 = getJobLogField(sh.jobLog, 'field2');
+      const f3 = getJobLogField(sh.jobLog, 'field3');
       total += worked; 
       tPaid += b.paid; 
       tUnpaid += b.unpaid; 
-      tTravel += travel; 
-      return `<tr><td>${fmtDateShort(sh.clockIn)}</td><td>${empName}</td><td>${fmtTime(sh.clockIn)}</td><td>${sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}</td><td>${fmtDur(worked)}</td><td>${b.paid}m</td><td>${b.unpaid}m</td><td>${travel}m</td></tr>${sh.jobLog?.notes ? `<tr><td colspan="8" style="background:#f5f5f5;font-size:12px;">📝 ${sh.jobLog.notes}</td></tr>` : ''}`; 
+      tTravel += travel;
+      let jobLogRows = '';
+      if (f1) jobLogRows += `<tr><td colspan="8" style="background:#f5f5f5;font-size:12px;padding:6px 8px;">📝 <strong>${companySettings.field1Label}:</strong> ${f1}</td></tr>`;
+      if (f2) jobLogRows += `<tr><td colspan="8" style="background:#f5f5f5;font-size:12px;padding:6px 8px;">📦 <strong>${companySettings.field2Label}:</strong> ${f2}</td></tr>`;
+      if (f3) jobLogRows += `<tr><td colspan="8" style="background:#f5f5f5;font-size:12px;padding:6px 8px;">📋 <strong>${companySettings.field3Label}:</strong> ${f3}</td></tr>`;
+      return `<tr><td>${fmtDateShort(sh.clockIn)}</td><td>${empName}</td><td>${fmtTime(sh.clockIn)}</td><td>${sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}</td><td>${fmtDur(worked)}</td><td>${b.paid}m</td><td>${b.unpaid}m</td><td>${travel}m</td></tr>${jobLogRows}`; 
     }).join('');
     const html = `<!DOCTYPE html><html><head><title>Report</title><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#1e40af;color:white}@media print{body{padding:0}}</style></head><body><h1>TimeTrack NZ Report</h1><p>${reportStart} to ${reportEnd}</p><table><tr><th>Date</th><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Paid</th><th>Unpaid</th><th>Travel</th></tr>${rows}</table><h3>Totals: ${fmtDur(total)} worked, ${tPaid}m paid breaks, ${tUnpaid}m unpaid, ${tTravel}m travel</h3></body></html>`;
     const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); }
@@ -691,14 +756,14 @@ export default function App() {
   };
 
   // My Timesheet functions
-  const myClockIn = async () => { if (!user) return; await addDoc(collection(db, 'shifts'), { userId: user.uid, userEmail: user.email, clockIn: Timestamp.now(), clockInLocation: null, locationHistory: [], breaks: [], travelSegments: [], jobLog: { notes: '' }, status: 'active' }); setSuccess('Clocked in!'); };
+  const myClockIn = async () => { if (!user) return; await addDoc(collection(db, 'shifts'), { userId: user.uid, userEmail: user.email, clockIn: Timestamp.now(), clockInLocation: null, locationHistory: [], breaks: [], travelSegments: [], jobLog: { field1: '', field2: '', field3: '' }, status: 'active' }); setSuccess('Clocked in!'); };
   
   const myClockOut = async () => {
     if (!myShift) return;
     let updatedBreaks = [...(myShift.breaks || [])];
     const activeBreakIndex = updatedBreaks.findIndex(b => !b.endTime && !b.manualEntry);
     if (activeBreakIndex !== -1 && breakStart) { const durationMinutes = Math.round((new Date().getTime() - breakStart.getTime()) / 60000); updatedBreaks[activeBreakIndex] = { ...updatedBreaks[activeBreakIndex], endTime: Timestamp.now(), durationMinutes }; }
-    await updateDoc(doc(db, 'shifts', myShift.id), { clockOut: Timestamp.now(), breaks: updatedBreaks, 'jobLog.notes': myNotes, status: 'completed' });
+    await updateDoc(doc(db, 'shifts', myShift.id), { clockOut: Timestamp.now(), breaks: updatedBreaks, 'jobLog.field1': myField1, status: 'completed' });
     setSuccess('Clocked out!');
   };
   
@@ -713,7 +778,7 @@ export default function App() {
   
   const myAddBreak = async (minutes: number) => { if (!myShift) return; const now = Timestamp.now(); await updateDoc(doc(db, 'shifts', myShift.id), { breaks: [...(myShift.breaks || []), { startTime: now, endTime: now, durationMinutes: minutes, manualEntry: true }] }); };
   
-  const saveMyNotes = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.notes': myNotes }); };
+  const saveMyField1 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field1': myField1 }); };
 
   const navigateTo = (v: string) => { setView(v); setSidebarOpen(false); };
   
@@ -748,7 +813,6 @@ export default function App() {
               border: 'none', 
               cursor: 'pointer',
               fontWeight: '600',
-              fontSize: '14px',
               background: authMode === 'signin' ? theme.primary : 'transparent',
               color: authMode === 'signin' ? 'white' : theme.textMuted
             }}
@@ -764,7 +828,6 @@ export default function App() {
               border: 'none', 
               cursor: 'pointer',
               fontWeight: '600',
-              fontSize: '14px',
               background: authMode === 'signup' ? theme.primary : 'transparent',
               color: authMode === 'signup' ? 'white' : theme.textMuted
             }}
@@ -772,35 +835,31 @@ export default function App() {
             Sign Up
           </button>
         </div>
-
+        
+        {error && <p style={{ color: theme.danger, marginBottom: '16px', fontSize: '14px' }}>{error}</p>}
+        {success && <p style={{ color: theme.success, marginBottom: '16px', fontSize: '14px' }}>{success}</p>}
+        
         <form onSubmit={authMode === 'signin' ? handleLogin : handleSignUp}>
           {authMode === 'signup' && (
             <input 
-              type="text" 
-              placeholder="Your Name (optional)" 
+              placeholder="Your Name" 
               value={signupName} 
               onChange={e => setSignupName(e.target.value)} 
               style={{ ...styles.input, marginBottom: '12px' }} 
             />
           )}
-          <input type="email" placeholder="Email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} required />
-          <input type="password" placeholder="Password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} required />
-          {error && <p style={{ color: theme.danger, marginBottom: '12px', fontSize: '14px' }}>{error}</p>}
-          {success && <p style={{ color: theme.success, marginBottom: '12px', fontSize: '14px' }}>{success}</p>}
+          <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />
+          <input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...styles.input, marginBottom: '16px' }} />
           <button type="submit" style={{ ...styles.btn, width: '100%' }}>
             {authMode === 'signin' ? 'Sign In' : 'Create Account'}
           </button>
         </form>
         
         {authMode === 'signup' && (
-          <p style={{ color: theme.textMuted, fontSize: '13px', textAlign: 'center', marginTop: '16px' }}>
-            By signing up, you'll create a manager account and can add employees.
+          <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '16px', textAlign: 'center' }}>
+            By signing up, you create a manager account to invite and manage employees.
           </p>
         )}
-        
-        <div style={{ textAlign: 'center', marginTop: '16px' }}>
-          <button onClick={() => setDark(!dark)} style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer' }}>{dark ? '☀️ Light Mode' : '🌙 Dark Mode'}</button>
-        </div>
       </div>
     </div>
   );
@@ -816,153 +875,123 @@ export default function App() {
   ];
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: theme.bg }}>
-      {mapModal && (
-        <MapModal 
-          locations={mapModal.locations} 
-          title={mapModal.title} 
-          onClose={() => setMapModal(null)} 
-          theme={theme}
-          clockInLocation={mapModal.clockInLocation}
-          clockOutLocation={mapModal.clockOutLocation}
-        />
-      )}
-      
-      {/* Remove Employee Confirmation Modal */}
-      {removeConfirm && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={() => { setRemoveConfirm(null); setRemoveDeleteShifts(false); }}>
-          <div style={{ background: theme.card, borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
-            <h2 style={{ color: theme.danger, margin: '0 0 16px', fontSize: '18px' }}>⚠️ Remove Employee</h2>
-            <p style={{ color: theme.text, marginBottom: '16px' }}>
-              Are you sure you want to remove <strong>{employees.find(e => e.id === removeConfirm)?.name || employees.find(e => e.id === removeConfirm)?.email}</strong>?
-            </p>
-            <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
-              This will remove their account. They won't be able to clock in anymore.
-            </p>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, cursor: 'pointer', marginBottom: '20px' }}>
-              <input 
-                type="checkbox" 
-                checked={removeDeleteShifts} 
-                onChange={e => setRemoveDeleteShifts(e.target.checked)} 
-              />
-              Also delete all their shift history
-            </label>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button onClick={() => { setRemoveConfirm(null); setRemoveDeleteShifts(false); }} style={{ flex: 1, padding: '12px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: 'transparent', color: theme.text, cursor: 'pointer', fontWeight: '600' }}>Cancel</button>
-              <button onClick={() => removeEmployee(removeConfirm)} style={{ ...styles.btnDanger, flex: 1 }}>Remove</button>
-            </div>
-          </div>
-        </div>
-      )}
-      
+    <div style={{ minHeight: '100vh', background: theme.bg }}>
       {/* Mobile Header */}
       {isMobile && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, background: theme.sidebar, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${theme.sidebarBorder}`, zIndex: 100 }}>
-          <button onClick={() => setSidebarOpen(!sidebarOpen)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: theme.text }}>☰</button>
-          <h1 style={{ color: theme.text, fontSize: '16px', margin: 0 }}>TimeTrack NZ</h1>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '56px', background: theme.sidebar, borderBottom: `1px solid ${theme.sidebarBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', zIndex: 100 }}>
+          <button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: theme.text }}>☰</button>
+          <span style={{ fontWeight: '700', color: theme.text }}>TimeTrack NZ</span>
           <button onClick={() => setDark(!dark)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>{dark ? '☀️' : '🌙'}</button>
         </div>
       )}
 
-      {/* Sidebar / Mobile Menu */}
-      {(sidebarOpen || !isMobile) && (
-        <>
-          {isMobile && <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 199 }} onClick={() => setSidebarOpen(false)} />}
-          <div style={{ 
-            width: isMobile ? '280px' : '220px', 
-            background: theme.sidebar, 
-            padding: '20px', 
-            borderRight: `1px solid ${theme.sidebarBorder}`,
-            position: isMobile ? 'fixed' : 'relative',
-            top: 0, left: 0, bottom: 0,
-            zIndex: isMobile ? 200 : 1,
-            overflowY: 'auto'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ color: theme.text, margin: 0, fontSize: '18px' }}>TimeTrack NZ</h2>
-              {isMobile && <button onClick={() => setSidebarOpen(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: theme.textMuted }}>×</button>}
-            </div>
-            
-            {navItems.map(item => (
-              <button key={item.id} onClick={() => navigateTo(item.id)} style={{ display: 'block', width: '100%', padding: '14px 12px', marginBottom: '6px', borderRadius: '8px', border: 'none', background: view === item.id ? theme.primary : 'transparent', color: view === item.id ? 'white' : theme.textMuted, textAlign: 'left', cursor: 'pointer', fontWeight: view === item.id ? '600' : '400', fontSize: '14px' }}>{item.label}</button>
-            ))}
-            
-            {!isMobile && (
-              <div style={{ marginTop: '24px', padding: '12px', background: theme.cardAlt, borderRadius: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ color: theme.textMuted, fontSize: '14px' }}>{dark ? '🌙 Dark' : '☀️ Light'}</span>
-                  <button onClick={() => setDark(!dark)} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: dark ? theme.primary : '#cbd5e1', position: 'relative' }}>
-                    <span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: dark ? '27px' : '3px', transition: 'left 0.2s' }} />
-                  </button>
-                </div>
-              </div>
-            )}
-            
-            <button onClick={() => signOut(auth)} style={{ marginTop: '16px', padding: '12px', width: '100%', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: 'transparent', color: theme.textMuted, cursor: 'pointer', fontSize: '14px' }}>Sign Out</button>
-          </div>
-        </>
+      {/* Sidebar Overlay for Mobile */}
+      {isMobile && sidebarOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={() => setSidebarOpen(false)} />
       )}
 
+      {/* Sidebar */}
+      <div style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: isMobile ? (sidebarOpen ? 0 : -280) : 0, 
+        width: '260px', 
+        height: '100vh', 
+        background: theme.sidebar, 
+        borderRight: `1px solid ${theme.sidebarBorder}`, 
+        padding: '20px', 
+        zIndex: 300,
+        transition: 'left 0.3s',
+        overflowY: 'auto'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
+          <h2 style={{ color: theme.text, fontSize: '18px', margin: 0 }}>TimeTrack NZ</h2>
+          {isMobile && <button onClick={() => setSidebarOpen(false)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: theme.textMuted }}>×</button>}
+        </div>
+        
+        {navItems.map(item => (
+          <button key={item.id} onClick={() => navigateTo(item.id)} style={{ display: 'block', width: '100%', padding: '12px 16px', marginBottom: '4px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'left', fontWeight: '500', fontSize: '14px', background: view === item.id ? theme.primary : 'transparent', color: view === item.id ? 'white' : theme.textMuted }}>{item.label}</button>
+        ))}
+        
+        <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: `1px solid ${theme.sidebarBorder}` }}>
+          {!isMobile && <button onClick={() => setDark(!dark)} style={{ display: 'block', width: '100%', padding: '12px 16px', marginBottom: '8px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'left', background: 'transparent', color: theme.textMuted }}>{dark ? '☀️ Light Mode' : '🌙 Dark Mode'}</button>}
+          <button onClick={() => signOut(auth)} style={{ display: 'block', width: '100%', padding: '12px 16px', borderRadius: '8px', border: 'none', cursor: 'pointer', textAlign: 'left', background: 'transparent', color: theme.danger }}>🚪 Sign Out</button>
+        </div>
+      </div>
+
       {/* Main Content */}
-      <div style={{ flex: 1, padding: isMobile ? '70px 16px 16px' : '24px', overflowY: 'auto', minHeight: '100vh' }}>
-        {error && <div style={{ background: theme.dangerBg, color: theme.danger, padding: '12px', borderRadius: '8px', marginBottom: '16px', border: `1px solid ${theme.danger}` }}>{error} <button onClick={() => setError('')} style={{ float: 'right', background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontWeight: 'bold' }}>×</button></div>}
-        {success && <div style={{ background: theme.successBg, color: theme.success, padding: '12px', borderRadius: '8px', marginBottom: '16px', border: `1px solid ${theme.success}` }}>{success}</div>}
+      <div style={{ marginLeft: isMobile ? 0 : '260px', padding: isMobile ? '72px 16px 16px' : '24px 32px' }}>
+        {error && <div style={{ background: theme.dangerBg, color: theme.danger, padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span>{error}</span><button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.danger }}>×</button></div>}
+        {success && <div style={{ background: theme.successBg, color: theme.success, padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><span>{success}</span><button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.success }}>×</button></div>}
+
+        {/* Map Modal */}
+        {mapModal && <MapModal locations={mapModal.locations} onClose={() => setMapModal(null)} title={mapModal.title} theme={theme} clockInLocation={mapModal.clockInLocation} clockOutLocation={mapModal.clockOutLocation} />}
+
+        {/* Remove Employee Confirmation Modal */}
+        {removeConfirm && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={() => setRemoveConfirm(null)}>
+            <div style={{ background: theme.card, borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+              <h3 style={{ color: theme.text, marginBottom: '16px' }}>Remove Employee?</h3>
+              <p style={{ color: theme.textMuted, marginBottom: '16px' }}>
+                This will remove {employees.find(e => e.id === removeConfirm)?.name || employees.find(e => e.id === removeConfirm)?.email} from the system.
+              </p>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, marginBottom: '20px', cursor: 'pointer' }}>
+                <input type="checkbox" checked={removeDeleteShifts} onChange={e => setRemoveDeleteShifts(e.target.checked)} />
+                Also delete their {allShifts.filter(s => s.userId === removeConfirm).length} shifts
+              </label>
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button onClick={() => setRemoveConfirm(null)} style={{ ...styles.btn, flex: 1, background: theme.cardAlt, color: theme.text }}>Cancel</button>
+                <button onClick={() => removeEmployee(removeConfirm)} style={{ ...styles.btnDanger, flex: 1 }}>Remove</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Live View */}
         {view === 'live' && (
           <div>
             <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Live View</h1>
-            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-              {activeShifts.length === 0 ? (
-                <div style={styles.card}><p style={{ color: theme.textMuted }}>No employees clocked in</p></div>
-              ) : activeShifts.map(sh => {
-                const isTraveling = hasActiveTravel(sh);
-                const isOnBreak = (sh.breaks || []).some(b => !b.endTime && !b.manualEntry);
-                const travelTime = calcTravel(sh.travelSegments || []);
-                const empName = getEmployeeName(sh.userId, sh.userEmail);
-                
-                return (
-                  <div key={sh.id} style={{ ...styles.card, cursor: 'pointer' }} onClick={() => sh.locationHistory?.length > 0 && setMapModal({ locations: sh.locationHistory, title: `${empName} - Location`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
-                      <div>
-                        <p style={{ color: theme.text, fontWeight: '600', fontSize: '16px', wordBreak: 'break-all' }}>{empName}</p>
-                        <p style={{ color: theme.textMuted, fontSize: '14px' }}>In: {fmtTime(sh.clockIn)}</p>
+            {activeShifts.length === 0 ? (
+              <div style={styles.card}><p style={{ color: theme.textMuted, textAlign: 'center' }}>No active shifts</p></div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(350px, 1fr))', gap: '16px' }}>
+                {activeShifts.map(sh => {
+                  const h = getHours(sh.clockIn, sh.clockOut);
+                  const b = calcBreaks(sh.breaks || [], h);
+                  const activeBreak = sh.breaks?.find(br => !br.endTime && !br.manualEntry);
+                  const travel = calcTravel(sh.travelSegments || []);
+                  const isTraveling = hasActiveTravel(sh);
+                  const empName = getEmployeeName(sh.userId, sh.userEmail);
+                  return (
+                    <div key={sh.id} style={styles.card}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
+                        <div>
+                          <p style={{ color: theme.text, fontWeight: '600', wordBreak: 'break-all' }}>{empName}</p>
+                          <p style={{ color: theme.textMuted, fontSize: '13px' }}>In: {fmtTime(sh.clockIn)}</p>
+                        </div>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                          <span style={{ background: theme.successBg, color: theme.success, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>Active</span>
+                          {activeBreak && <span style={{ background: theme.warningBg, color: theme.warning, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>On Break</span>}
+                          {isTraveling && <span style={{ background: theme.travelBg, color: theme.travel, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>🚗 Traveling</span>}
+                        </div>
                       </div>
-                      <span style={{ 
-                        background: isTraveling ? theme.travelBg : isOnBreak ? theme.warningBg : theme.successBg, 
-                        color: isTraveling ? theme.travel : isOnBreak ? theme.warning : theme.success, 
-                        padding: '4px 12px', 
-                        borderRadius: '20px', 
-                        fontSize: '12px', 
-                        fontWeight: '600', 
-                        flexShrink: 0 
-                      }}>
-                        {isTraveling ? '🚗 Traveling' : isOnBreak ? '☕ Break' : 'Active'}
-                      </span>
+                      <div style={{ display: 'grid', gridTemplateColumns: travel > 0 ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}>
+                        <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.textMuted, fontSize: '11px' }}>Worked</p><p style={{ color: theme.text, fontWeight: '600' }}>{fmtDur(h*60)}</p></div>
+                        <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.success, fontSize: '11px' }}>Paid</p><p style={{ color: theme.success, fontWeight: '600' }}>{b.paid}m</p></div>
+                        <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.warning, fontSize: '11px' }}>Unpaid</p><p style={{ color: theme.warning, fontWeight: '600' }}>{b.unpaid}m</p></div>
+                        {travel > 0 && <div style={{ background: theme.travelBg, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.travel, fontSize: '11px' }}>🚗 Travel</p><p style={{ color: theme.travel, fontWeight: '600' }}>{travel}m</p></div>}
+                      </div>
+                      {sh.locationHistory?.length > 0 && (
+                        <div>
+                          <LocationMap locations={sh.locationHistory} height="150px" />
+                          <button onClick={() => setMapModal({ locations: sh.locationHistory, title: empName, clockInLocation: sh.clockInLocation })} style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', width: '100%' }}>View Full Map ({sh.locationHistory.length} points)</button>
+                        </div>
+                      )}
                     </div>
-                    <p style={{ color: theme.text, fontSize: '28px', fontWeight: '700', margin: '12px 0' }}>{fmtDur(getHours(sh.clockIn) * 60)}</p>
-                    
-                    {/* Travel time display */}
-                    {travelTime > 0 && (
-                      <p style={{ color: theme.travel, fontSize: '14px', marginBottom: '8px' }}>🚗 {travelTime}m travel time</p>
-                    )}
-                    
-                    {sh.locationHistory?.length > 0 && (
-                      <>
-                        <LocationMap locations={sh.locationHistory} height="150px" />
-                        <button onClick={(e) => { e.stopPropagation(); setMapModal({ locations: sh.locationHistory, title: `${empName} - Location`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation }); }} style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', width: '100%', fontSize: '13px' }}>📍 View Full Map ({sh.locationHistory.length} points)</button>
-                      </>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ marginTop: '32px', display: 'grid', gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)', gap: '12px' }}>
-              <div style={{ ...styles.card, textAlign: 'center' }}><p style={{ color: theme.success, fontSize: isMobile ? '24px' : '32px', fontWeight: '700' }}>{activeShifts.length}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>Clocked In</p></div>
-              <div style={{ ...styles.card, textAlign: 'center' }}><p style={{ color: theme.primary, fontSize: isMobile ? '24px' : '32px', fontWeight: '700' }}>{employees.length}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>Employees</p></div>
-              <div style={{ ...styles.card, textAlign: 'center' }}><p style={{ color: theme.warning, fontSize: isMobile ? '24px' : '32px', fontWeight: '700' }}>{allShifts.filter(s => s.clockIn?.toDate?.()?.toDateString?.() === new Date().toDateString()).length}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>Today</p></div>
-              <div style={{ ...styles.card, textAlign: 'center' }}><p style={{ color: '#8b5cf6', fontSize: isMobile ? '24px' : '32px', fontWeight: '700' }}>{messages.length}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>Messages</p></div>
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -974,102 +1003,87 @@ export default function App() {
             {/* Clock Card */}
             <div style={styles.card}>
               <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                <span style={{ display: 'inline-block', padding: '8px 20px', borderRadius: '24px', fontSize: '14px', fontWeight: '600', background: myShift ? (onBreak ? theme.warningBg : theme.successBg) : theme.cardAlt, color: myShift ? (onBreak ? theme.warning : theme.success) : theme.textMuted }}>
-                  {myShift ? (onBreak ? '☕ On Break' : '✓ Clocked In') : 'Not Clocked In'}
+                <span style={{ 
+                  display: 'inline-block',
+                  padding: '6px 16px', 
+                  borderRadius: '20px', 
+                  fontSize: '14px',
+                  fontWeight: 'bold',
+                  background: myShift ? (onBreak ? theme.warningBg : theme.successBg) : theme.cardAlt,
+                  color: myShift ? (onBreak ? theme.warning : theme.success) : theme.textMuted
+                }}>
+                  {myShift ? (onBreak ? '☕ On Break' : '🟢 Clocked In') : '⚪ Clocked Out'}
                 </span>
               </div>
               
-              {myShift && (
-                <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                  <p style={{ color: theme.textMuted, fontSize: '14px' }}>Started at {fmtTime(myShift.clockIn)}</p>
-                  <p style={{ color: theme.text, fontSize: isMobile ? '40px' : '48px', fontWeight: '700', margin: '8px 0' }}>{fmtDur(getHours(myShift.clockIn) * 60)}</p>
-                  {onBreak && breakStart && <p style={{ color: theme.warning, fontSize: '14px' }}>Break started {breakStart.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}</p>}
-                  {calcTravel(myShift.travelSegments || []) > 0 && <p style={{ color: theme.travel, fontSize: '14px' }}>🚗 {calcTravel(myShift.travelSegments || [])}m travel</p>}
-                </div>
+              {myShift ? (
+                <>
+                  <p style={{ textAlign: 'center', color: theme.textMuted, marginBottom: '8px' }}>
+                    Started: {fmtTime(myShift.clockIn)}
+                  </p>
+                  <p style={{ textAlign: 'center', color: theme.text, fontSize: '32px', fontWeight: '700', marginBottom: '20px' }}>
+                    {fmtDur(getHours(myShift.clockIn) * 60)}
+                  </p>
+                  
+                  {/* Break controls */}
+                  <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                    {!onBreak ? (
+                      <button onClick={myStartBreak} style={{ ...styles.btn, flex: 1, background: theme.warning }}>☕ Start Break</button>
+                    ) : (
+                      <button onClick={myEndBreak} style={{ ...styles.btn, flex: 1, background: theme.success }}>✓ End Break</button>
+                    )}
+                    <button onClick={myClockOut} style={{ ...styles.btnDanger, flex: 1 }}>🔴 Clock Out</button>
+                  </div>
+                  
+                  {/* Quick add breaks */}
+                  <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                    <span style={{ color: theme.textMuted, fontSize: '13px', width: '100%' }}>Quick add:</span>
+                    {[10, 15, 20, 30].map(m => (
+                      <button key={m} onClick={() => myAddBreak(m)} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontSize: '13px' }}>+{m}m</button>
+                    ))}
+                  </div>
+                  
+                  {/* Notes */}
+                  <div>
+                    <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label}</label>
+                    <textarea 
+                      value={myField1} 
+                      onChange={e => setMyField1(e.target.value)} 
+                      onBlur={saveMyField1}
+                      placeholder={`Enter ${companySettings.field1Label.toLowerCase()}...`}
+                      style={{ ...styles.input, minHeight: '80px', resize: 'vertical' }} 
+                    />
+                  </div>
+                </>
+              ) : (
+                <button onClick={myClockIn} style={{ ...styles.btn, width: '100%', padding: '16px', fontSize: '16px' }}>🟢 Clock In</button>
               )}
-              
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                {!myShift ? (
-                  <button onClick={myClockIn} style={{ ...styles.btn, background: theme.success, padding: '16px 48px', fontSize: '16px' }}>Clock In</button>
-                ) : (
-                  <>
-                    {!onBreak ? <button onClick={myStartBreak} style={{ ...styles.btn, background: theme.warning, padding: '14px 28px' }}>Start Break</button> : <button onClick={myEndBreak} style={{ ...styles.btn, padding: '14px 28px' }}>End Break</button>}
-                    <button onClick={myClockOut} style={{ ...styles.btnDanger, padding: '14px 28px' }}>Clock Out</button>
-                  </>
-                )}
-              </div>
             </div>
             
-            {/* Quick Add Breaks */}
-            {myShift && !onBreak && (
-              <div style={styles.card}>
-                <h3 style={{ color: theme.text, marginBottom: '12px', fontSize: '16px' }}>Quick Add Break</h3>
-                <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Forgot to start timer? Add break time:</p>
-                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                  {[10, 15, 20, 30].map(mins => (
-                    <button key={mins} onClick={() => myAddBreak(mins)} style={{ padding: '12px 20px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontWeight: '600' }}>{mins}m</button>
-                  ))}
-                </div>
-              </div>
-            )}
-            
-            {/* Break Summary */}
-            {myShift && (myShift.breaks?.length > 0 || calcTravel(myShift.travelSegments || []) > 0) && (
-              <div style={styles.card}>
-                <h3 style={{ color: theme.text, marginBottom: '12px', fontSize: '16px' }}>Today's Breaks & Travel</h3>
-                {myShift.breaks?.length > 0 && myShift.breaks.map((b, i) => (
-                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
-                    <span style={{ color: theme.textMuted, fontSize: '14px' }}>{b.manualEntry ? `Break ${i + 1} (added)` : `Break ${i + 1}: ${fmtTime(b.startTime)} - ${b.endTime ? fmtTime(b.endTime) : 'ongoing'}`}</span>
-                    <span style={{ color: theme.text, fontWeight: '600' }}>{b.durationMinutes ? `${b.durationMinutes}m` : '...'}</span>
-                  </div>
-                ))}
-                {(myShift.travelSegments || []).length > 0 && (
-                  <>
-                    <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '12px', marginBottom: '8px', fontWeight: '600' }}>TRAVEL</p>
-                    {myShift.travelSegments!.map((t, i) => (
-                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
-                        <span style={{ color: theme.textMuted, fontSize: '14px' }}>🚗 Travel {i + 1}: {fmtTime(t.startTime)} - {t.endTime ? fmtTime(t.endTime) : 'ongoing'}</span>
-                        <span style={{ color: theme.travel, fontWeight: '600' }}>{t.durationMinutes ? `${t.durationMinutes}m` : '...'}</span>
+            {/* Recent Shifts */}
+            {myShiftHistory.length > 0 && (
+              <div>
+                <h3 style={{ color: theme.text, marginBottom: '16px' }}>Recent Shifts</h3>
+                {myShiftHistory.slice(0, 5).map(sh => {
+                  const h = getHours(sh.clockIn, sh.clockOut);
+                  const b = calcBreaks(sh.breaks || [], h);
+                  return (
+                    <div key={sh.id} style={{ ...styles.card, padding: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <div>
+                          <p style={{ color: theme.text, fontWeight: '600' }}>{fmtDate(sh.clockIn)}</p>
+                          <p style={{ color: theme.textMuted, fontSize: '13px' }}>{fmtTime(sh.clockIn)} - {fmtTime(sh.clockOut)}</p>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <p style={{ color: theme.text, fontWeight: '600' }}>{fmtDur((h*60)-b.unpaid)}</p>
+                          <p style={{ color: theme.textMuted, fontSize: '12px' }}>{b.paid}m paid, {b.unpaid}m unpaid</p>
+                        </div>
                       </div>
-                    ))}
-                  </>
-                )}
-                <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.cardBorder}` }}>
-                  {(() => { const h = getHours(myShift.clockIn); const b = calcBreaks(myShift.breaks || [], h); const travel = calcTravel(myShift.travelSegments || []); return (<><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}><span style={{ color: theme.success }}>Paid breaks:</span><span style={{ color: theme.success, fontWeight: '600' }}>{b.paid}m</span></div><div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}><span style={{ color: theme.warning }}>Unpaid breaks:</span><span style={{ color: theme.warning, fontWeight: '600' }}>{b.unpaid}m</span></div>{travel > 0 && <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}><span style={{ color: theme.travel }}>Travel:</span><span style={{ color: theme.travel, fontWeight: '600' }}>{travel}m</span></div>}</>); })()}
-                </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
-            
-            {/* Notes */}
-            {myShift && (
-              <div style={styles.card}>
-                <h3 style={{ color: theme.text, marginBottom: '12px', fontSize: '16px' }}>Notes</h3>
-                <textarea placeholder="Add notes for today..." value={myNotes} onChange={e => setMyNotes(e.target.value)} onBlur={saveMyNotes} rows={4} style={{ ...styles.input, resize: 'vertical', fontFamily: 'inherit' }} />
-                <p style={{ color: theme.textLight, fontSize: '12px', marginTop: '8px' }}>Auto-saves when you click/tap away</p>
-              </div>
-            )}
-            
-            {/* My History */}
-            <h2 style={{ color: theme.text, margin: '32px 0 16px', fontSize: '18px' }}>My Shift History</h2>
-            {myShiftHistory.length === 0 ? (
-              <div style={styles.card}><p style={{ color: theme.textMuted }}>No completed shifts yet</p></div>
-            ) : myShiftHistory.map(sh => {
-              const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h); const travel = calcTravel(sh.travelSegments || []); const worked = (h * 60) - b.unpaid;
-              return (
-                <div key={sh.id} style={styles.card}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
-                    <div><p style={{ color: theme.text, fontWeight: '600' }}>{fmtDate(sh.clockIn)}</p><p style={{ color: theme.textMuted, fontSize: '14px' }}>{fmtTime(sh.clockIn)} - {fmtTime(sh.clockOut)}</p></div>
-                    <div style={{ textAlign: 'right' }}><p style={{ color: theme.text, fontWeight: '700', fontSize: '18px' }}>{fmtDur(worked)}</p><p style={{ color: theme.textMuted, fontSize: '12px' }}>worked</p></div>
-                  </div>
-                  <div style={{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '13px', flexWrap: 'wrap' }}>
-                    <span style={{ color: theme.success }}>Paid: {b.paid}m</span>
-                    <span style={{ color: theme.warning }}>Unpaid: {b.unpaid}m</span>
-                    {travel > 0 && <span style={{ color: theme.travel }}>🚗 Travel: {travel}m</span>}
-                  </div>
-                  {sh.jobLog?.notes && <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '8px', fontStyle: 'italic' }}>📝 {sh.jobLog.notes}</p>}
-                </div>
-              );
-            })}
           </div>
         )}
 
@@ -1077,26 +1091,29 @@ export default function App() {
         {view === 'employees' && (
           <div>
             <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Employees</h1>
+            
+            {/* Invite Form */}
             <div style={styles.card}>
-              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Invite Employee</h3>
-              <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Add an employee - then send them an email or copy the invite link.</p>
-              <form onSubmit={inviteEmployee} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                <input placeholder="Name" value={newEmpName} onChange={e => setNewEmpName(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '120px' }} />
-                <input type="email" placeholder="Email" required value={newEmpEmail} onChange={e => setNewEmpEmail(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '180px' }} />
-                <button type="submit" style={styles.btn}>Add Employee</button>
+              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Invite New Employee</h3>
+              <form onSubmit={inviteEmployee}>
+                <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  <input placeholder="Email" type="email" value={newEmpEmail} onChange={e => setNewEmpEmail(e.target.value)} required style={{ ...styles.input, flex: '2', minWidth: '200px' }} />
+                  <input placeholder="Name (optional)" value={newEmpName} onChange={e => setNewEmpName(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '150px' }} />
+                  <button type="submit" style={styles.btn}>Create Invite</button>
+                </div>
               </form>
             </div>
             
             {/* Pending Invites */}
             {invites.filter(i => i.status === 'pending').length > 0 && (
               <div style={styles.card}>
-                <h3 style={{ color: theme.warning, marginBottom: '16px', fontSize: '16px' }}>⏳ Pending Invites</h3>
+                <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Pending Invites</h3>
                 {invites.filter(i => i.status === 'pending').map(inv => (
-                  <div key={inv.id} style={{ padding: '16px', background: theme.cardAlt, borderRadius: '8px', marginBottom: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                  <div key={inv.id} style={{ background: theme.cardAlt, padding: '16px', borderRadius: '8px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
                       <div>
                         <p style={{ color: theme.text, fontWeight: '600' }}>{inv.name || inv.email}</p>
-                        <p style={{ color: theme.textMuted, fontSize: '13px' }}>{inv.email}</p>
+                        <p style={{ color: theme.textMuted, fontSize: '13px', wordBreak: 'break-all' }}>{inv.email}</p>
                         {inv.emailSent && (
                           <p style={{ color: theme.success, fontSize: '12px', marginTop: '4px' }}>✓ Email sent</p>
                         )}
@@ -1217,6 +1234,10 @@ export default function App() {
             {allShifts.slice(0, 50).map(sh => {
               const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h); const travel = calcTravel(sh.travelSegments || []); const worked = (h * 60) - b.unpaid; const isOpen = selectedShift === sh.id;
               const empName = getEmployeeName(sh.userId, sh.userEmail);
+              const f1 = getJobLogField(sh.jobLog, 'field1');
+              const f2 = getJobLogField(sh.jobLog, 'field2');
+              const f3 = getJobLogField(sh.jobLog, 'field3');
+              const hasJobLog = f1 || f2 || f3;
               return (
                 <div key={sh.id} style={{ ...styles.card, cursor: 'pointer' }} onClick={() => setSelectedShift(isOpen ? null : sh.id)}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
@@ -1246,7 +1267,30 @@ export default function App() {
                         </div>
                       )}
                       
-                      {sh.jobLog?.notes && <div style={{ background: theme.cardAlt, padding: '12px', borderRadius: '8px', marginBottom: '12px' }}><p style={{ color: theme.textMuted, fontSize: '12px' }}>📝 Notes</p><p style={{ color: theme.text, fontSize: '14px', whiteSpace: 'pre-wrap' }}>{sh.jobLog.notes}</p></div>}
+                      {/* Job Log Fields - show all 3 */}
+                      {hasJobLog && (
+                        <div style={{ background: theme.cardAlt, padding: '12px', borderRadius: '8px', marginBottom: '12px' }}>
+                          {f1 && (
+                            <div style={{ marginBottom: f2 || f3 ? '12px' : 0 }}>
+                              <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '4px' }}>📝 {companySettings.field1Label}</p>
+                              <p style={{ color: theme.text, fontSize: '14px', whiteSpace: 'pre-wrap' }}>{f1}</p>
+                            </div>
+                          )}
+                          {f2 && (
+                            <div style={{ marginBottom: f3 ? '12px' : 0 }}>
+                              <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '4px' }}>📦 {companySettings.field2Label}</p>
+                              <p style={{ color: theme.text, fontSize: '14px', whiteSpace: 'pre-wrap' }}>{f2}</p>
+                            </div>
+                          )}
+                          {f3 && (
+                            <div>
+                              <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '4px' }}>📋 {companySettings.field3Label}</p>
+                              <p style={{ color: theme.text, fontSize: '14px', whiteSpace: 'pre-wrap' }}>{f3}</p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
                       {sh.locationHistory?.length > 0 && (
                         <div>
                           <LocationMap locations={sh.locationHistory} />
@@ -1306,7 +1350,7 @@ export default function App() {
               {messages.filter(m => m.type === chatTab || (chatTab === 'dm' && m.type === 'dm')).length === 0 ? (
                 <p style={{ color: theme.textMuted, textAlign: 'center', marginTop: '40px' }}>No messages yet</p>
               ) : messages.filter(m => m.type === chatTab || (chatTab === 'dm' && m.type === 'dm')).map(m => {
-                const senderName = m.senderId === 'employer' ? 'Employer' : getEmployeeName(m.senderId, m.senderEmail);
+                const senderName = m.senderId === 'employer' ? companySettings.managerDisplayName : getEmployeeName(m.senderId, m.senderEmail);
                 return (
                   <div key={m.id} style={{ display: 'flex', justifyContent: m.senderId === 'employer' ? 'flex-end' : 'flex-start', marginBottom: '12px' }}>
                     <div style={{ maxWidth: '75%', padding: '10px 14px', borderRadius: '12px', background: m.senderId === 'employer' ? theme.primary : theme.cardAlt }}>
@@ -1329,6 +1373,61 @@ export default function App() {
         {view === 'settings' && (
           <div>
             <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Settings</h1>
+            
+            {/* Company Settings - NEW */}
+            <div style={styles.card}>
+              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>🏢 Company Settings</h3>
+              <p style={{ color: theme.textMuted, marginBottom: '16px', fontSize: '14px' }}>Customize field labels that employees see in the mobile app.</p>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 1 Label (default: Notes)</label>
+                  <input 
+                    value={editingCompanySettings.field1Label} 
+                    onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field1Label: e.target.value })} 
+                    placeholder="Notes"
+                    style={styles.input} 
+                  />
+                </div>
+                <div>
+                  <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 2 Label (default: Materials)</label>
+                  <input 
+                    value={editingCompanySettings.field2Label} 
+                    onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field2Label: e.target.value })} 
+                    placeholder="Materials"
+                    style={styles.input} 
+                  />
+                </div>
+                <div>
+                  <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 3 Label (default: Other)</label>
+                  <input 
+                    value={editingCompanySettings.field3Label} 
+                    onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field3Label: e.target.value })} 
+                    placeholder="Other"
+                    style={styles.input} 
+                  />
+                </div>
+                <div>
+                  <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Manager Display Name</label>
+                  <input 
+                    value={editingCompanySettings.managerDisplayName} 
+                    onChange={e => setEditingCompanySettings({ ...editingCompanySettings, managerDisplayName: e.target.value })} 
+                    placeholder="Manager"
+                    style={styles.input} 
+                  />
+                </div>
+              </div>
+              
+              <button 
+                onClick={saveCompanySettings} 
+                disabled={savingCompanySettings}
+                style={{ ...styles.btn, opacity: savingCompanySettings ? 0.7 : 1 }}
+              >
+                {savingCompanySettings ? 'Saving...' : 'Save Company Settings'}
+              </button>
+            </div>
+            
+            {/* Delete Old Data */}
             <div style={styles.card}>
               <h3 style={{ color: theme.danger, marginBottom: '16px', fontSize: '16px' }}>⚠️ Delete Old Data</h3>
               <p style={{ color: theme.textMuted, marginBottom: '16px', fontSize: '14px' }}>Permanently delete completed shifts. Cannot be undone.</p>
