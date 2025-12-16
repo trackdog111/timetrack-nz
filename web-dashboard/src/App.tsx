@@ -211,6 +211,8 @@ export default function App() {
   const [savingCompanySettings, setSavingCompanySettings] = useState(false);
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set());
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
+  const [timesheetFilterStart, setTimesheetFilterStart] = useState('');
+  const [timesheetFilterEnd, setTimesheetFilterEnd] = useState('');
 
   const theme = dark ? darkTheme : lightTheme;
 
@@ -281,9 +283,66 @@ export default function App() {
   const toggleEmployee = (id: string) => { const s = new Set(expandedEmployees); if (s.has(id)) s.delete(id); else s.add(id); setExpandedEmployees(s); };
   const toggleWeek = (key: string) => { const s = new Set(expandedWeeks); if (s.has(key)) s.delete(key); else s.add(key); setExpandedWeeks(s); };
 
+  // Quick date filter helpers
+  const setThisWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - dayOfWeek);
+    const endOfWeek = new Date(startOfWeek);
+    endOfWeek.setDate(startOfWeek.getDate() + 6);
+    setTimesheetFilterStart(startOfWeek.toISOString().split('T')[0]);
+    setTimesheetFilterEnd(endOfWeek.toISOString().split('T')[0]);
+  };
+  const setLastWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const startOfLastWeek = new Date(now);
+    startOfLastWeek.setDate(now.getDate() - dayOfWeek - 7);
+    const endOfLastWeek = new Date(startOfLastWeek);
+    endOfLastWeek.setDate(startOfLastWeek.getDate() + 6);
+    setTimesheetFilterStart(startOfLastWeek.toISOString().split('T')[0]);
+    setTimesheetFilterEnd(endOfLastWeek.toISOString().split('T')[0]);
+  };
+  const setThisMonth = () => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    setTimesheetFilterStart(startOfMonth.toISOString().split('T')[0]);
+    setTimesheetFilterEnd(endOfMonth.toISOString().split('T')[0]);
+  };
+  const setLastMonth = () => {
+    const now = new Date();
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    setTimesheetFilterStart(startOfLastMonth.toISOString().split('T')[0]);
+    setTimesheetFilterEnd(endOfLastMonth.toISOString().split('T')[0]);
+  };
+  const clearTimesheetFilter = () => {
+    setTimesheetFilterStart('');
+    setTimesheetFilterEnd('');
+  };
+
   // Group timesheets by EMAIL to consolidate shifts from same person (handles userId changes)
   const getGroupedTimesheets = () => {
-    const completed = allShifts.filter(s => s.status === 'completed');
+    let completed = allShifts.filter(s => s.status === 'completed');
+    
+    // Apply date filter if set
+    if (timesheetFilterStart || timesheetFilterEnd) {
+      const filterStart = timesheetFilterStart ? new Date(timesheetFilterStart) : null;
+      const filterEnd = timesheetFilterEnd ? new Date(timesheetFilterEnd) : null;
+      if (filterStart) filterStart.setHours(0, 0, 0, 0);
+      if (filterEnd) filterEnd.setHours(23, 59, 59, 999);
+      
+      completed = completed.filter(shift => {
+        const shiftDate = shift.clockIn?.toDate?.();
+        if (!shiftDate) return false;
+        if (filterStart && shiftDate < filterStart) return false;
+        if (filterEnd && shiftDate > filterEnd) return false;
+        return true;
+      });
+    }
+    
     const grouped: { [email: string]: { name: string, email: string, exists: boolean, weeks: { [weekKey: string]: { weekEnd: Date, shifts: Shift[], totalMinutes: number } } } } = {};
     
     completed.forEach(shift => {
@@ -388,6 +447,35 @@ export default function App() {
         {/* Timesheets - Nested Accordion */}
         {view === 'timesheets' && <div>
           <h1 style={{ color: theme.text, marginBottom: '16px', fontSize: isMobile ? '22px' : '28px' }}>Timesheets</h1>
+          
+          {/* Date Filter */}
+          <div style={{ ...styles.card, marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+              <button onClick={setThisWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '13px' }}>This Week</button>
+              <button onClick={setLastWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '13px' }}>Last Week</button>
+              <button onClick={setThisMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '13px' }}>This Month</button>
+              <button onClick={setLastMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '13px' }}>Last Month</button>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'end' }}>
+              <div style={{ flex: '1', minWidth: '140px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>From</label>
+                <input type="date" value={timesheetFilterStart} onChange={e => setTimesheetFilterStart(e.target.value)} style={styles.input} />
+              </div>
+              <div style={{ flex: '1', minWidth: '140px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>To</label>
+                <input type="date" value={timesheetFilterEnd} onChange={e => setTimesheetFilterEnd(e.target.value)} style={styles.input} />
+              </div>
+              {(timesheetFilterStart || timesheetFilterEnd) && (
+                <button onClick={clearTimesheetFilter} style={{ padding: '12px 16px', borderRadius: '8px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>Clear</button>
+              )}
+            </div>
+            {(timesheetFilterStart || timesheetFilterEnd) && (
+              <p style={{ color: theme.primary, fontSize: '13px', marginTop: '12px', fontWeight: '500' }}>
+                Showing shifts: {timesheetFilterStart || 'any'} → {timesheetFilterEnd || 'any'}
+              </p>
+            )}
+          </div>
+          
           <p style={{ color: theme.textMuted, marginBottom: '16px', fontSize: '14px' }}>Week ends on {weekDayNames[companySettings.payWeekEndDay]}</p>
           {(() => {
             const grouped = getGroupedTimesheets();
