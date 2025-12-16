@@ -338,6 +338,21 @@ export default function App() {
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const theme = dark ? darkTheme : lightTheme;
 
+  // Check for invite link on page load
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const isInvite = urlParams.get('invite');
+    const inviteEmail = urlParams.get('email');
+    
+    if (isInvite === 'true' && inviteEmail) {
+      setEmail(decodeURIComponent(inviteEmail));
+      setAuthMode('invite');
+      
+      // Clean up URL without reloading
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   // Auth state listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {

@@ -12,6 +12,10 @@ const firebaseConfig = {
   appId: "1:600938431502:web:b661556289a2634c8d285f"
 };
 
+// API URL - UPDATE THIS after deploying timetrack-api to Vercel
+const API_URL = 'https://timetrack-dashboard-v2.vercel.app';
+const MOBILE_APP_URL = 'https://timetrack-mobile-v2.vercel.app';
+
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
@@ -183,6 +187,9 @@ export default function App() {
   const [onBreak, setOnBreak] = useState(false);
   const [breakStart, setBreakStart] = useState<Date | null>(null);
   const [myNotes, setMyNotes] = useState('');
+  
+  // Email sending state
+  const [sendingEmail, setSendingEmail] = useState<string | null>(null);
 
   const theme = dark ? darkTheme : lightTheme;
 
@@ -314,7 +321,7 @@ export default function App() {
         createdAt: Timestamp.now(),
         createdBy: user?.uid
       });
-      setSuccess(`Invite sent to ${newEmpEmail}`);
+      setSuccess(`Invite created for ${newEmpEmail}. Send email or copy link below.`);
       setNewEmpEmail(''); setNewEmpName('');
     } catch (err: any) { setError(err.message); }
   };
@@ -324,6 +331,55 @@ export default function App() {
       await updateDoc(doc(db, 'invites', inviteId), { status: 'cancelled' });
       setSuccess('Invite cancelled');
     } catch (err: any) { setError(err.message); }
+  };
+
+  // Send invite email via API
+  const sendInviteEmail = async (invite: any) => {
+    setSendingEmail(invite.id);
+    setError('');
+    try {
+      const response = await fetch(`${API_URL}/api/send-invite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: invite.email,
+          name: invite.name,
+          inviteId: invite.id
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send email');
+      }
+      setSuccess(`Email sent to ${invite.email}!`);
+      // Update invite to track that email was sent
+      await updateDoc(doc(db, 'invites', invite.id), { 
+        emailSent: true, 
+        emailSentAt: Timestamp.now() 
+      });
+    } catch (err: any) {
+      setError(`Failed to send email: ${err.message}`);
+    } finally {
+      setSendingEmail(null);
+    }
+  };
+
+  // Copy invite link to clipboard
+  const copyInviteLink = async (invite: any) => {
+    const link = `${MOBILE_APP_URL}?invite=true&email=${encodeURIComponent(invite.email)}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setSuccess('Link copied to clipboard!');
+    } catch (err) {
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = link;
+      document.body.appendChild(textArea);
+      textArea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textArea);
+      setSuccess('Link copied to clipboard!');
+    }
   };
 
   // Remove employee function
@@ -625,10 +681,10 @@ export default function App() {
                 const travelTime = calcTravel(sh.travelSegments || []);
                 
                 return (
-                  <div key={sh.id} style={styles.card}>
+                  <div key={sh.id} style={{ ...styles.card, cursor: 'pointer' }} onClick={() => sh.locationHistory?.length > 0 && setMapModal({ locations: sh.locationHistory, title: `${employees.find(e => e.id === sh.userId)?.name || sh.userEmail} - Location` })}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}>
                       <div>
-                        <p style={{ color: theme.text, fontWeight: '600', fontSize: '16px', wordBreak: 'break-all' }}>{sh.userEmail}</p>
+                        <p style={{ color: theme.text, fontWeight: '600', fontSize: '16px', wordBreak: 'break-all' }}>{employees.find(e => e.id === sh.userId)?.name || sh.userEmail}</p>
                         <p style={{ color: theme.textMuted, fontSize: '14px' }}>In: {fmtTime(sh.clockIn)}</p>
                       </div>
                       <span style={{ 
@@ -653,7 +709,7 @@ export default function App() {
                     {sh.locationHistory?.length > 0 && (
                       <>
                         <LocationMap locations={sh.locationHistory} height="150px" />
-                        <button onClick={() => setMapModal({ locations: sh.locationHistory, title: `${sh.userEmail} - Location` })} style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', width: '100%', fontSize: '13px' }}>📍 View Full Map ({sh.locationHistory.length} points)</button>
+                        <button onClick={(e) => { e.stopPropagation(); setMapModal({ locations: sh.locationHistory, title: `${employees.find(emp => emp.id === sh.userId)?.name || sh.userEmail} - Location` }); }} style={{ marginTop: '8px', padding: '10px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', width: '100%', fontSize: '13px' }}>📍 View Full Map ({sh.locationHistory.length} points)</button>
                       </>
                     )}
                   </div>
@@ -782,11 +838,11 @@ export default function App() {
             <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Employees</h1>
             <div style={styles.card}>
               <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Invite Employee</h3>
-              <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Send an invite - they'll set their own password in the mobile app.</p>
+              <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Add an employee - then send them an email or copy the invite link.</p>
               <form onSubmit={inviteEmployee} style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
                 <input placeholder="Name" value={newEmpName} onChange={e => setNewEmpName(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '120px' }} />
                 <input type="email" placeholder="Email" required value={newEmpEmail} onChange={e => setNewEmpEmail(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '180px' }} />
-                <button type="submit" style={styles.btn}>Send Invite</button>
+                <button type="submit" style={styles.btn}>Add Employee</button>
               </form>
             </div>
             
@@ -795,17 +851,67 @@ export default function App() {
               <div style={styles.card}>
                 <h3 style={{ color: theme.warning, marginBottom: '16px', fontSize: '16px' }}>⏳ Pending Invites</h3>
                 {invites.filter(i => i.status === 'pending').map(inv => (
-                  <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: theme.cardAlt, borderRadius: '8px', marginBottom: '8px', flexWrap: 'wrap', gap: '8px' }}>
-                    <div>
-                      <p style={{ color: theme.text, fontWeight: '600' }}>{inv.name || inv.email}</p>
-                      <p style={{ color: theme.textMuted, fontSize: '13px' }}>{inv.email}</p>
+                  <div key={inv.id} style={{ padding: '16px', background: theme.cardAlt, borderRadius: '8px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <p style={{ color: theme.text, fontWeight: '600' }}>{inv.name || inv.email}</p>
+                        <p style={{ color: theme.textMuted, fontSize: '13px' }}>{inv.email}</p>
+                        {inv.emailSent && (
+                          <p style={{ color: theme.success, fontSize: '12px', marginTop: '4px' }}>✓ Email sent</p>
+                        )}
+                      </div>
+                      <button 
+                        onClick={() => cancelInvite(inv.id)} 
+                        style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '12px' }}
+                      >
+                        Cancel
+                      </button>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px' }}>
-                      <button onClick={() => cancelInvite(inv.id)} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '12px' }}>Cancel</button>
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                      <button 
+                        onClick={() => sendInviteEmail(inv)} 
+                        disabled={sendingEmail === inv.id}
+                        style={{ 
+                          padding: '10px 16px', 
+                          borderRadius: '8px', 
+                          border: 'none', 
+                          background: theme.primary, 
+                          color: 'white', 
+                          cursor: sendingEmail === inv.id ? 'not-allowed' : 'pointer', 
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          opacity: sendingEmail === inv.id ? 0.7 : 1,
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        {sendingEmail === inv.id ? '⏳ Sending...' : '📧 Send Email'}
+                      </button>
+                      <button 
+                        onClick={() => copyInviteLink(inv)} 
+                        style={{ 
+                          padding: '10px 16px', 
+                          borderRadius: '8px', 
+                          border: `1px solid ${theme.cardBorder}`, 
+                          background: theme.card, 
+                          color: theme.text, 
+                          cursor: 'pointer', 
+                          fontSize: '13px',
+                          fontWeight: '600',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '6px'
+                        }}
+                      >
+                        📋 Copy Link
+                      </button>
                     </div>
                   </div>
                 ))}
-                <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '12px' }}>Employees join via the mobile app using their invited email.</p>
+                <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '8px' }}>
+                  Employees click the link to set up their account in the mobile app.
+                </p>
               </div>
             )}
             
