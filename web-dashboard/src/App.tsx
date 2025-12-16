@@ -12,8 +12,7 @@ const firebaseConfig = {
   appId: "1:600938431502:web:b661556289a2634c8d285f"
 };
 
-// API URL - UPDATE THIS after deploying timetrack-api to Vercel
-const API_URL = 'https://timetrack-api.vercel.app';
+const API_URL = 'https://timetrack-dashboard-v2.vercel.app';
 const MOBILE_APP_URL = 'https://timetrack-mobile-v2.vercel.app';
 
 const app = initializeApp(firebaseConfig);
@@ -395,6 +394,13 @@ export default function App() {
     }
     
     try {
+      // Delete from Firebase Auth
+      await fetch(`${API_URL}/api/delete-user`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ uid: empId })
+      });
+      
       // Delete employee document
       await deleteDoc(doc(db, 'employees', empId));
       
