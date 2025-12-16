@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser } from 'firebase/auth';
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail } from 'firebase/auth';
 import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -359,7 +359,7 @@ export default function App() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin');
+  const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [signupName, setSignupName] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -530,6 +530,22 @@ export default function App() {
       });
       // User is automatically signed in after createUserWithEmailAndPassword
       setSuccess('Account created!');
+    } catch (err: any) {
+      setError(err.message);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    setSuccess('');
+    if (!email) {
+      setError('Please enter your email address');
+      return;
+    }
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setSuccess('Password reset email sent! Check your inbox.');
     } catch (err: any) {
       setError(err.message);
     }
@@ -803,43 +819,52 @@ export default function App() {
         <p style={{ color: theme.textMuted, textAlign: 'center', marginBottom: '24px' }}>Manager Dashboard</p>
         
         {/* Auth Mode Toggle */}
-        <div style={{ display: 'flex', marginBottom: '24px', background: theme.cardAlt, borderRadius: '8px', padding: '4px' }}>
-          <button 
-            onClick={() => { setAuthMode('signin'); setError(''); }} 
-            style={{ 
-              flex: 1, 
-              padding: '10px', 
-              borderRadius: '6px', 
-              border: 'none', 
-              cursor: 'pointer',
-              fontWeight: '600',
-              background: authMode === 'signin' ? theme.primary : 'transparent',
-              color: authMode === 'signin' ? 'white' : theme.textMuted
-            }}
-          >
-            Sign In
-          </button>
-          <button 
-            onClick={() => { setAuthMode('signup'); setError(''); }} 
-            style={{ 
-              flex: 1, 
-              padding: '10px', 
-              borderRadius: '6px', 
-              border: 'none', 
-              cursor: 'pointer',
-              fontWeight: '600',
-              background: authMode === 'signup' ? theme.primary : 'transparent',
-              color: authMode === 'signup' ? 'white' : theme.textMuted
-            }}
-          >
-            Sign Up
-          </button>
-        </div>
+        {authMode !== 'reset' && (
+          <div style={{ display: 'flex', marginBottom: '24px', background: theme.cardAlt, borderRadius: '8px', padding: '4px' }}>
+            <button 
+              onClick={() => { setAuthMode('signin'); setError(''); setSuccess(''); }} 
+              style={{ 
+                flex: 1, 
+                padding: '10px', 
+                borderRadius: '6px', 
+                border: 'none', 
+                cursor: 'pointer',
+                fontWeight: '600',
+                background: authMode === 'signin' ? theme.primary : 'transparent',
+                color: authMode === 'signin' ? 'white' : theme.textMuted
+              }}
+            >
+              Sign In
+            </button>
+            <button 
+              onClick={() => { setAuthMode('signup'); setError(''); setSuccess(''); }} 
+              style={{ 
+                flex: 1, 
+                padding: '10px', 
+                borderRadius: '6px', 
+                border: 'none', 
+                cursor: 'pointer',
+                fontWeight: '600',
+                background: authMode === 'signup' ? theme.primary : 'transparent',
+                color: authMode === 'signup' ? 'white' : theme.textMuted
+              }}
+            >
+              Sign Up
+            </button>
+          </div>
+        )}
+        
+        {authMode === 'reset' && (
+          <div style={{ marginBottom: '24px' }}>
+            <h2 style={{ color: theme.text, fontSize: '18px', marginBottom: '8px' }}>Reset Password</h2>
+            <p style={{ color: theme.textMuted, fontSize: '14px' }}>Enter your email and we'll send you a reset link.</p>
+          </div>
+        )}
         
         {error && <p style={{ color: theme.danger, marginBottom: '16px', fontSize: '14px' }}>{error}</p>}
         {success && <p style={{ color: theme.success, marginBottom: '16px', fontSize: '14px' }}>{success}</p>}
         
-        <form onSubmit={authMode === 'signin' ? handleLogin : handleSignUp}>
+        <form onSubmit={authMode === 'signin' ? handleLogin : authMode === 'signup' ? handleSignUp : handleResetPassword}>
           {authMode === 'signup' && (
             <input 
               placeholder="Your Name" 
@@ -849,11 +874,51 @@ export default function App() {
             />
           )}
           <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />
-          <input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...styles.input, marginBottom: '16px' }} />
+          {authMode !== 'reset' && (
+            <input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...styles.input, marginBottom: '16px' }} />
+          )}
           <button type="submit" style={{ ...styles.btn, width: '100%' }}>
-            {authMode === 'signin' ? 'Sign In' : 'Create Account'}
+            {authMode === 'signin' ? 'Sign In' : authMode === 'signup' ? 'Create Account' : 'Send Reset Email'}
           </button>
         </form>
+        
+        {authMode === 'signin' && (
+          <button 
+            onClick={() => { setAuthMode('reset'); setError(''); setSuccess(''); }} 
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: theme.primary, 
+              cursor: 'pointer', 
+              fontSize: '14px', 
+              marginTop: '16px',
+              display: 'block',
+              width: '100%',
+              textAlign: 'center'
+            }}
+          >
+            Forgot password?
+          </button>
+        )}
+        
+        {authMode === 'reset' && (
+          <button 
+            onClick={() => { setAuthMode('signin'); setError(''); setSuccess(''); }} 
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              color: theme.primary, 
+              cursor: 'pointer', 
+              fontSize: '14px', 
+              marginTop: '16px',
+              display: 'block',
+              width: '100%',
+              textAlign: 'center'
+            }}
+          >
+            ← Back to Sign In
+          </button>
+        )}
         
         {authMode === 'signup' && (
           <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '16px', textAlign: 'center' }}>
