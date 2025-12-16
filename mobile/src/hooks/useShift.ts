@@ -290,6 +290,58 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     }
   };
 
+  // Add break to historical shift
+  const addBreakToShift = async (shiftId: string, minutes: number): Promise<boolean> => {
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      if (!shiftSnap.exists()) {
+        setError('Shift not found');
+        return false;
+      }
+      
+      const shiftData = shiftSnap.data();
+      const now = Timestamp.now();
+      const newBreak = {
+        startTime: now,
+        endTime: now,
+        durationMinutes: minutes,
+        manualEntry: true
+      };
+      
+      await updateDoc(shiftRef, {
+        breaks: [...(shiftData.breaks || []), newBreak]
+      });
+      
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to add break');
+      return false;
+    }
+  };
+
+  // Delete break from historical shift
+  const deleteBreakFromShift = async (shiftId: string, breakIndex: number): Promise<boolean> => {
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      if (!shiftSnap.exists()) {
+        setError('Shift not found');
+        return false;
+      }
+      
+      const shiftData = shiftSnap.data();
+      const updatedBreaks = (shiftData.breaks || []).filter((_: any, i: number) => i !== breakIndex);
+      
+      await updateDoc(shiftRef, { breaks: updatedBreaks });
+      
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete break');
+      return false;
+    }
+  };
+
   // Start travel
   const startTravel = async () => {
     if (!currentShift) return;
@@ -478,6 +530,8 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     endBreak,
     addPresetBreak,
     deleteBreak,
+    addBreakToShift,
+    deleteBreakFromShift,
     startTravel,
     endTravel,
     saveFields,

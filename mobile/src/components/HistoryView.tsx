@@ -19,19 +19,26 @@ interface HistoryViewProps {
     endMinute: string,
     endAmPm: 'AM' | 'PM'
   ) => Promise<boolean>;
+  onAddBreakToShift: (shiftId: string, minutes: number) => Promise<boolean>;
+  onDeleteBreakFromShift: (shiftId: string, breakIndex: number) => Promise<boolean>;
   showToast: (message: string) => void;
+  paidRestMinutes?: number;
 }
 
 export function HistoryView({
   theme,
   shiftHistory,
   onAddTravelToShift,
-  showToast
+  onAddBreakToShift,
+  onDeleteBreakFromShift,
+  showToast,
+  paidRestMinutes = 10
 }: HistoryViewProps) {
   const styles = createStyles(theme);
   
   const [showBreakRules, setShowBreakRules] = useState(false);
   const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
+  const [editMode, setEditMode] = useState<'travel' | 'breaks' | null>(null);
   const [addTravelStartHour, setAddTravelStartHour] = useState('9');
   const [addTravelStartMinute, setAddTravelStartMinute] = useState('00');
   const [addTravelStartAmPm, setAddTravelStartAmPm] = useState<'AM' | 'PM'>('AM');
@@ -39,6 +46,7 @@ export function HistoryView({
   const [addTravelEndMinute, setAddTravelEndMinute] = useState('30');
   const [addTravelEndAmPm, setAddTravelEndAmPm] = useState<'AM' | 'PM'>('AM');
   const [addingTravelToShift, setAddingTravelToShift] = useState(false);
+  const [addingBreak, setAddingBreak] = useState(false);
 
   const handleAddTravel = async (shiftId: string, shiftDate: Date) => {
     setAddingTravelToShift(true);
@@ -56,6 +64,7 @@ export function HistoryView({
     if (success) {
       showToast('Travel added ✓');
       setEditingShiftId(null);
+      setEditMode(null);
       // Reset form
       setAddTravelStartHour('9');
       setAddTravelStartMinute('00');
@@ -65,6 +74,32 @@ export function HistoryView({
       setAddTravelEndAmPm('AM');
     }
     setAddingTravelToShift(false);
+  };
+
+  const handleAddBreak = async (shiftId: string, minutes: number) => {
+    setAddingBreak(true);
+    const success = await onAddBreakToShift(shiftId, minutes);
+    if (success) {
+      showToast(`${minutes}m break added ✓`);
+    }
+    setAddingBreak(false);
+  };
+
+  const handleDeleteBreak = async (shiftId: string, breakIndex: number) => {
+    const success = await onDeleteBreakFromShift(shiftId, breakIndex);
+    if (success) {
+      showToast('Break removed ✓');
+    }
+  };
+
+  const openEditPanel = (shiftId: string, mode: 'travel' | 'breaks') => {
+    setEditingShiftId(shiftId);
+    setEditMode(mode);
+  };
+
+  const closeEditPanel = () => {
+    setEditingShiftId(null);
+    setEditMode(null);
   };
 
   return (
@@ -80,9 +115,10 @@ export function HistoryView({
       ) : (
         shiftHistory.map(shift => {
           const shiftHours = getHours(shift.clockIn, shift.clockOut);
-          const breakAllocation = calcBreaks(shift.breaks || [], shiftHours);
+          const breakAllocation = calcBreaks(shift.breaks || [], shiftHours, paidRestMinutes);
           const travelMinutes = calcTravel(shift.travelSegments || []);
           const workingMinutes = (shiftHours * 60) - breakAllocation.unpaid;
+          const isEditing = editingShiftId === shift.id;
 
           return (
             <div key={shift.id} style={styles.card}>
@@ -129,6 +165,46 @@ export function HistoryView({
                 )}
               </div>
 
+              {/* Breaks list (when editing breaks) */}
+              {isEditing && editMode === 'breaks' && (shift.breaks || []).length > 0 && (
+                <div style={{ marginTop: '12px', background: '#fef3c7', borderRadius: '10px', padding: '12px' }}>
+                  <p style={{ color: '#92400e', fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>
+                    Breaks ({shift.breaks!.length})
+                  </p>
+                  {shift.breaks!.map((b, i) => (
+                    <div key={i} style={{ 
+                      display: 'flex', 
+                      justifyContent: 'space-between', 
+                      alignItems: 'center',
+                      padding: '8px',
+                      background: 'white',
+                      borderRadius: '6px',
+                      marginBottom: '6px'
+                    }}>
+                      <span style={{ color: '#1e293b', fontSize: '14px' }}>
+                        {b.durationMinutes || 0}m break
+                        {b.manualEntry && <span style={{ color: '#64748b', fontSize: '11px', marginLeft: '6px' }}>(manual)</span>}
+                      </span>
+                      <button
+                        onClick={() => handleDeleteBreak(shift.id, i)}
+                        style={{
+                          padding: '4px 10px',
+                          borderRadius: '6px',
+                          background: '#fee2e2',
+                          color: '#dc2626',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                          fontWeight: '500'
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {/* Job log fields */}
               {shift.jobLog?.field1 && (
                 <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '8px' }}>
@@ -155,26 +231,98 @@ export function HistoryView({
                 </p>
               )}
 
-              {/* Add Travel Section */}
-              {editingShiftId !== shift.id ? (
-                <button
-                  onClick={() => setEditingShiftId(shift.id)}
-                  style={{
-                    marginTop: '12px',
-                    width: '100%',
-                    padding: '10px',
-                    borderRadius: '10px',
-                    background: 'transparent',
-                    color: '#2563eb',
-                    border: '1px dashed #bfdbfe',
-                    cursor: 'pointer',
-                    fontSize: '13px',
-                    fontWeight: '500'
-                  }}
-                >
-                  + Add Travel
-                </button>
-              ) : (
+              {/* Action buttons when not editing */}
+              {!isEditing && (
+                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                  <button
+                    onClick={() => openEditPanel(shift.id, 'breaks')}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      borderRadius: '10px',
+                      background: 'transparent',
+                      color: '#f59e0b',
+                      border: '1px dashed #fcd34d',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    + Add Break
+                  </button>
+                  <button
+                    onClick={() => openEditPanel(shift.id, 'travel')}
+                    style={{
+                      flex: 1,
+                      padding: '10px',
+                      borderRadius: '10px',
+                      background: 'transparent',
+                      color: '#2563eb',
+                      border: '1px dashed #bfdbfe',
+                      cursor: 'pointer',
+                      fontSize: '13px',
+                      fontWeight: '500'
+                    }}
+                  >
+                    + Add Travel
+                  </button>
+                </div>
+              )}
+
+              {/* Add Break Panel */}
+              {isEditing && editMode === 'breaks' && (
+                <div style={{ marginTop: '12px', background: '#fef3c7', borderRadius: '10px', padding: '12px' }}>
+                  <p style={{ color: '#92400e', fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
+                    Add Break
+                  </p>
+                  
+                  {/* Quick add buttons */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                    {[10, 15, 20, 30].map(mins => (
+                      <button
+                        key={mins}
+                        onClick={() => handleAddBreak(shift.id, mins)}
+                        disabled={addingBreak}
+                        style={{
+                          flex: 1,
+                          minWidth: '60px',
+                          padding: '12px 8px',
+                          borderRadius: '8px',
+                          background: '#f59e0b',
+                          color: 'white',
+                          border: 'none',
+                          cursor: addingBreak ? 'not-allowed' : 'pointer',
+                          fontWeight: '600',
+                          fontSize: '14px',
+                          opacity: addingBreak ? 0.7 : 1
+                        }}
+                      >
+                        {mins}m
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={closeEditPanel}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: '8px',
+                      background: 'white',
+                      color: '#64748b',
+                      border: '1px solid #e2e8f0',
+                      cursor: 'pointer',
+                      fontWeight: '500',
+                      fontSize: '14px'
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+              )}
+
+              {/* Add Travel Panel */}
+              {isEditing && editMode === 'travel' && (
                 <div style={{ marginTop: '12px', background: '#dbeafe', borderRadius: '10px', padding: '12px' }}>
                   <p style={{ color: '#1d4ed8', fontSize: '13px', fontWeight: '600', marginBottom: '12px' }}>
                     Add Travel Time
@@ -259,7 +407,7 @@ export function HistoryView({
                       {addingTravelToShift ? 'Adding...' : 'Add Travel'}
                     </button>
                     <button
-                      onClick={() => setEditingShiftId(null)}
+                      onClick={closeEditPanel}
                       style={{
                         padding: '10px 16px',
                         borderRadius: '8px',
@@ -283,7 +431,12 @@ export function HistoryView({
 
       {/* Break Rules */}
       <div style={{ marginTop: '16px' }}>
-        <BreakRulesInfo isOpen={showBreakRules} onToggle={() => setShowBreakRules(!showBreakRules)} theme={theme} />
+        <BreakRulesInfo 
+          isOpen={showBreakRules} 
+          onToggle={() => setShowBreakRules(!showBreakRules)} 
+          theme={theme}
+          paidRestMinutes={paidRestMinutes}
+        />
       </div>
     </div>
   );
