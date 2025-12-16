@@ -214,10 +214,27 @@ export default function App() {
 
   const theme = dark ? darkTheme : lightTheme;
 
+  // Get employee info - returns name, email, and whether employee exists
+  const getEmployeeInfo = (userId?: string, userEmail?: string): { name: string, email: string, exists: boolean } => {
+    if (userId) {
+      const emp = employees.find(e => e.id === userId);
+      if (emp) {
+        return { name: emp.name || emp.email.split('@')[0], email: emp.email, exists: true };
+      }
+    }
+    if (userEmail) {
+      const emp = employees.find(e => e.email === userEmail);
+      if (emp) {
+        return { name: emp.name || emp.email.split('@')[0], email: emp.email, exists: true };
+      }
+      // Employee not found but we have email
+      return { name: userEmail.split('@')[0], email: userEmail, exists: false };
+    }
+    return { name: 'Unknown', email: '', exists: false };
+  };
+
   const getEmployeeName = (userId?: string, userEmail?: string): string => {
-    if (userId) { const emp = employees.find(e => e.id === userId); if (emp?.name) return emp.name; }
-    if (userEmail) { const emp = employees.find(e => e.email === userEmail); if (emp?.name) return emp.name; }
-    return userEmail || 'Unknown';
+    return getEmployeeInfo(userId, userEmail).name;
   };
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -264,17 +281,22 @@ export default function App() {
   const toggleEmployee = (id: string) => { const s = new Set(expandedEmployees); if (s.has(id)) s.delete(id); else s.add(id); setExpandedEmployees(s); };
   const toggleWeek = (key: string) => { const s = new Set(expandedWeeks); if (s.has(key)) s.delete(key); else s.add(key); setExpandedWeeks(s); };
 
-  // Group timesheets by employee name, then by week
+  // Group timesheets by EMPLOYEE ID (not name) to avoid duplicates
   const getGroupedTimesheets = () => {
     const completed = allShifts.filter(s => s.status === 'completed');
-    const grouped: { [empId: string]: { name: string, weeks: { [weekKey: string]: { weekEnd: Date, shifts: Shift[], totalMinutes: number } } } } = {};
+    const grouped: { [empId: string]: { name: string, email: string, exists: boolean, weeks: { [weekKey: string]: { weekEnd: Date, shifts: Shift[], totalMinutes: number } } } } = {};
     
     completed.forEach(shift => {
-      const empId = shift.userId;
-      const empName = getEmployeeName(shift.userId, shift.userEmail);
+      const empId = shift.userId || 'unknown';
       
       if (!grouped[empId]) {
-        grouped[empId] = { name: empName, weeks: {} };
+        const info = getEmployeeInfo(shift.userId, shift.userEmail);
+        grouped[empId] = { 
+          name: info.name, 
+          email: info.email,
+          exists: info.exists,
+          weeks: {} 
+        };
       }
       
       const shiftDate = shift.clockIn?.toDate?.();
@@ -372,15 +394,25 @@ export default function App() {
             if (empIds.length === 0) return <div style={styles.card}><p style={{ color: theme.textMuted, textAlign: 'center' }}>No completed shifts</p></div>;
             
             return empIds.map(empId => {
-              const { name, weeks } = grouped[empId];
+              const { name, email, exists, weeks } = grouped[empId];
               const isExpanded = expandedEmployees.has(empId);
+              const shiftCount = Object.values(weeks).reduce((sum, w) => sum + w.shifts.length, 0);
               
               return (
                 <div key={empId} style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
                   {/* Employee Row */}
-                  <div onClick={() => toggleEmployee(empId)} style={{ padding: '16px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '12px', background: isExpanded ? theme.primary : theme.card }}>
-                    <span style={{ fontSize: '16px', color: isExpanded ? 'white' : theme.text }}>{isExpanded ? '▼' : '▶'}</span>
-                    <p style={{ color: isExpanded ? 'white' : theme.text, fontWeight: '600', fontSize: '16px', margin: 0 }}>{name}</p>
+                  <div onClick={() => toggleEmployee(empId)} style={{ padding: '16px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: isExpanded ? theme.primary : theme.card }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span style={{ fontSize: '16px', color: isExpanded ? 'white' : theme.text }}>{isExpanded ? '▼' : '▶'}</span>
+                      <div>
+                        <p style={{ color: isExpanded ? 'white' : theme.text, fontWeight: '600', fontSize: '16px', margin: 0 }}>{name}</p>
+                        {email && <p style={{ color: isExpanded ? 'rgba(255,255,255,0.7)' : theme.textMuted, fontSize: '12px', margin: '2px 0 0 0' }}>{email}</p>}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {!exists && <span style={{ background: theme.warningBg, color: theme.warning, padding: '2px 8px', borderRadius: '4px', fontSize: '11px' }}>Deleted</span>}
+                      <span style={{ color: isExpanded ? 'rgba(255,255,255,0.7)' : theme.textMuted, fontSize: '13px' }}>{shiftCount} shifts</span>
+                    </div>
                   </div>
                   
                   {/* Weeks */}
