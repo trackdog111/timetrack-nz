@@ -281,17 +281,18 @@ export default function App() {
   const toggleEmployee = (id: string) => { const s = new Set(expandedEmployees); if (s.has(id)) s.delete(id); else s.add(id); setExpandedEmployees(s); };
   const toggleWeek = (key: string) => { const s = new Set(expandedWeeks); if (s.has(key)) s.delete(key); else s.add(key); setExpandedWeeks(s); };
 
-  // Group timesheets by EMPLOYEE ID (not name) to avoid duplicates
+  // Group timesheets by EMAIL to consolidate shifts from same person (handles userId changes)
   const getGroupedTimesheets = () => {
     const completed = allShifts.filter(s => s.status === 'completed');
-    const grouped: { [empId: string]: { name: string, email: string, exists: boolean, weeks: { [weekKey: string]: { weekEnd: Date, shifts: Shift[], totalMinutes: number } } } } = {};
+    const grouped: { [email: string]: { name: string, email: string, exists: boolean, weeks: { [weekKey: string]: { weekEnd: Date, shifts: Shift[], totalMinutes: number } } } } = {};
     
     completed.forEach(shift => {
-      const empId = shift.userId || 'unknown';
+      // Use email as the key (lowercase for consistency), fall back to oderId if no email
+      const email = (shift.userEmail || shift.userId || 'unknown').toLowerCase();
       
-      if (!grouped[empId]) {
+      if (!grouped[email]) {
         const info = getEmployeeInfo(shift.userId, shift.userEmail);
-        grouped[empId] = { 
+        grouped[email] = { 
           name: info.name, 
           email: info.email,
           exists: info.exists,
@@ -305,14 +306,14 @@ export default function App() {
       const weekKey = getWeekEndingKey(shiftDate, companySettings.payWeekEndDay);
       const weekEnd = getWeekEndingDate(shiftDate, companySettings.payWeekEndDay);
       
-      if (!grouped[empId].weeks[weekKey]) {
-        grouped[empId].weeks[weekKey] = { weekEnd, shifts: [], totalMinutes: 0 };
+      if (!grouped[email].weeks[weekKey]) {
+        grouped[email].weeks[weekKey] = { weekEnd, shifts: [], totalMinutes: 0 };
       }
       
       const h = getHours(shift.clockIn, shift.clockOut);
       const b = calcBreaks(shift.breaks || [], h, companySettings.paidRestMinutes);
-      grouped[empId].weeks[weekKey].shifts.push(shift);
-      grouped[empId].weeks[weekKey].totalMinutes += (h * 60) - b.unpaid;
+      grouped[email].weeks[weekKey].shifts.push(shift);
+      grouped[email].weeks[weekKey].totalMinutes += (h * 60) - b.unpaid;
     });
     
     // Sort weeks newest first

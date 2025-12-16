@@ -50,6 +50,7 @@ export interface CompanyLabels {
   field3Label: string;
   managerDisplayName: string;
   paidRestMinutes: number; // Minutes per paid rest break (default: 10, can be 10/15/20/25/30)
+  payWeekEndDay: number;   // Day of week pay period ends (0=Sunday, 1=Monday, etc.)
 }
 
 export const defaultLabels: CompanyLabels = {
@@ -57,7 +58,8 @@ export const defaultLabels: CompanyLabels = {
   field2Label: 'Materials',
   field3Label: 'Other',
   managerDisplayName: 'Manager',
-  paidRestMinutes: 10
+  paidRestMinutes: 10,
+  payWeekEndDay: 0 // Sunday
 };
 
 export interface EmployeeSettings {
