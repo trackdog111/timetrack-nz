@@ -254,8 +254,8 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
   };
 
   // Add preset break
-  const addPresetBreak = async (minutes: number) => {
-    if (!currentShift) return;
+  const addPresetBreak = async (minutes: number): Promise<boolean> => {
+    if (!currentShift) return false;
     try {
       const now = Timestamp.now();
       await updateDoc(doc(db, 'shifts', currentShift.id), {
@@ -274,8 +274,8 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
   };
 
   // Delete break
-  const deleteBreak = async (breakIndex: number) => {
-    if (!currentShift) return;
+  const deleteBreak = async (breakIndex: number): Promise<boolean> => {
+    if (!currentShift) return false;
     try {
       const updatedBreaks = currentShift.breaks.filter((_, i) => i !== breakIndex);
       await updateDoc(doc(db, 'shifts', currentShift.id), { breaks: updatedBreaks });

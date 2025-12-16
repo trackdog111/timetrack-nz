@@ -74,10 +74,7 @@ export function JobLogView({
         }
         
         if (finalTranscript) {
-          setJobNotes(prev => {
-            const separator = prev && !prev.endsWith(' ') && !prev.endsWith('\n') ? ' ' : '';
-            return prev + separator + finalTranscript;
-          });
+          setJobNotes(jobNotes + (jobNotes && !jobNotes.endsWith(' ') && !jobNotes.endsWith('\n') ? ' ' : '') + finalTranscript);
         }
       };
       
