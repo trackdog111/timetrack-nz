@@ -77,7 +77,7 @@ function buildDateFromTime(baseDate: Date, hour: string, minute: string, ampm: '
 
 const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
-// Map Modal Component
+// Map Modal Component - FIXED to show all tracking points
 function MapModal({ 
   locations, 
   onClose, 
@@ -98,52 +98,126 @@ function MapModal({
   const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
   const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
   
-  // Combine all locations with their types
-  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking' }[] = [];
-  
-  // Add clock-in location first (if exists)
-  if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
-    allPoints.push({ loc: clockInLocation, type: 'clockIn' });
-  }
-  
-  // Add tracking locations (filter out duplicates of clock in/out)
-  (locations || []).forEach(loc => {
-    if (!loc || !loc.latitude || !loc.longitude) return;
+  // Build all points with proper type assignment
+  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking' }[] = useMemo(() => {
+    const points: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking' }[] = [];
+    const addedTimestamps = new Set<string>();
     
-    // Skip if this is the same as clock-in location
-    if (clockInLocation && 
-        Math.abs(loc.latitude - clockInLocation.latitude) < 0.0001 && 
-        Math.abs(loc.longitude - clockInLocation.longitude) < 0.0001 &&
-        Math.abs(loc.timestamp - clockInLocation.timestamp) < 5000) {
-      return;
+    // Helper to create unique key for deduplication
+    const getLocKey = (loc: Location): string => {
+      return `${loc.latitude.toFixed(5)}-${loc.longitude.toFixed(5)}-${loc.timestamp}`;
+    };
+    
+    // Add clock-in location first
+    if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
+      points.push({ loc: clockInLocation, type: 'clockIn' });
+      addedTimestamps.add(getLocKey(clockInLocation));
     }
     
-    // Skip if this is the same as clock-out location
-    if (clockOutLocation && 
-        Math.abs(loc.latitude - clockOutLocation.latitude) < 0.0001 && 
-        Math.abs(loc.longitude - clockOutLocation.longitude) < 0.0001 &&
-        Math.abs(loc.timestamp - clockOutLocation.timestamp) < 5000) {
-      return;
+    // Add ALL tracking locations (only skip exact duplicates)
+    (locations || []).forEach(loc => {
+      if (!loc || !loc.latitude || !loc.longitude) return;
+      
+      const key = getLocKey(loc);
+      if (addedTimestamps.has(key)) return; // Skip exact duplicates only
+      
+      addedTimestamps.add(key);
+      points.push({ loc, type: 'tracking' });
+    });
+    
+    // Add clock-out location last
+    if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
+      const key = getLocKey(clockOutLocation);
+      if (!addedTimestamps.has(key)) {
+        points.push({ loc: clockOutLocation, type: 'clockOut' });
+      } else {
+        // Find and update the existing point to be clock-out
+        const existingIdx = points.findIndex(p => getLocKey(p.loc) === key);
+        if (existingIdx !== -1 && points[existingIdx].type === 'tracking') {
+          points[existingIdx].type = 'clockOut';
+        }
+      }
     }
     
-    // Everything else is a tracking point
-    allPoints.push({ loc, type: 'tracking' });
-  });
+    // Sort by timestamp
+    points.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
+    
+    // Ensure first point is clockIn if we have one
+    if (clockInLocation && points.length > 0) {
+      const clockInKey = getLocKey(clockInLocation);
+      const clockInIdx = points.findIndex(p => getLocKey(p.loc) === clockInKey);
+      if (clockInIdx !== -1) {
+        points[clockInIdx].type = 'clockIn';
+      }
+    }
+    
+    // Ensure last point is clockOut if we have one
+    if (clockOutLocation && points.length > 0) {
+      const clockOutKey = getLocKey(clockOutLocation);
+      const clockOutIdx = points.findIndex(p => getLocKey(p.loc) === clockOutKey);
+      if (clockOutIdx !== -1) {
+        points[clockOutIdx].type = 'clockOut';
+      }
+    }
+    
+    return points;
+  }, [locations, clockInLocation, clockOutLocation]);
   
-  // Add clock-out location last (if exists)
-  if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
-    allPoints.push({ loc: clockOutLocation, type: 'clockOut' });
+  if (allPoints.length === 0) {
+    return (
+      <div 
+        style={{ 
+          position: 'fixed', 
+          top: 0, 
+          left: 0, 
+          right: 0, 
+          bottom: 0, 
+          background: 'rgba(0,0,0,0.5)', 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'center', 
+          zIndex: 1000, 
+          padding: '16px' 
+        }} 
+        onClick={onClose}
+      >
+        <div 
+          style={{ 
+            background: theme.card, 
+            borderRadius: '12px', 
+            padding: '20px', 
+            textAlign: 'center' 
+          }} 
+          onClick={e => e.stopPropagation()}
+        >
+          <p style={{ color: theme.textMuted }}>No location data available</p>
+          <button 
+            onClick={onClose}
+            style={{
+              marginTop: '12px',
+              padding: '10px 20px',
+              background: theme.primary,
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    );
   }
-  
-  // Sort by timestamp
-  allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
-  
-  if (allPoints.length === 0) return null;
   
   const lats = allPoints.map(p => p.loc.latitude);
   const lngs = allPoints.map(p => p.loc.longitude);
   const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
+  
+  // Add some padding to bounds
+  const latPadding = Math.max(0.005, (maxLat - minLat) * 0.2);
+  const lngPadding = Math.max(0.005, (maxLng - minLng) * 0.2);
   
   return (
     <div 
@@ -203,21 +277,21 @@ function MapModal({
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.tracking }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Tracking</span>
+            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Tracking ({allPoints.filter(p => p.type === 'tracking').length})</span>
           </div>
         </div>
         
         {/* Map */}
         <div style={{ height: '250px', borderRadius: '8px', overflow: 'hidden', marginBottom: '12px' }}>
           <iframe 
-            src={`https://www.openstreetmap.org/export/embed.html?bbox=${minLng - 0.005},${minLat - 0.005},${maxLng + 0.005},${maxLat + 0.005}&layer=mapnik`} 
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${minLng - lngPadding},${minLat - latPadding},${maxLng + lngPadding},${maxLat + latPadding}&layer=mapnik`} 
             style={{ width: '100%', height: '100%', border: 'none' }} 
             title="Location Map" 
           />
         </div>
         
         {/* Location List */}
-        <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+        <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
           {allPoints.map((point, i) => (
             <div 
               key={i} 
@@ -745,7 +819,7 @@ export function HistoryView({
                           </p>
                         )}
 
-                        {/* Location points with view button */}
+                        {/* Location points - CLICKABLE BUTTON */}
                         {locationCount > 0 && (
                           <button
                             onClick={() => openMapModal(shift)}
@@ -753,14 +827,14 @@ export function HistoryView({
                               display: 'flex',
                               alignItems: 'center',
                               gap: '6px',
-                              marginTop: '8px',
-                              padding: '8px 12px',
+                              marginTop: '10px',
+                              padding: '10px 14px',
                               background: theme.cardAlt,
                               border: `1px solid ${theme.primary}`,
                               borderRadius: '8px',
                               color: theme.primary,
-                              fontSize: '12px',
-                              fontWeight: '500',
+                              fontSize: '13px',
+                              fontWeight: '600',
                               cursor: 'pointer',
                               width: '100%',
                               justifyContent: 'center'
@@ -1183,7 +1257,5 @@ export function HistoryView({
         />
       </div>
     </div>
-  );
-}    </div>
   );
 }
