@@ -182,19 +182,21 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
   
   // Load Leaflet from CDN
   useEffect(() => {
-    // Add custom marker CSS to override Leaflet defaults
-    if (!document.getElementById('custom-marker-css')) {
-      const style = document.createElement('style');
-      style.id = 'custom-marker-css';
-      style.textContent = `
-        .leaflet-div-icon { background: none !important; border: none !important; }
-        .custom-marker { background: none !important; border: none !important; }
-        .custom-marker div { box-sizing: border-box; }
-      `;
-      document.head.appendChild(style);
-    }
+    // Helper to inject custom CSS
+    const injectCustomCSS = () => {
+      if (!document.getElementById('custom-marker-css')) {
+        const style = document.createElement('style');
+        style.id = 'custom-marker-css';
+        style.textContent = `
+          .leaflet-div-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
+          .custom-marker { background: transparent !important; border: none !important; }
+        `;
+        document.head.appendChild(style);
+      }
+    };
     
     if ((window as any).L) {
+      injectCustomCSS();
       setLeafletLoaded(true);
       return;
     }
@@ -208,7 +210,10 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
     // Load JS
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
-    script.onload = () => setLeafletLoaded(true);
+    script.onload = () => {
+      injectCustomCSS();
+      setLeafletLoaded(true);
+    };
     document.head.appendChild(script);
     
     return () => {
@@ -258,20 +263,7 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
       // Create custom icon
       const icon = L.divIcon({
         className: 'custom-marker',
-        html: `<div style="
-          width: 28px;
-          height: 28px;
-          background: ${color};
-          border: 3px solid white;
-          border-radius: 50%;
-          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: white;
-          font-size: 11px;
-          font-weight: bold;
-        ">${index + 1}</div>`,
+        html: `<div style="width:28px;height:28px;background:${color};border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:bold;">${index + 1}</div>`,
         iconSize: [28, 28],
         iconAnchor: [14, 14]
       });
