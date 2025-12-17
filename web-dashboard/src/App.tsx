@@ -182,6 +182,17 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
   
   // Load Leaflet from CDN
   useEffect(() => {
+    // Add custom marker CSS to override Leaflet defaults
+    if (!document.getElementById('custom-marker-css')) {
+      const style = document.createElement('style');
+      style.id = 'custom-marker-css';
+      style.textContent = `
+        .custom-marker { background: none !important; border: none !important; }
+        .custom-marker div { box-sizing: border-box; }
+      `;
+      document.head.appendChild(style);
+    }
+    
     if ((window as any).L) {
       setLeafletLoaded(true);
       return;
