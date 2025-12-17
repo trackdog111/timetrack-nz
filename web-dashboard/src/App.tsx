@@ -140,7 +140,7 @@ function roundTime(date: Date, roundTo: 15 | 30, direction: 'down' | 'up'): Date
   return result;
 }
 
-// FIXED: MapModal with proper GPS marker handling
+// FIXED: MapModal - only skip EXACT duplicates, not "nearby" points
 function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutLocation }: { locations: Location[], onClose: () => void, title: string, theme: any, clockInLocation?: Location, clockOutLocation?: Location }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   
@@ -156,23 +156,23 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
     allPoints.push({ loc: clockInLocation, type: 'clockIn' });
   }
   
-  // Add tracking locations (filter out duplicates of clock in/out)
+  // Add tracking locations (filter out EXACT duplicates of clock in/out only)
   (locations || []).forEach(loc => {
     if (!loc || !loc.latitude || !loc.longitude) return;
     
-    // Skip if this is the same as clock-in location
+    // Skip only if this is an EXACT duplicate of clock-in location (same lat, lng, AND timestamp)
     if (clockInLocation && 
-        Math.abs(loc.latitude - clockInLocation.latitude) < 0.0001 && 
-        Math.abs(loc.longitude - clockInLocation.longitude) < 0.0001 &&
-        Math.abs(loc.timestamp - clockInLocation.timestamp) < 5000) {
+        loc.latitude === clockInLocation.latitude && 
+        loc.longitude === clockInLocation.longitude &&
+        loc.timestamp === clockInLocation.timestamp) {
       return;
     }
     
-    // Skip if this is the same as clock-out location
+    // Skip only if this is an EXACT duplicate of clock-out location (same lat, lng, AND timestamp)
     if (clockOutLocation && 
-        Math.abs(loc.latitude - clockOutLocation.latitude) < 0.0001 && 
-        Math.abs(loc.longitude - clockOutLocation.longitude) < 0.0001 &&
-        Math.abs(loc.timestamp - clockOutLocation.timestamp) < 5000) {
+        loc.latitude === clockOutLocation.latitude && 
+        loc.longitude === clockOutLocation.longitude &&
+        loc.timestamp === clockOutLocation.timestamp) {
       return;
     }
     
