@@ -349,7 +349,7 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
 function LocationMap({ locations, height = '200px' }: { locations: Location[], height?: string }) {
   if (!locations || locations.length === 0) return <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>No location data</div>;
   const lastLoc = locations[locations.length - 1];
-  return <div style={{ height, borderRadius: '8px', overflow: 'hidden' }}><iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${lastLoc.longitude - 0.01},${lastLoc.latitude - 0.01},${lastLoc.longitude + 0.01},${lastLoc.latitude + 0.01}&layer=mapnik&marker=${lastLoc.latitude},${lastLoc.longitude}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Map" /></iframe></div>;
+  return <div style={{ height, borderRadius: '8px', overflow: 'hidden' }}><iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${lastLoc.longitude - 0.01},${lastLoc.latitude - 0.01},${lastLoc.longitude + 0.01},${lastLoc.latitude + 0.01}&layer=mapnik&marker=${lastLoc.latitude},${lastLoc.longitude}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Map" /></div>;
 }
 
 // Edit Shift Modal for Managers
