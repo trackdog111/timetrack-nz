@@ -1173,31 +1173,17 @@ export function HistoryView({
         })
       )}
 
-      {/* Break rules info button */}
-      <div style={{ marginTop: '20px', textAlign: 'center' }}>
-        <button
-          onClick={() => setShowBreakRules(true)}
-          style={{
-            padding: '10px 20px',
-            borderRadius: '8px',
-            background: 'transparent',
-            color: theme.textMuted,
-            border: `1px solid ${theme.cardAlt}`,
-            cursor: 'pointer',
-            fontSize: '13px'
-          }}
-        >
-          ℹ️ NZ Break Rules
-        </button>
-      </div>
-
-      {showBreakRules && (
+      {/* Break rules info */}
+      <div style={{ marginTop: '20px' }}>
         <BreakRulesInfo
+          isOpen={showBreakRules}
+          onToggle={() => setShowBreakRules(!showBreakRules)}
           theme={theme}
-          onClose={() => setShowBreakRules(false)}
           paidRestMinutes={paidRestMinutes}
         />
-      )}
+      </div>
     </div>
+  );
+}    </div>
   );
 }
