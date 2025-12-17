@@ -140,60 +140,155 @@ function roundTime(date: Date, roundTo: 15 | 30, direction: 'down' | 'up'): Date
   return result;
 }
 
-// FIXED: MapModal - only skip EXACT duplicates, not "nearby" points
+// Leaflet Map Modal with colored markers
 function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutLocation }: { locations: Location[], onClose: () => void, title: string, theme: any, clockInLocation?: Location, clockOutLocation?: Location }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [leafletLoaded, setLeafletLoaded] = useState(false);
+  const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<any>(null);
   
-  // Build combined list with explicit types
   const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
   const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
   
   // Combine all locations with their types
   const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking' }[] = [];
   
-  // Add clock-in location first (if exists)
   if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
     allPoints.push({ loc: clockInLocation, type: 'clockIn' });
   }
   
-  // Add tracking locations (filter out EXACT duplicates of clock in/out only)
   (locations || []).forEach(loc => {
     if (!loc || !loc.latitude || !loc.longitude) return;
-    
-    // Skip only if this is an EXACT duplicate of clock-in location (same lat, lng, AND timestamp)
     if (clockInLocation && 
         loc.latitude === clockInLocation.latitude && 
         loc.longitude === clockInLocation.longitude &&
         loc.timestamp === clockInLocation.timestamp) {
       return;
     }
-    
-    // Skip only if this is an EXACT duplicate of clock-out location (same lat, lng, AND timestamp)
     if (clockOutLocation && 
         loc.latitude === clockOutLocation.latitude && 
         loc.longitude === clockOutLocation.longitude &&
         loc.timestamp === clockOutLocation.timestamp) {
       return;
     }
-    
-    // Everything else is a tracking point
     allPoints.push({ loc, type: 'tracking' });
   });
   
-  // Add clock-out location last (if exists)
   if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
     allPoints.push({ loc: clockOutLocation, type: 'clockOut' });
   }
   
-  // Sort by timestamp
   allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
   
-  if (allPoints.length === 0) return null;
+  // Load Leaflet from CDN
+  useEffect(() => {
+    if ((window as any).L) {
+      setLeafletLoaded(true);
+      return;
+    }
+    
+    // Load CSS
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+    document.head.appendChild(link);
+    
+    // Load JS
+    const script = document.createElement('script');
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+    script.onload = () => setLeafletLoaded(true);
+    document.head.appendChild(script);
+    
+    return () => {
+      // Cleanup handled by map destroy
+    };
+  }, []);
   
-  const lats = allPoints.map(p => p.loc.latitude);
-  const lngs = allPoints.map(p => p.loc.longitude);
-  const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
+  // Initialize map once Leaflet is loaded
+  useEffect(() => {
+    if (!leafletLoaded || !mapRef.current || allPoints.length === 0) return;
+    
+    const L = (window as any).L;
+    if (!L) return;
+    
+    // Destroy existing map
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+    }
+    
+    // Calculate bounds
+    const lats = allPoints.map(p => p.loc.latitude);
+    const lngs = allPoints.map(p => p.loc.longitude);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    
+    // Create map
+    const map = L.map(mapRef.current).fitBounds([
+      [minLat - 0.002, minLng - 0.002],
+      [maxLat + 0.002, maxLng + 0.002]
+    ]);
+    
+    mapInstanceRef.current = map;
+    
+    // Add tile layer
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© OpenStreetMap contributors'
+    }).addTo(map);
+    
+    // Add markers
+    allPoints.forEach((point, index) => {
+      const color = markerColors[point.type];
+      const label = markerLabels[point.type];
+      const time = new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
+      
+      // Create custom icon
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="
+          width: 28px;
+          height: 28px;
+          background: ${color};
+          border: 3px solid white;
+          border-radius: 50%;
+          box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-size: 11px;
+          font-weight: bold;
+        ">${index + 1}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      
+      L.marker([point.loc.latitude, point.loc.longitude], { icon })
+        .addTo(map)
+        .bindPopup(`<b>${label}</b><br>${time}`);
+    });
+    
+    // Draw path line connecting points
+    if (allPoints.length > 1) {
+      const pathCoords = allPoints.map(p => [p.loc.latitude, p.loc.longitude]);
+      L.polyline(pathCoords, { 
+        color: '#6366f1', 
+        weight: 3, 
+        opacity: 0.7,
+        dashArray: '10, 10'
+      }).addTo(map);
+    }
+    
+    return () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
+    };
+  }, [leafletLoaded, allPoints.length]);
+  
+  if (allPoints.length === 0) return null;
   
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={onClose}>
@@ -207,8 +302,21 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.clockOut }}></span><span style={{ color: theme.textMuted, fontSize: '12px' }}>Clock Out</span></div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.tracking }}></span><span style={{ color: theme.textMuted, fontSize: '12px' }}>Tracking</span></div>
         </div>
-        <div style={{ height: '350px', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px', position: 'relative' }}>
-          <iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${minLng - 0.003},${minLat - 0.003},${maxLng + 0.003},${maxLat + 0.003}&layer=mapnik`} style={{ width: '100%', height: '100%', border: 'none' }} title="Map" />
+        <div 
+          ref={mapRef} 
+          style={{ 
+            height: '350px', 
+            borderRadius: '8px', 
+            overflow: 'hidden', 
+            marginBottom: '16px',
+            background: '#e5e7eb'
+          }} 
+        >
+          {!leafletLoaded && (
+            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}>
+              Loading map...
+            </div>
+          )}
         </div>
         <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
           {allPoints.map((point, i) => (
@@ -229,7 +337,7 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
 function LocationMap({ locations, height = '200px' }: { locations: Location[], height?: string }) {
   if (!locations || locations.length === 0) return <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>No location data</div>;
   const lastLoc = locations[locations.length - 1];
-  return <div style={{ height, borderRadius: '8px', overflow: 'hidden' }}><iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${lastLoc.longitude - 0.01},${lastLoc.latitude - 0.01},${lastLoc.longitude + 0.01},${lastLoc.latitude + 0.01}&layer=mapnik&marker=${lastLoc.latitude},${lastLoc.longitude}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Map" /></div>;
+  return <div style={{ height, borderRadius: '8px', overflow: 'hidden' }}><iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${lastLoc.longitude - 0.01},${lastLoc.latitude - 0.01},${lastLoc.longitude + 0.01},${lastLoc.latitude + 0.01}&layer=mapnik&marker=${lastLoc.latitude},${lastLoc.longitude}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Map" /></iframe></div>;
 }
 
 // Edit Shift Modal for Managers
