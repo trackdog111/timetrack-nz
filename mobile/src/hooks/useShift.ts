@@ -311,7 +311,10 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
       };
       
       await updateDoc(shiftRef, {
-        breaks: [...(shiftData.breaks || []), newBreak]
+        breaks: [...(shiftData.breaks || []), newBreak],
+        editedAt: Timestamp.now(),
+        editedBy: user?.uid,
+        editedByEmail: user?.email
       });
       
       return true;
@@ -334,7 +337,12 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
       const shiftData = shiftSnap.data();
       const updatedBreaks = (shiftData.breaks || []).filter((_: any, i: number) => i !== breakIndex);
       
-      await updateDoc(shiftRef, { breaks: updatedBreaks });
+      await updateDoc(shiftRef, { 
+        breaks: updatedBreaks,
+        editedAt: Timestamp.now(),
+        editedBy: user?.uid,
+        editedByEmail: user?.email
+      });
       
       return true;
     } catch (err: any) {
@@ -436,12 +444,92 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
             startTime: Timestamp.fromDate(travelStart),
             endTime: Timestamp.fromDate(travelEnd),
             durationMinutes
-          }]
+          }],
+          editedAt: Timestamp.now(),
+          editedBy: user?.uid,
+          editedByEmail: user?.email
         });
       }
       return true;
     } catch (err: any) {
       setError(err.message || 'Failed to add travel');
+      return false;
+    }
+  };
+
+  // Delete travel from historical shift
+  const deleteTravelFromShift = async (shiftId: string, travelIndex: number): Promise<boolean> => {
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      if (!shiftSnap.exists()) {
+        setError('Shift not found');
+        return false;
+      }
+      
+      const shiftData = shiftSnap.data();
+      const updatedTravel = (shiftData.travelSegments || []).filter((_: any, i: number) => i !== travelIndex);
+      
+      await updateDoc(shiftRef, { 
+        travelSegments: updatedTravel,
+        editedAt: Timestamp.now(),
+        editedBy: user?.uid,
+        editedByEmail: user?.email
+      });
+      
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete travel');
+      return false;
+    }
+  };
+
+  // Edit shift times (clock in/out) and notes
+  const editShift = async (
+    shiftId: string,
+    clockInDate: Date,
+    clockOutDate: Date,
+    notes?: string
+  ): Promise<boolean> => {
+    if (!user) return false;
+    
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      
+      if (!shiftSnap.exists()) {
+        setError('Shift not found');
+        return false;
+      }
+
+      // Validate times
+      if (clockOutDate <= clockInDate) {
+        setError('Clock out must be after clock in');
+        return false;
+      }
+
+      const durationHours = (clockOutDate.getTime() - clockInDate.getTime()) / 3600000;
+      if (durationHours > 24) {
+        setError('Shift cannot exceed 24 hours');
+        return false;
+      }
+
+      const updateData: any = {
+        clockIn: Timestamp.fromDate(clockInDate),
+        clockOut: Timestamp.fromDate(clockOutDate),
+        editedAt: Timestamp.now(),
+        editedBy: user.uid,
+        editedByEmail: user.email
+      };
+
+      if (notes !== undefined) {
+        updateData['jobLog.field1'] = notes;
+      }
+
+      await updateDoc(shiftRef, updateData);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to edit shift');
       return false;
     }
   };
@@ -548,6 +636,8 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     endTravel,
     saveFields,
     addTravelToShift,
+    deleteTravelFromShift,
+    editShift,
     addManualShift,
     deleteShift,
     getCurrentLocation

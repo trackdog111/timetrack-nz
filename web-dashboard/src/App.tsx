@@ -23,7 +23,7 @@ interface Location { latitude: number; longitude: number; accuracy: number; time
 interface Break { startTime: Timestamp; endTime?: Timestamp; durationMinutes?: number; manualEntry?: boolean; }
 interface TravelSegment { startTime: Timestamp; endTime?: Timestamp; durationMinutes?: number; startLocation?: Location; endLocation?: Location; }
 interface JobLog { field1?: string; field2?: string; field3?: string; notes?: string; }
-interface Shift { id: string; userId: string; userEmail: string; clockIn: Timestamp; clockOut?: Timestamp; clockInLocation?: Location; clockOutLocation?: Location; locationHistory: Location[]; breaks: Break[]; travelSegments?: TravelSegment[]; jobLog: JobLog; status: 'active' | 'completed'; manualEntry?: boolean; }
+interface Shift { id: string; userId: string; userEmail: string; clockIn: Timestamp; clockOut?: Timestamp; clockInLocation?: Location; clockOutLocation?: Location; locationHistory: Location[]; breaks: Break[]; travelSegments?: TravelSegment[]; jobLog: JobLog; status: 'active' | 'completed'; manualEntry?: boolean; editedAt?: Timestamp; editedBy?: string; editedByEmail?: string; finalized?: boolean; finalizedAt?: Timestamp; finalizedBy?: string; finalizedByEmail?: string; }
 interface EmployeeSettings { gpsTracking: boolean; gpsInterval: number; requireNotes: boolean; chatEnabled: boolean; }
 interface Employee { id: string; email: string; name: string; role: string; settings: EmployeeSettings; createdAt: Timestamp; }
 interface ChatMessage { id: string; type: string; senderId: string; senderEmail: string; text: string; timestamp: Timestamp; participants?: string[]; }
@@ -110,6 +110,36 @@ function getJobLogField(jobLog: JobLog | undefined, field: 'field1' | 'field2' |
   return jobLog[field] || '';
 }
 
+// Helper to extract time components from Date
+function getTimeComponents(date: Date): { hour: string, minute: string, ampm: 'AM' | 'PM' } {
+  let hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm: 'AM' | 'PM' = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  return { hour: hours.toString(), minute: minutes.toString().padStart(2, '0'), ampm };
+}
+
+// Round time: in rounds DOWN, out rounds UP
+function roundTime(date: Date, roundTo: 15 | 30, direction: 'down' | 'up'): Date {
+  const result = new Date(date);
+  const minutes = result.getMinutes();
+  let roundedMinutes: number;
+  
+  if (direction === 'down') {
+    roundedMinutes = Math.floor(minutes / roundTo) * roundTo;
+  } else {
+    roundedMinutes = Math.ceil(minutes / roundTo) * roundTo;
+    if (roundedMinutes === 60) {
+      result.setHours(result.getHours() + 1);
+      roundedMinutes = 0;
+    }
+  }
+  
+  result.setMinutes(roundedMinutes, 0, 0);
+  return result;
+}
+
 function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutLocation }: { locations: Location[], onClose: () => void, title: string, theme: any, clockInLocation?: Location, clockOutLocation?: Location }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -118,13 +148,28 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
   const lngs = locations.map(l => l.longitude);
   const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
   const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
-  const getMarkerType = (loc: Location, index: number): 'clockIn' | 'clockOut' | 'tracking' => {
-    if (clockInLocation && loc.latitude === clockInLocation.latitude && loc.longitude === clockInLocation.longitude) return 'clockIn';
-    if (clockOutLocation && loc.latitude === clockOutLocation.latitude && loc.longitude === clockOutLocation.longitude) return 'clockOut';
-    if (index === 0) return 'clockIn';
+  
+  // FIX: Force tracking points to show correctly
+  // Only use explicit clockInLocation/clockOutLocation for those types, everything else is tracking
+  const getMarkerType = (loc: Location): 'clockIn' | 'clockOut' | 'tracking' => {
+    if (clockInLocation && 
+        Math.abs(loc.latitude - clockInLocation.latitude) < 0.0001 && 
+        Math.abs(loc.longitude - clockInLocation.longitude) < 0.0001 &&
+        Math.abs(loc.timestamp - clockInLocation.timestamp) < 60000) {
+      return 'clockIn';
+    }
+    if (clockOutLocation && 
+        Math.abs(loc.latitude - clockOutLocation.latitude) < 0.0001 && 
+        Math.abs(loc.longitude - clockOutLocation.longitude) < 0.0001 &&
+        Math.abs(loc.timestamp - clockOutLocation.timestamp) < 60000) {
+      return 'clockOut';
+    }
     return 'tracking';
   };
+  
   const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
+  const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
+  
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={onClose}>
       <div style={{ background: theme.card, borderRadius: '12px', padding: '20px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
@@ -142,12 +187,12 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
         </div>
         <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
           {locations.map((loc, i) => {
-            const type = getMarkerType(loc, i);
+            const type = getMarkerType(loc);
             return (
               <div key={i} onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : 'transparent'), borderRadius: '6px', cursor: 'pointer', marginBottom: '4px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: markerColors[type], color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>{i + 1}</span>
-                  <span style={{ color: theme.text, fontSize: '13px' }}>{type === 'clockIn' ? 'Clock In' : type === 'clockOut' ? 'Clock Out' : `Point ${i + 1}`}</span>
+                  <span style={{ color: theme.text, fontSize: '13px' }}>{markerLabels[type]}</span>
                 </div>
                 <span style={{ color: theme.textMuted, fontSize: '12px' }}>{new Date(loc.timestamp).toLocaleTimeString('en-NZ')}</span>
               </div>
@@ -163,6 +208,217 @@ function LocationMap({ locations, height = '200px' }: { locations: Location[], h
   if (!locations || locations.length === 0) return <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>No location data</div>;
   const lastLoc = locations[locations.length - 1];
   return <div style={{ height, borderRadius: '8px', overflow: 'hidden' }}><iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${lastLoc.longitude - 0.01},${lastLoc.latitude - 0.01},${lastLoc.longitude + 0.01},${lastLoc.latitude + 0.01}&layer=mapnik&marker=${lastLoc.latitude},${lastLoc.longitude}`} style={{ width: '100%', height: '100%', border: 'none' }} title="Map" /></div>;
+}
+
+// Edit Shift Modal for Managers
+function EditShiftModal({ shift, onClose, onSave, theme, user, companySettings }: { shift: Shift, onClose: () => void, onSave: () => void, theme: any, user: User, companySettings: CompanySettings }) {
+  const clockIn = shift.clockIn?.toDate?.() || new Date();
+  const clockOut = shift.clockOut?.toDate?.() || new Date();
+  
+  const inTime = getTimeComponents(clockIn);
+  const outTime = getTimeComponents(clockOut);
+  
+  const [editClockInHour, setEditClockInHour] = useState(inTime.hour);
+  const [editClockInMinute, setEditClockInMinute] = useState(inTime.minute);
+  const [editClockInAmPm, setEditClockInAmPm] = useState<'AM' | 'PM'>(inTime.ampm);
+  const [editClockOutHour, setEditClockOutHour] = useState(outTime.hour);
+  const [editClockOutMinute, setEditClockOutMinute] = useState(outTime.minute);
+  const [editClockOutAmPm, setEditClockOutAmPm] = useState<'AM' | 'PM'>(outTime.ampm);
+  const [editNotes, setEditNotes] = useState(shift.jobLog?.field1 || '');
+  const [editBreaks, setEditBreaks] = useState<Break[]>([...(shift.breaks || [])]);
+  const [editTravel, setEditTravel] = useState<TravelSegment[]>([...(shift.travelSegments || [])]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  
+  const buildDateFromTime = (baseDate: Date, hour: string, minute: string, ampm: 'AM' | 'PM'): Date => {
+    const result = new Date(baseDate);
+    let h = parseInt(hour);
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    result.setHours(h, parseInt(minute), 0, 0);
+    return result;
+  };
+  
+  const applyRounding = (roundTo: 15 | 30) => {
+    const newClockIn = roundTime(buildDateFromTime(clockIn, editClockInHour, editClockInMinute, editClockInAmPm), roundTo, 'down');
+    const newClockOut = roundTime(buildDateFromTime(clockIn, editClockOutHour, editClockOutMinute, editClockOutAmPm), roundTo, 'up');
+    
+    const inComps = getTimeComponents(newClockIn);
+    const outComps = getTimeComponents(newClockOut);
+    
+    setEditClockInHour(inComps.hour);
+    setEditClockInMinute(inComps.minute);
+    setEditClockInAmPm(inComps.ampm);
+    setEditClockOutHour(outComps.hour);
+    setEditClockOutMinute(outComps.minute);
+    setEditClockOutAmPm(outComps.ampm);
+  };
+  
+  const addBreak = (minutes: number) => {
+    const now = Timestamp.now();
+    setEditBreaks([...editBreaks, { startTime: now, endTime: now, durationMinutes: minutes, manualEntry: true }]);
+  };
+  
+  const removeBreak = (index: number) => {
+    setEditBreaks(editBreaks.filter((_, i) => i !== index));
+  };
+  
+  const addTravel = (minutes: number) => {
+    const now = Timestamp.now();
+    setEditTravel([...editTravel, { startTime: now, endTime: now, durationMinutes: minutes }]);
+  };
+  
+  const removeTravel = (index: number) => {
+    setEditTravel(editTravel.filter((_, i) => i !== index));
+  };
+  
+  const handleSave = async () => {
+    setSaving(true);
+    setError('');
+    
+    try {
+      const newClockIn = buildDateFromTime(clockIn, editClockInHour, editClockInMinute, editClockInAmPm);
+      let newClockOut = buildDateFromTime(clockIn, editClockOutHour, editClockOutMinute, editClockOutAmPm);
+      
+      // Handle overnight
+      if (newClockOut <= newClockIn) {
+        newClockOut.setDate(newClockOut.getDate() + 1);
+      }
+      
+      // Validate
+      const durationHours = (newClockOut.getTime() - newClockIn.getTime()) / 3600000;
+      if (durationHours > 24) {
+        setError('Shift cannot exceed 24 hours');
+        setSaving(false);
+        return;
+      }
+      
+      await updateDoc(doc(db, 'shifts', shift.id), {
+        clockIn: Timestamp.fromDate(newClockIn),
+        clockOut: Timestamp.fromDate(newClockOut),
+        'jobLog.field1': editNotes,
+        breaks: editBreaks,
+        travelSegments: editTravel,
+        editedAt: Timestamp.now(),
+        editedBy: user.uid,
+        editedByEmail: user.email
+      });
+      
+      onSave();
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'Failed to save');
+    }
+    
+    setSaving(false);
+  };
+  
+  const styles = {
+    input: { padding: '10px', borderRadius: '6px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
+    select: { padding: '10px', borderRadius: '6px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px' },
+    btn: { padding: '10px 16px', borderRadius: '6px', background: theme.primary, color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600' as const, fontSize: '13px' },
+  };
+  
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={onClose}>
+      <div style={{ background: theme.card, borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '500px', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ color: theme.text, margin: 0, fontSize: '18px' }}>Edit Shift</h2>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: theme.textMuted }}>×</button>
+        </div>
+        
+        {error && <div style={{ background: theme.dangerBg, color: theme.danger, padding: '10px', borderRadius: '6px', marginBottom: '16px', fontSize: '13px' }}>{error}</div>}
+        
+        {/* Time Rounding */}
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '8px' }}>Round Times</label>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            <button onClick={() => applyRounding(15)} style={{ ...styles.btn, background: theme.cardAlt, color: theme.text, flex: 1 }}>Round 15m</button>
+            <button onClick={() => applyRounding(30)} style={{ ...styles.btn, background: theme.cardAlt, color: theme.text, flex: 1 }}>Round 30m</button>
+          </div>
+          <p style={{ color: theme.textMuted, fontSize: '11px', marginTop: '4px' }}>In rounds down, out rounds up</p>
+        </div>
+        
+        {/* Clock In */}
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>Clock In</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <select value={editClockInHour} onChange={e => setEditClockInHour(e.target.value)} style={{ ...styles.select, flex: 1 }}>
+              {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+            </select>
+            <select value={editClockInMinute} onChange={e => setEditClockInMinute(e.target.value)} style={{ ...styles.select, flex: 1 }}>
+              {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select value={editClockInAmPm} onChange={e => setEditClockInAmPm(e.target.value as 'AM'|'PM')} style={{ ...styles.select, flex: 1 }}>
+              <option value="AM">AM</option>
+              <option value="PM">PM</option>
+            </select>
+          </div>
+        </div>
+        
+        {/* Clock Out */}
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>Clock Out</label>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <select value={editClockOutHour} onChange={e => setEditClockOutHour(e.target.value)} style={{ ...styles.select, flex: 1 }}>
+              {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+            </select>
+            <select value={editClockOutMinute} onChange={e => setEditClockOutMinute(e.target.value)} style={{ ...styles.select, flex: 1 }}>
+              {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+            </select>
+            <select value={editClockOutAmPm} onChange={e => setEditClockOutAmPm(e.target.value as 'AM'|'PM')} style={{ ...styles.select, flex: 1 }}>
+              <option value="AM">AM</option>
+              <option value="PM">PM</option>
+            </select>
+          </div>
+        </div>
+        
+        {/* Breaks */}
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>Breaks ({editBreaks.reduce((s, b) => s + (b.durationMinutes || 0), 0)}m total)</label>
+          {editBreaks.map((b, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '8px 10px', borderRadius: '6px', marginBottom: '6px' }}>
+              <span style={{ color: theme.text, fontSize: '13px' }}>{b.durationMinutes || 0}m</span>
+              <button onClick={() => removeBreak(i)} style={{ padding: '4px 8px', borderRadius: '4px', background: theme.dangerBg, color: theme.danger, border: 'none', cursor: 'pointer', fontSize: '11px' }}>Remove</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {[10, 15, 20, 30].map(m => (
+              <button key={m} onClick={() => addBreak(m)} style={{ padding: '6px 12px', borderRadius: '6px', background: theme.warningBg, color: theme.warning, border: 'none', cursor: 'pointer', fontSize: '12px' }}>+{m}m</button>
+            ))}
+          </div>
+        </div>
+        
+        {/* Travel */}
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>Travel ({editTravel.reduce((s, t) => s + (t.durationMinutes || 0), 0)}m total)</label>
+          {editTravel.map((t, i) => (
+            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '8px 10px', borderRadius: '6px', marginBottom: '6px' }}>
+              <span style={{ color: theme.text, fontSize: '13px' }}>{t.durationMinutes || 0}m</span>
+              <button onClick={() => removeTravel(i)} style={{ padding: '4px 8px', borderRadius: '4px', background: theme.dangerBg, color: theme.danger, border: 'none', cursor: 'pointer', fontSize: '11px' }}>Remove</button>
+            </div>
+          ))}
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+            {[15, 30, 45, 60].map(m => (
+              <button key={m} onClick={() => addTravel(m)} style={{ padding: '6px 12px', borderRadius: '6px', background: theme.travelBg, color: theme.travel, border: 'none', cursor: 'pointer', fontSize: '12px' }}>+{m}m</button>
+            ))}
+          </div>
+        </div>
+        
+        {/* Notes */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label}</label>
+          <textarea value={editNotes} onChange={e => setEditNotes(e.target.value)} style={{ ...styles.input, minHeight: '80px', resize: 'vertical' }} />
+        </div>
+        
+        {/* Buttons */}
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={onClose} style={{ ...styles.btn, flex: 1, background: theme.cardAlt, color: theme.text }}>Cancel</button>
+          <button onClick={handleSave} disabled={saving} style={{ ...styles.btn, flex: 1, opacity: saving ? 0.7 : 1 }}>{saving ? 'Saving...' : 'Save Changes'}</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const lightTheme = { bg: '#f8fafc', sidebar: '#ffffff', sidebarBorder: '#e2e8f0', card: '#ffffff', cardAlt: '#f1f5f9', cardBorder: '#e2e8f0', text: '#1e293b', textMuted: '#64748b', textLight: '#94a3b8', primary: '#2563eb', primaryHover: '#1d4ed8', success: '#16a34a', successBg: '#dcfce7', warning: '#f59e0b', warningBg: '#fef3c7', danger: '#dc2626', dangerBg: '#fee2e2', input: '#ffffff', inputBorder: '#d1d5db', travel: '#2563eb', travelBg: '#dbeafe' };
@@ -187,6 +443,7 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [selectedShift, setSelectedShift] = useState<string | null>(null);
   const [mapModal, setMapModal] = useState<{ locations: Location[], title: string, clockInLocation?: Location, clockOutLocation?: Location } | null>(null);
+  const [editShiftModal, setEditShiftModal] = useState<Shift | null>(null);
   const [newEmpEmail, setNewEmpEmail] = useState('');
   const [newEmpName, setNewEmpName] = useState('');
   const [reportStart, setReportStart] = useState('');
@@ -213,6 +470,7 @@ export default function App() {
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
   const [timesheetFilterStart, setTimesheetFilterStart] = useState('');
   const [timesheetFilterEnd, setTimesheetFilterEnd] = useState('');
+  const [finalizingWeek, setFinalizingWeek] = useState<string | null>(null);
 
   const theme = dark ? darkTheme : lightTheme;
 
@@ -263,6 +521,31 @@ export default function App() {
   const removeEmployee = async (empId: string) => { const emp = employees.find(e => e.id === empId); if (!emp || empId === user?.uid) { setError("Can't remove"); setRemoveConfirm(null); return; } try { await fetch(`${API_URL}/api/delete-user`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ uid: empId }) }); await deleteDoc(doc(db, 'employees', empId)); if (removeDeleteShifts) { const batch = writeBatch(db); allShifts.filter(s => s.userId === empId).forEach(s => batch.delete(doc(db, 'shifts', s.id))); await batch.commit(); } setSuccess(`Removed ${emp.name || emp.email}`); setRemoveConfirm(null); setRemoveDeleteShifts(false); } catch (err: any) { setError(err.message); setRemoveConfirm(null); } };
   const updateSettings = async (empId: string, updates: Partial<EmployeeSettings>) => { const ref = doc(db, 'employees', empId); const snap = await getDoc(ref); await updateDoc(ref, { settings: { ...(snap.data()?.settings || defaultSettings), ...updates } }); setSuccess('Updated!'); setTimeout(() => setSuccess(''), 2000); };
   const saveCompanySettings = async () => { setSavingCompanySettings(true); try { await setDoc(doc(db, 'company', 'settings'), editingCompanySettings); setSuccess('Saved!'); setTimeout(() => setSuccess(''), 2000); } catch (err: any) { setError(err.message); } finally { setSavingCompanySettings(false); } };
+
+  // Finalize week
+  const finalizeWeek = async (empEmail: string, weekKey: string, shifts: Shift[]) => {
+    if (!user) return;
+    setFinalizingWeek(`${empEmail}-${weekKey}`);
+    
+    try {
+      const batch = writeBatch(db);
+      shifts.forEach(shift => {
+        batch.update(doc(db, 'shifts', shift.id), {
+          finalized: true,
+          finalizedAt: Timestamp.now(),
+          finalizedBy: user.uid,
+          finalizedByEmail: user.email
+        });
+      });
+      await batch.commit();
+      setSuccess('Week finalized ✓');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to finalize');
+    }
+    
+    setFinalizingWeek(null);
+  };
 
   const genReport = () => { if (!reportStart || !reportEnd) { setError('Select dates'); return; } const s = new Date(reportStart); s.setHours(0,0,0,0); const e = new Date(reportEnd); e.setHours(23,59,59,999); let data = allShifts.filter(sh => { if (!sh.clockIn?.toDate) return false; const d = sh.clockIn.toDate(); return d >= s && d <= e && sh.status === 'completed'; }); if (reportEmp !== 'all') data = data.filter(sh => sh.userId === reportEmp); setReportData(data); };
   const exportCSV = () => { if (!reportData.length) return; const rows = [['Date','Employee','In','Out','Worked','Paid','Unpaid','Travel']]; reportData.forEach(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const t = calcTravel(sh.travelSegments || []); rows.push([fmtDateShort(sh.clockIn), getEmployeeName(sh.userId, sh.userEmail), fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : '-', fmtDur((h*60)-b.unpaid), b.paid+'m', b.unpaid+'m', t+'m']); }); const csv = rows.map(r => r.join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `timetrack-${reportStart}-${reportEnd}.csv`; a.click(); };
@@ -343,7 +626,7 @@ export default function App() {
       });
     }
     
-    const grouped: { [email: string]: { name: string, email: string, exists: boolean, weeks: { [weekKey: string]: { weekEnd: Date, shifts: Shift[], totalMinutes: number } } } } = {};
+    const grouped: { [email: string]: { name: string, email: string, exists: boolean, weeks: { [weekKey: string]: { weekEnd: Date, shifts: Shift[], totalMinutes: number, finalized: boolean } } } } = {};
     
     completed.forEach(shift => {
       // Use email as the key (lowercase for consistency), fall back to oderId if no email
@@ -366,13 +649,18 @@ export default function App() {
       const weekEnd = getWeekEndingDate(shiftDate, companySettings.payWeekEndDay);
       
       if (!grouped[email].weeks[weekKey]) {
-        grouped[email].weeks[weekKey] = { weekEnd, shifts: [], totalMinutes: 0 };
+        grouped[email].weeks[weekKey] = { weekEnd, shifts: [], totalMinutes: 0, finalized: true };
       }
       
       const h = getHours(shift.clockIn, shift.clockOut);
       const b = calcBreaks(shift.breaks || [], h, companySettings.paidRestMinutes);
       grouped[email].weeks[weekKey].shifts.push(shift);
       grouped[email].weeks[weekKey].totalMinutes += (h * 60) - b.unpaid;
+      
+      // Week is only finalized if ALL shifts are finalized
+      if (!shift.finalized) {
+        grouped[email].weeks[weekKey].finalized = false;
+      }
     });
     
     // Sort weeks newest first
@@ -433,6 +721,7 @@ export default function App() {
         {error && <div style={{ background: theme.dangerBg, color: theme.danger, padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}><span>{error}</span><button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.danger }}>×</button></div>}
         {success && <div style={{ background: theme.successBg, color: theme.success, padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}><span>{success}</span><button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.success }}>×</button></div>}
         {mapModal && <MapModal locations={mapModal.locations} onClose={() => setMapModal(null)} title={mapModal.title} theme={theme} clockInLocation={mapModal.clockInLocation} clockOutLocation={mapModal.clockOutLocation} />}
+        {editShiftModal && user && <EditShiftModal shift={editShiftModal} onClose={() => setEditShiftModal(null)} onSave={() => setSuccess('Shift updated!')} theme={theme} user={user} companySettings={companySettings} />}
         {removeConfirm && <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={() => setRemoveConfirm(null)}><div style={{ background: theme.card, borderRadius: '12px', padding: '24px', width: '100%', maxWidth: '400px' }} onClick={e => e.stopPropagation()}><h3 style={{ color: theme.text, marginBottom: '16px' }}>Remove Employee?</h3><label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: theme.text, marginBottom: '20px', cursor: 'pointer' }}><input type="checkbox" checked={removeDeleteShifts} onChange={e => setRemoveDeleteShifts(e.target.checked)} />Also delete their shifts</label><div style={{ display: 'flex', gap: '12px' }}><button onClick={() => setRemoveConfirm(null)} style={{ ...styles.btn, flex: 1, background: theme.cardAlt, color: theme.text }}>Cancel</button><button onClick={() => removeEmployee(removeConfirm)} style={{ ...styles.btnDanger, flex: 1 }}>Remove</button></div></div></div>}
 
         {/* Live View */}
@@ -444,7 +733,7 @@ export default function App() {
         {/* Employees */}
         {view === 'employees' && <div><h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Employees</h1><div style={styles.card}><h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Invite New Employee</h3><form onSubmit={inviteEmployee}><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}><input placeholder="Email" type="email" value={newEmpEmail} onChange={e => setNewEmpEmail(e.target.value)} required style={{ ...styles.input, flex: '2', minWidth: '200px' }} /><input placeholder="Name (optional)" value={newEmpName} onChange={e => setNewEmpName(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '150px' }} /><button type="submit" style={styles.btn}>Create Invite</button></div></form></div>{invites.filter(i => i.status === 'pending').length > 0 && <div style={styles.card}><h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Pending Invites</h3>{invites.filter(i => i.status === 'pending').map(inv => <div key={inv.id} style={{ background: theme.cardAlt, padding: '16px', borderRadius: '8px', marginBottom: '12px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}><div><p style={{ color: theme.text, fontWeight: '600' }}>{inv.name || inv.email}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>{inv.email}</p>{inv.emailSent && <p style={{ color: theme.success, fontSize: '12px', marginTop: '4px' }}>✓ Email sent</p>}</div><button onClick={() => cancelInvite(inv.id)} style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '12px' }}>Cancel</button></div><div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}><button onClick={() => sendInviteEmail(inv)} disabled={sendingEmail === inv.id} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: theme.primary, color: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: '600', opacity: sendingEmail === inv.id ? 0.7 : 1 }}>{sendingEmail === inv.id ? '⏳ Sending...' : '📧 Send Email'}</button><button onClick={() => copyInviteLink(inv)} style={{ padding: '10px 16px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>📋 Copy Link</button></div></div>)}</div>}{employees.map(emp => <div key={emp.id} style={styles.card}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}><div><p style={{ color: theme.text, fontWeight: '600', marginBottom: '4px' }}>{emp.name || emp.email}</p><p style={{ color: theme.textMuted, fontSize: '14px' }}>{emp.email}</p></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>{emp.role === 'manager' && <span style={{ background: theme.primary, color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600' }}>Manager</span>}{emp.id !== user?.uid && <button onClick={() => setRemoveConfirm(emp.id)} style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>Remove</button>}</div></div><div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Tracking</span><button onClick={() => updateSettings(emp.id, { gpsTracking: !emp.settings?.gpsTracking })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.gpsTracking ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.gpsTracking ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Interval</span><select value={emp.settings?.gpsInterval || 10} onChange={e => updateSettings(emp.id, { gpsInterval: parseInt(e.target.value) })} style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}><option value={5}>5 min</option><option value={10}>10 min</option><option value={15}>15 min</option></select></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>Require Notes</span><button onClick={() => updateSettings(emp.id, { requireNotes: !emp.settings?.requireNotes })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.requireNotes ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.requireNotes ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>Chat Access</span><button onClick={() => updateSettings(emp.id, { chatEnabled: emp.settings?.chatEnabled === false })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.chatEnabled !== false ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.chatEnabled !== false ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div></div></div>)}</div>}
 
-        {/* Timesheets - Nested Accordion */}
+        {/* Timesheets - Nested Accordion with Edit & Finalize */}
         {view === 'timesheets' && <div>
           <h1 style={{ color: theme.text, marginBottom: '16px', fontSize: isMobile ? '22px' : '28px' }}>Timesheets</h1>
           
@@ -507,18 +796,33 @@ export default function App() {
                   {/* Weeks */}
                   {isExpanded && (
                     <div style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
-                      {Object.entries(weeks).map(([weekKey, { weekEnd, shifts, totalMinutes }]) => {
+                      {Object.entries(weeks).map(([weekKey, { weekEnd, shifts, totalMinutes, finalized }]) => {
                         const isWeekExpanded = expandedWeeks.has(`${empId}-${weekKey}`);
+                        const isFinalizing = finalizingWeek === `${email}-${weekKey}`;
                         
                         return (
                           <div key={weekKey}>
                             {/* Week Row */}
-                            <div onClick={() => toggleWeek(`${empId}-${weekKey}`)} style={{ padding: '14px 20px', paddingLeft: '48px', cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isWeekExpanded ? theme.cardAlt : theme.card, borderBottom: `1px solid ${theme.cardBorder}` }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <div style={{ padding: '14px 20px', paddingLeft: '48px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: isWeekExpanded ? theme.cardAlt : theme.card, borderBottom: `1px solid ${theme.cardBorder}` }}>
+                              <div onClick={() => toggleWeek(`${empId}-${weekKey}`)} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', flex: 1 }}>
                                 <span style={{ fontSize: '14px', color: theme.textMuted }}>{isWeekExpanded ? '▼' : '▶'}</span>
-                                <p style={{ color: theme.text, fontWeight: '500', margin: 0 }}>Week Ending: {fmtWeekEnding(weekEnd)}</p>
+                                <div>
+                                  <p style={{ color: theme.text, fontWeight: '500', margin: 0 }}>Week Ending: {fmtWeekEnding(weekEnd)}</p>
+                                  {finalized && <span style={{ fontSize: '11px', color: theme.success }}>✓ Finalized</span>}
+                                </div>
                               </div>
-                              <p style={{ color: theme.primary, fontWeight: '700', fontSize: '16px', margin: 0 }}>{fmtDur(totalMinutes)}</p>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <p style={{ color: theme.primary, fontWeight: '700', fontSize: '16px', margin: 0 }}>{fmtDur(totalMinutes)}</p>
+                                {!finalized && (
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); finalizeWeek(email, weekKey, shifts); }}
+                                    disabled={isFinalizing}
+                                    style={{ padding: '6px 12px', borderRadius: '6px', background: theme.success, color: 'white', border: 'none', cursor: isFinalizing ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: '600', opacity: isFinalizing ? 0.7 : 1 }}
+                                  >
+                                    {isFinalizing ? '...' : 'Finalize'}
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             
                             {/* Shifts */}
@@ -536,7 +840,11 @@ export default function App() {
                                     <div key={sh.id} style={{ padding: '12px 20px', paddingLeft: '72px', borderBottom: `1px solid ${theme.cardBorder}`, cursor: 'pointer' }} onClick={() => setSelectedShift(isOpen ? null : sh.id)}>
                                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                         <div>
-                                          <p style={{ color: theme.text, fontWeight: '500', margin: 0 }}>{fmtDate(sh.clockIn)}</p>
+                                          <p style={{ color: theme.text, fontWeight: '500', margin: 0 }}>
+                                            {fmtDate(sh.clockIn)}
+                                            {sh.editedAt && <span style={{ marginLeft: '8px', fontSize: '10px', background: theme.warningBg, color: theme.warning, padding: '2px 6px', borderRadius: '4px' }}>Edited</span>}
+                                            {sh.finalized && <span style={{ marginLeft: '8px', fontSize: '10px', background: theme.successBg, color: theme.success, padding: '2px 6px', borderRadius: '4px' }}>✓</span>}
+                                          </p>
                                           <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>{fmtTime(sh.clockIn)} - {sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}</p>
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
@@ -549,7 +857,10 @@ export default function App() {
                                       {isOpen && (
                                         <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
                                           {f1 && <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', marginBottom: '10px' }}><p style={{ color: theme.textMuted, fontSize: '11px', margin: 0 }}>📝 {companySettings.field1Label}</p><p style={{ color: theme.text, fontSize: '13px', margin: '4px 0 0 0' }}>{f1}</p></div>}
-                                          {sh.locationHistory?.length > 0 && <button onClick={() => setMapModal({ locations: sh.locationHistory, title: `${name} - ${fmtDateShort(sh.clockIn)}`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px' }}>View Map ({sh.locationHistory.length} pts)</button>}
+                                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                            {sh.locationHistory?.length > 0 && <button onClick={() => setMapModal({ locations: sh.locationHistory, title: `${name} - ${fmtDateShort(sh.clockIn)}`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px' }}>📍 Map ({sh.locationHistory.length})</button>}
+                                            <button onClick={() => setEditShiftModal(sh)} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>✏️ Edit Shift</button>
+                                          </div>
                                         </div>
                                       )}
                                     </div>

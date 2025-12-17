@@ -42,6 +42,15 @@ export interface Shift {
   jobLog: JobLog;
   status: 'active' | 'completed';
   manualEntry?: boolean;
+  // Edit tracking
+  editedAt?: any;
+  editedBy?: string;
+  editedByEmail?: string;
+  // Finalization
+  finalized?: boolean;
+  finalizedAt?: any;
+  finalizedBy?: string;
+  finalizedByEmail?: string;
 }
 
 export interface CompanyLabels {

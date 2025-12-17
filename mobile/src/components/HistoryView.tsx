@@ -19,8 +19,10 @@ interface HistoryViewProps {
     endMinute: string,
     endAmPm: 'AM' | 'PM'
   ) => Promise<boolean>;
+  onDeleteTravelFromShift: (shiftId: string, travelIndex: number) => Promise<boolean>;
   onAddBreakToShift: (shiftId: string, minutes: number) => Promise<boolean>;
   onDeleteBreakFromShift: (shiftId: string, breakIndex: number) => Promise<boolean>;
+  onEditShift: (shiftId: string, clockIn: Date, clockOut: Date, notes?: string) => Promise<boolean>;
   onDeleteShift: (shiftId: string) => Promise<boolean>;
   showToast: (message: string) => void;
   paidRestMinutes?: number;
@@ -49,14 +51,40 @@ function fmtWeekEnding(date: Date): string {
   return date.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+// Helper to extract time components from Date
+function getTimeComponents(date: Date): { hour: string, minute: string, ampm: 'AM' | 'PM' } {
+  let hours = date.getHours();
+  const minutes = date.getMinutes();
+  const ampm: 'AM' | 'PM' = hours >= 12 ? 'PM' : 'AM';
+  hours = hours % 12;
+  if (hours === 0) hours = 12;
+  return {
+    hour: hours.toString(),
+    minute: minutes.toString().padStart(2, '0'),
+    ampm
+  };
+}
+
+// Helper to build Date from components
+function buildDateFromTime(baseDate: Date, hour: string, minute: string, ampm: 'AM' | 'PM'): Date {
+  const result = new Date(baseDate);
+  let h = parseInt(hour);
+  if (ampm === 'PM' && h !== 12) h += 12;
+  if (ampm === 'AM' && h === 12) h = 0;
+  result.setHours(h, parseInt(minute), 0, 0);
+  return result;
+}
+
 const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 export function HistoryView({
   theme,
   shiftHistory,
   onAddTravelToShift,
+  onDeleteTravelFromShift,
   onAddBreakToShift,
   onDeleteBreakFromShift,
+  onEditShift,
   onDeleteShift,
   showToast,
   paidRestMinutes = 10,
@@ -67,17 +95,31 @@ export function HistoryView({
   const [showBreakRules, setShowBreakRules] = useState(false);
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
   const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
-  const [editMode, setEditMode] = useState<'travel' | 'breaks' | null>(null);
+  const [editMode, setEditMode] = useState<'travel' | 'breaks' | 'times' | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  
+  // Travel form state
   const [addTravelStartHour, setAddTravelStartHour] = useState('9');
   const [addTravelStartMinute, setAddTravelStartMinute] = useState('00');
   const [addTravelStartAmPm, setAddTravelStartAmPm] = useState<'AM' | 'PM'>('AM');
   const [addTravelEndHour, setAddTravelEndHour] = useState('9');
   const [addTravelEndMinute, setAddTravelEndMinute] = useState('30');
   const [addTravelEndAmPm, setAddTravelEndAmPm] = useState<'AM' | 'PM'>('AM');
+  
+  // Edit times form state
+  const [editClockInHour, setEditClockInHour] = useState('9');
+  const [editClockInMinute, setEditClockInMinute] = useState('00');
+  const [editClockInAmPm, setEditClockInAmPm] = useState<'AM' | 'PM'>('AM');
+  const [editClockOutHour, setEditClockOutHour] = useState('5');
+  const [editClockOutMinute, setEditClockOutMinute] = useState('00');
+  const [editClockOutAmPm, setEditClockOutAmPm] = useState<'AM' | 'PM'>('PM');
+  const [editNotes, setEditNotes] = useState('');
+  
+  // Loading states
   const [addingTravelToShift, setAddingTravelToShift] = useState(false);
   const [addingBreak, setAddingBreak] = useState(false);
   const [deletingShift, setDeletingShift] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   // Group shifts by week ending date
   const groupedShifts = useMemo(() => {
@@ -147,6 +189,13 @@ export function HistoryView({
     setAddingTravelToShift(false);
   };
 
+  const handleDeleteTravel = async (shiftId: string, travelIndex: number) => {
+    const success = await onDeleteTravelFromShift(shiftId, travelIndex);
+    if (success) {
+      showToast('Travel removed ✓');
+    }
+  };
+
   const handleAddBreak = async (shiftId: string, minutes: number) => {
     setAddingBreak(true);
     const success = await onAddBreakToShift(shiftId, minutes);
@@ -173,14 +222,58 @@ export function HistoryView({
     setDeletingShift(false);
   };
 
-  const openEditPanel = (shiftId: string, mode: 'travel' | 'breaks') => {
+  const openEditPanel = (shiftId: string, mode: 'travel' | 'breaks' | 'times', shift?: Shift) => {
     setEditingShiftId(shiftId);
     setEditMode(mode);
+    
+    // Pre-populate times if editing times
+    if (mode === 'times' && shift) {
+      const clockIn = shift.clockIn?.toDate?.();
+      const clockOut = shift.clockOut?.toDate?.();
+      
+      if (clockIn) {
+        const inTime = getTimeComponents(clockIn);
+        setEditClockInHour(inTime.hour);
+        setEditClockInMinute(inTime.minute);
+        setEditClockInAmPm(inTime.ampm);
+      }
+      
+      if (clockOut) {
+        const outTime = getTimeComponents(clockOut);
+        setEditClockOutHour(outTime.hour);
+        setEditClockOutMinute(outTime.minute);
+        setEditClockOutAmPm(outTime.ampm);
+      }
+      
+      setEditNotes(shift.jobLog?.field1 || '');
+    }
   };
 
   const closeEditPanel = () => {
     setEditingShiftId(null);
     setEditMode(null);
+  };
+
+  const handleSaveEditTimes = async (shift: Shift) => {
+    setSavingEdit(true);
+    
+    const baseDate = shift.clockIn?.toDate?.() || new Date();
+    const clockIn = buildDateFromTime(baseDate, editClockInHour, editClockInMinute, editClockInAmPm);
+    let clockOut = buildDateFromTime(baseDate, editClockOutHour, editClockOutMinute, editClockOutAmPm);
+    
+    // Handle overnight shifts
+    if (clockOut <= clockIn) {
+      clockOut.setDate(clockOut.getDate() + 1);
+    }
+    
+    const success = await onEditShift(shift.id, clockIn, clockOut, editNotes);
+    
+    if (success) {
+      showToast('Shift updated ✓');
+      closeEditPanel();
+    }
+    
+    setSavingEdit(false);
   };
 
   const weekKeys = Object.keys(groupedShifts);
@@ -293,6 +386,11 @@ export function HistoryView({
                                   Manual
                                 </span>
                               )}
+                              {shift.editedAt && (
+                                <span style={{ marginLeft: '8px', fontSize: '10px', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px' }}>
+                                  Edited
+                                </span>
+                              )}
                             </p>
                             <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0 0' }}>
                               {fmtTime(shift.clockIn)} - {fmtTime(shift.clockOut)}
@@ -366,6 +464,45 @@ export function HistoryView({
                           </div>
                         )}
 
+                        {/* Travel list (when editing travel) */}
+                        {isEditing && editMode === 'travel' && (shift.travelSegments || []).length > 0 && (
+                          <div style={{ marginTop: '10px', background: '#dbeafe', borderRadius: '8px', padding: '10px' }}>
+                            <p style={{ color: '#1d4ed8', fontSize: '12px', fontWeight: '600', marginBottom: '6px', margin: 0 }}>
+                              Travel ({shift.travelSegments!.length})
+                            </p>
+                            {shift.travelSegments!.map((t, i) => (
+                              <div key={i} style={{ 
+                                display: 'flex', 
+                                justifyContent: 'space-between', 
+                                alignItems: 'center',
+                                padding: '6px 8px',
+                                background: 'white',
+                                borderRadius: '6px',
+                                marginTop: '6px'
+                              }}>
+                                <span style={{ color: '#1e293b', fontSize: '13px' }}>
+                                  {t.durationMinutes || 0}m travel
+                                </span>
+                                <button
+                                  onClick={() => handleDeleteTravel(shift.id, i)}
+                                  style={{
+                                    padding: '4px 8px',
+                                    borderRadius: '4px',
+                                    background: '#fee2e2',
+                                    color: '#dc2626',
+                                    border: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '11px',
+                                    fontWeight: '500'
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         {/* Job log fields */}
                         {shift.jobLog?.field1 && (
                           <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '8px', margin: '8px 0 0 0' }}>
@@ -394,11 +531,29 @@ export function HistoryView({
 
                         {/* Action buttons when not editing */}
                         {!isEditing && deleteConfirmId !== shift.id && (
-                          <div style={{ display: 'flex', gap: '8px', marginTop: '10px' }}>
+                          <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                            <button
+                              onClick={() => openEditPanel(shift.id, 'times', shift)}
+                              style={{
+                                flex: 1,
+                                minWidth: '80px',
+                                padding: '8px',
+                                borderRadius: '8px',
+                                background: 'transparent',
+                                color: theme.primary,
+                                border: `1px dashed ${theme.primary}`,
+                                cursor: 'pointer',
+                                fontSize: '12px',
+                                fontWeight: '500'
+                              }}
+                            >
+                              ✏️ Edit Times
+                            </button>
                             <button
                               onClick={() => openEditPanel(shift.id, 'breaks')}
                               style={{
                                 flex: 1,
+                                minWidth: '80px',
                                 padding: '8px',
                                 borderRadius: '8px',
                                 background: 'transparent',
@@ -409,12 +564,13 @@ export function HistoryView({
                                 fontWeight: '500'
                               }}
                             >
-                              + Add Break
+                              + Break
                             </button>
                             <button
                               onClick={() => openEditPanel(shift.id, 'travel')}
                               style={{
                                 flex: 1,
+                                minWidth: '80px',
                                 padding: '8px',
                                 borderRadius: '8px',
                                 background: 'transparent',
@@ -425,7 +581,7 @@ export function HistoryView({
                                 fontWeight: '500'
                               }}
                             >
-                              + Add Travel
+                              + Travel
                             </button>
                             <button
                               onClick={() => setDeleteConfirmId(shift.id)}
@@ -477,6 +633,132 @@ export function HistoryView({
                                 onClick={() => setDeleteConfirmId(null)}
                                 style={{
                                   padding: '10px 16px',
+                                  borderRadius: '6px',
+                                  background: 'white',
+                                  color: '#64748b',
+                                  border: '1px solid #e2e8f0',
+                                  cursor: 'pointer',
+                                  fontWeight: '500',
+                                  fontSize: '13px'
+                                }}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Edit Times Panel */}
+                        {isEditing && editMode === 'times' && (
+                          <div style={{ marginTop: '10px', background: '#e0f2fe', borderRadius: '8px', padding: '12px' }}>
+                            <p style={{ color: '#0369a1', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>
+                              Edit Shift Times
+                            </p>
+
+                            {/* Clock In */}
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Clock In</label>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <select
+                                  value={editClockInHour}
+                                  onChange={(e) => setEditClockInHour(e.target.value)}
+                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                >
+                                  {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                                <select
+                                  value={editClockInMinute}
+                                  onChange={(e) => setEditClockInMinute(e.target.value)}
+                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                >
+                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <select
+                                  value={editClockInAmPm}
+                                  onChange={(e) => setEditClockInAmPm(e.target.value as 'AM'|'PM')}
+                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                >
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Clock Out */}
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Clock Out</label>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <select
+                                  value={editClockOutHour}
+                                  onChange={(e) => setEditClockOutHour(e.target.value)}
+                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                >
+                                  {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                                <select
+                                  value={editClockOutMinute}
+                                  onChange={(e) => setEditClockOutMinute(e.target.value)}
+                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                >
+                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <select
+                                  value={editClockOutAmPm}
+                                  onChange={(e) => setEditClockOutAmPm(e.target.value as 'AM'|'PM')}
+                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                >
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            {/* Notes */}
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Notes</label>
+                              <textarea
+                                value={editNotes}
+                                onChange={(e) => setEditNotes(e.target.value)}
+                                placeholder="Optional notes..."
+                                style={{
+                                  width: '100%',
+                                  padding: '8px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #bae6fd',
+                                  background: 'white',
+                                  color: '#0f172a',
+                                  fontSize: '13px',
+                                  minHeight: '60px',
+                                  resize: 'vertical',
+                                  boxSizing: 'border-box'
+                                }}
+                              />
+                            </div>
+
+                            {/* Buttons */}
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button
+                                onClick={() => handleSaveEditTimes(shift)}
+                                disabled={savingEdit}
+                                style={{
+                                  flex: 1,
+                                  padding: '10px',
+                                  borderRadius: '6px',
+                                  background: '#0ea5e9',
+                                  color: 'white',
+                                  border: 'none',
+                                  cursor: savingEdit ? 'not-allowed' : 'pointer',
+                                  fontWeight: '600',
+                                  fontSize: '13px',
+                                  opacity: savingEdit ? 0.7 : 1
+                                }}
+                              >
+                                {savingEdit ? 'Saving...' : 'Save Changes'}
+                              </button>
+                              <button
+                                onClick={closeEditPanel}
+                                style={{
+                                  padding: '10px 14px',
                                   borderRadius: '6px',
                                   background: 'white',
                                   color: '#64748b',
