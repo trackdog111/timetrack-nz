@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail } from 'firebase/auth';
-import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch } from 'firebase/firestore';
+import { getFirestore, collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch, arrayUnion } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyBcyz4DyzExGFRmjQ41W3SvQ3xgvYszzUE",
@@ -598,6 +598,37 @@ export default function App() {
   const [myField1, setMyField1] = useState('');
   const [sendingEmail, setSendingEmail] = useState<string | null>(null);
   const [companySettings, setCompanySettings] = useState<CompanySettings>(defaultCompanySettings);
+  // GPS and Travel tracking for My Timesheet
+  const [myCurrentLocation, setMyCurrentLocation] = useState<Location | null>(null);
+  const [myTraveling, setMyTraveling] = useState(false);
+  const [myTravelStart, setMyTravelStart] = useState<Date | null>(null);
+  const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // Manual shift entry state
+  const [showAddManualShift, setShowAddManualShift] = useState(false);
+  const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [manualStartHour, setManualStartHour] = useState('7');
+  const [manualStartMinute, setManualStartMinute] = useState('00');
+  const [manualStartAmPm, setManualStartAmPm] = useState<'AM' | 'PM'>('AM');
+  const [manualEndHour, setManualEndHour] = useState('5');
+  const [manualEndMinute, setManualEndMinute] = useState('00');
+  const [manualEndAmPm, setManualEndAmPm] = useState<'AM' | 'PM'>('PM');
+  const [manualBreaks, setManualBreaks] = useState<number[]>([]);
+  const [manualTravel, setManualTravel] = useState<number[]>([]);
+  const [manualNotes, setManualNotes] = useState('');
+  const [addingManualShift, setAddingManualShift] = useState(false);
+  // Expanded history shifts
+  const [expandedMyShifts, setExpandedMyShifts] = useState<Set<string>>(new Set());
+  const [editingMyShift, setEditingMyShift] = useState<string | null>(null);
+  const [myEditMode, setMyEditMode] = useState<'breaks' | 'travel' | 'times' | null>(null);
+  // Add travel to past shift state
+  const [addTravelStartHour, setAddTravelStartHour] = useState('7');
+  const [addTravelStartMinute, setAddTravelStartMinute] = useState('00');
+  const [addTravelStartAmPm, setAddTravelStartAmPm] = useState<'AM' | 'PM'>('AM');
+  const [addTravelEndHour, setAddTravelEndHour] = useState('8');
+  const [addTravelEndMinute, setAddTravelEndMinute] = useState('00');
+  const [addTravelEndAmPm, setAddTravelEndAmPm] = useState<'AM' | 'PM'>('AM');
+  const [addingTravelToShift, setAddingTravelToShift] = useState(false);
+  const [addingBreakToShift, setAddingBreakToShift] = useState(false);
   const [editingCompanySettings, setEditingCompanySettings] = useState<CompanySettings>(defaultCompanySettings);
   const [savingCompanySettings, setSavingCompanySettings] = useState(false);
   const [expandedEmployees, setExpandedEmployees] = useState<Set<string>>(new Set());
@@ -688,12 +719,374 @@ export default function App() {
   const sendMsg = async () => { if (!newMsg.trim()) return; await addDoc(collection(db, 'messages'), { type: chatTab, senderId: 'employer', senderEmail: 'Employer', text: newMsg.trim(), timestamp: Timestamp.now(), participants: [] }); setNewMsg(''); };
   const cleanup = async () => { if (!cleanupStart || !cleanupEnd || !cleanupConfirm) { setError('Select dates and confirm'); return; } const s = new Date(cleanupStart); const e = new Date(cleanupEnd); e.setHours(23,59,59); const toDelete = allShifts.filter(sh => { if (!sh.clockIn?.toDate) return false; const d = sh.clockIn.toDate(); return d >= s && d <= e && sh.status === 'completed'; }); const batch = writeBatch(db); toDelete.forEach(sh => batch.delete(doc(db, 'shifts', sh.id))); await batch.commit(); setSuccess(`Deleted ${toDelete.length} shifts`); setCleanupConfirm(false); setCleanupStart(''); setCleanupEnd(''); };
 
-  const myClockIn = async () => { if (!user) return; await addDoc(collection(db, 'shifts'), { userId: user.uid, userEmail: user.email, clockIn: Timestamp.now(), clockInLocation: null, locationHistory: [], breaks: [], travelSegments: [], jobLog: { field1: '', field2: '', field3: '' }, status: 'active' }); setSuccess('Clocked in!'); };
-  const myClockOut = async () => { if (!myShift) return; let ub = [...(myShift.breaks || [])]; const ai = ub.findIndex(b => !b.endTime && !b.manualEntry); if (ai !== -1 && breakStart) { ub[ai] = { ...ub[ai], endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) }; } await updateDoc(doc(db, 'shifts', myShift.id), { clockOut: Timestamp.now(), breaks: ub, 'jobLog.field1': myField1, status: 'completed' }); setSuccess('Clocked out!'); };
+  const myClockIn = async () => { 
+    if (!user) return; 
+    const location = await getMyCurrentLocation();
+    await addDoc(collection(db, 'shifts'), { 
+      userId: user.uid, 
+      userEmail: user.email, 
+      clockIn: Timestamp.now(), 
+      clockInLocation: location, 
+      locationHistory: location ? [location] : [], 
+      breaks: [], 
+      travelSegments: [], 
+      jobLog: { field1: '', field2: '', field3: '' }, 
+      status: 'active' 
+    }); 
+    setSuccess('Clocked in!'); 
+  };
+  const myClockOut = async () => { 
+    if (!myShift) return; 
+    const location = await getMyCurrentLocation();
+    let ub = [...(myShift.breaks || [])]; 
+    const ai = ub.findIndex(b => !b.endTime && !b.manualEntry); 
+    if (ai !== -1 && breakStart) { 
+      ub[ai] = { ...ub[ai], endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) }; 
+    } 
+    // End any active travel
+    let ut = [...(myShift.travelSegments || [])];
+    const ti = ut.findIndex(t => !t.endTime);
+    if (ti !== -1 && myTravelStart) {
+      ut[ti] = { ...ut[ti], endTime: Timestamp.now(), endLocation: location || undefined, durationMinutes: Math.round((Date.now() - myTravelStart.getTime()) / 60000) };
+    }
+    await updateDoc(doc(db, 'shifts', myShift.id), { 
+      clockOut: Timestamp.now(), 
+      clockOutLocation: location,
+      breaks: ub, 
+      travelSegments: ut,
+      'jobLog.field1': myField1, 
+      status: 'completed' 
+    }); 
+    setSuccess('Clocked out!'); 
+  };
   const myStartBreak = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { breaks: [...(myShift.breaks || []), { startTime: Timestamp.now(), manualEntry: false }] }); setOnBreak(true); setBreakStart(new Date()); };
   const myEndBreak = async () => { if (!myShift || !breakStart) return; const ub = myShift.breaks.map((b, i) => i === myShift.breaks.length - 1 && !b.endTime && !b.manualEntry ? { ...b, endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) } : b); await updateDoc(doc(db, 'shifts', myShift.id), { breaks: ub }); setOnBreak(false); setBreakStart(null); };
   const myAddBreak = async (m: number) => { if (!myShift) return; const now = Timestamp.now(); await updateDoc(doc(db, 'shifts', myShift.id), { breaks: [...(myShift.breaks || []), { startTime: now, endTime: now, durationMinutes: m, manualEntry: true }] }); };
   const saveMyField1 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field1': myField1 }); };
+
+  // GPS Location Functions
+  const getMyCurrentLocation = (): Promise<Location | null> => {
+    return new Promise((resolve) => {
+      if (!navigator.geolocation) { resolve(null); return; }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const loc: Location = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: Date.now()
+          };
+          setMyCurrentLocation(loc);
+          resolve(loc);
+        },
+        () => resolve(null),
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    });
+  };
+
+  // Initial location fetch
+  useEffect(() => { getMyCurrentLocation(); }, []);
+
+  // GPS tracking interval during active shift
+  useEffect(() => {
+    if (!user || !myShift) {
+      if (gpsIntervalRef.current) {
+        clearInterval(gpsIntervalRef.current);
+        gpsIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const trackLocation = async () => {
+      const location = await getMyCurrentLocation();
+      if (location && myShift) {
+        try {
+          const shiftDoc = await getDoc(doc(db, 'shifts', myShift.id));
+          if (shiftDoc.exists()) {
+            const currentHistory = shiftDoc.data().locationHistory || [];
+            await updateDoc(doc(db, 'shifts', myShift.id), {
+              locationHistory: [...currentHistory, location]
+            });
+          }
+        } catch (err) {
+          console.error('Error updating location:', err);
+        }
+      }
+    };
+
+    trackLocation();
+    gpsIntervalRef.current = setInterval(trackLocation, 10 * 60 * 1000); // 10 min interval
+
+    return () => {
+      if (gpsIntervalRef.current) {
+        clearInterval(gpsIntervalRef.current);
+        gpsIntervalRef.current = null;
+      }
+    };
+  }, [user, myShift?.id]);
+
+  // Travel tracking for my shifts
+  useEffect(() => {
+    if (myShift) {
+      const activeTravel = myShift.travelSegments?.find(t => !t.endTime);
+      setMyTraveling(!!activeTravel);
+      setMyTravelStart(activeTravel ? activeTravel.startTime.toDate() : null);
+    } else {
+      setMyTraveling(false);
+      setMyTravelStart(null);
+    }
+  }, [myShift]);
+
+  const myStartTravel = async () => {
+    if (!myShift) return;
+    const location = await getMyCurrentLocation();
+    await updateDoc(doc(db, 'shifts', myShift.id), {
+      travelSegments: [...(myShift.travelSegments || []), { 
+        startTime: Timestamp.now(), 
+        startLocation: location || undefined 
+      }]
+    });
+    setMyTraveling(true);
+    setMyTravelStart(new Date());
+  };
+
+  const myEndTravel = async () => {
+    if (!myShift || !myTravelStart) return;
+    const location = await getMyCurrentLocation();
+    const durationMinutes = Math.round((Date.now() - myTravelStart.getTime()) / 60000);
+    const updatedTravel = (myShift.travelSegments || []).map((t, i, arr) =>
+      i === arr.length - 1 && !t.endTime
+        ? { ...t, endTime: Timestamp.now(), endLocation: location || undefined, durationMinutes }
+        : t
+    );
+    await updateDoc(doc(db, 'shifts', myShift.id), { travelSegments: updatedTravel });
+    setMyTraveling(false);
+    setMyTravelStart(null);
+  };
+
+  // Add travel to a past shift
+  const myAddTravelToShift = async (shiftId: string, shiftDate: Date) => {
+    setAddingTravelToShift(true);
+    try {
+      let sHour = parseInt(addTravelStartHour);
+      if (addTravelStartAmPm === 'PM' && sHour !== 12) sHour += 12;
+      if (addTravelStartAmPm === 'AM' && sHour === 12) sHour = 0;
+
+      let eHour = parseInt(addTravelEndHour);
+      if (addTravelEndAmPm === 'PM' && eHour !== 12) eHour += 12;
+      if (addTravelEndAmPm === 'AM' && eHour === 12) eHour = 0;
+
+      const travelStart = new Date(shiftDate);
+      travelStart.setHours(sHour, parseInt(addTravelStartMinute), 0, 0);
+
+      const travelEnd = new Date(shiftDate);
+      travelEnd.setHours(eHour, parseInt(addTravelEndMinute), 0, 0);
+
+      if (travelEnd <= travelStart) travelEnd.setDate(travelEnd.getDate() + 1);
+
+      const durationMinutes = Math.round((travelEnd.getTime() - travelStart.getTime()) / 60000);
+      if (durationMinutes <= 0 || durationMinutes > 480) {
+        setError('Invalid travel duration');
+        setAddingTravelToShift(false);
+        return false;
+      }
+
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      if (shiftSnap.exists()) {
+        await updateDoc(shiftRef, {
+          travelSegments: [...(shiftSnap.data().travelSegments || []), {
+            startTime: Timestamp.fromDate(travelStart),
+            endTime: Timestamp.fromDate(travelEnd),
+            durationMinutes
+          }],
+          editedAt: Timestamp.now(),
+          editedBy: user?.uid,
+          editedByEmail: user?.email
+        });
+      }
+      setSuccess('Travel added ✓');
+      setTimeout(() => setSuccess(''), 2000);
+      setAddingTravelToShift(false);
+      setMyEditMode(null);
+      setEditingMyShift(null);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to add travel');
+      setAddingTravelToShift(false);
+      return false;
+    }
+  };
+
+  // Delete travel from a shift
+  const myDeleteTravelFromShift = async (shiftId: string, travelIndex: number) => {
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      if (!shiftSnap.exists()) return false;
+      
+      const shiftData = shiftSnap.data();
+      const updatedTravel = (shiftData.travelSegments || []).filter((_: any, i: number) => i !== travelIndex);
+      
+      await updateDoc(shiftRef, { 
+        travelSegments: updatedTravel,
+        editedAt: Timestamp.now(),
+        editedBy: user?.uid,
+        editedByEmail: user?.email
+      });
+      setSuccess('Travel removed');
+      setTimeout(() => setSuccess(''), 2000);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete travel');
+      return false;
+    }
+  };
+
+  // Add break to a past shift
+  const myAddBreakToShift = async (shiftId: string, minutes: number) => {
+    setAddingBreakToShift(true);
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      if (!shiftSnap.exists()) {
+        setAddingBreakToShift(false);
+        return false;
+      }
+      
+      const now = Timestamp.now();
+      await updateDoc(shiftRef, {
+        breaks: [...(shiftSnap.data().breaks || []), {
+          startTime: now,
+          endTime: now,
+          durationMinutes: minutes,
+          manualEntry: true
+        }],
+        editedAt: Timestamp.now(),
+        editedBy: user?.uid,
+        editedByEmail: user?.email
+      });
+      setSuccess(`${minutes}m break added ✓`);
+      setTimeout(() => setSuccess(''), 2000);
+      setAddingBreakToShift(false);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to add break');
+      setAddingBreakToShift(false);
+      return false;
+    }
+  };
+
+  // Delete break from a shift
+  const myDeleteBreakFromShift = async (shiftId: string, breakIndex: number) => {
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const shiftSnap = await getDoc(shiftRef);
+      if (!shiftSnap.exists()) return false;
+      
+      const shiftData = shiftSnap.data();
+      const updatedBreaks = (shiftData.breaks || []).filter((_: any, i: number) => i !== breakIndex);
+      
+      await updateDoc(shiftRef, { 
+        breaks: updatedBreaks,
+        editedAt: Timestamp.now(),
+        editedBy: user?.uid,
+        editedByEmail: user?.email
+      });
+      setSuccess('Break removed');
+      setTimeout(() => setSuccess(''), 2000);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete break');
+      return false;
+    }
+  };
+
+  // Delete a completed shift
+  const myDeleteShift = async (shiftId: string) => {
+    try {
+      await deleteDoc(doc(db, 'shifts', shiftId));
+      setSuccess('Shift deleted');
+      setTimeout(() => setSuccess(''), 2000);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete shift');
+      return false;
+    }
+  };
+
+  // Add manual shift
+  const myAddManualShift = async () => {
+    if (!user) return;
+    setAddingManualShift(true);
+
+    try {
+      let sHour = parseInt(manualStartHour);
+      if (manualStartAmPm === 'PM' && sHour !== 12) sHour += 12;
+      if (manualStartAmPm === 'AM' && sHour === 12) sHour = 0;
+
+      let eHour = parseInt(manualEndHour);
+      if (manualEndAmPm === 'PM' && eHour !== 12) eHour += 12;
+      if (manualEndAmPm === 'AM' && eHour === 12) eHour = 0;
+
+      const clockIn = new Date(manualDate);
+      clockIn.setHours(sHour, parseInt(manualStartMinute), 0, 0);
+
+      const clockOut = new Date(manualDate);
+      clockOut.setHours(eHour, parseInt(manualEndMinute), 0, 0);
+
+      if (clockOut <= clockIn) clockOut.setDate(clockOut.getDate() + 1);
+
+      const shiftBreaks = manualBreaks.map(mins => {
+        const now = Timestamp.fromDate(clockIn);
+        return { startTime: now, endTime: now, durationMinutes: mins, manualEntry: true };
+      });
+
+      const travelSegments = manualTravel.map(mins => {
+        const now = Timestamp.fromDate(clockIn);
+        return { startTime: now, endTime: now, durationMinutes: mins };
+      });
+
+      await addDoc(collection(db, 'shifts'), {
+        userId: user.uid,
+        userEmail: user.email,
+        clockIn: Timestamp.fromDate(clockIn),
+        clockOut: Timestamp.fromDate(clockOut),
+        locationHistory: [],
+        breaks: shiftBreaks,
+        travelSegments,
+        jobLog: { field1: manualNotes, field2: '', field3: '' },
+        status: 'completed',
+        manualEntry: true
+      });
+
+      setSuccess('Shift added ✓');
+      setTimeout(() => setSuccess(''), 2000);
+      setShowAddManualShift(false);
+      setManualBreaks([]);
+      setManualTravel([]);
+      setManualNotes('');
+      setAddingManualShift(false);
+    } catch (err: any) {
+      setError(err.message || 'Failed to add shift');
+      setAddingManualShift(false);
+    }
+  };
+
+  // Toggle expanded my shift
+  const toggleMyShift = (id: string) => {
+    const s = new Set(expandedMyShifts);
+    if (s.has(id)) s.delete(id);
+    else s.add(id);
+    setExpandedMyShifts(s);
+  };
+
+  // Close edit panel
+  const closeMyEditPanel = () => {
+    setMyEditMode(null);
+    setEditingMyShift(null);
+  };
 
   const navigateTo = (v: string) => { setView(v); setSidebarOpen(false); };
   const hasActiveTravel = (sh: Shift): boolean => (sh.travelSegments || []).some(t => !t.endTime);
@@ -861,8 +1254,373 @@ export default function App() {
         {/* Live View */}
         {view === 'live' && <div><h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Live View</h1>{activeShifts.length === 0 ? <div style={styles.card}><p style={{ color: theme.textMuted, textAlign: 'center' }}>No active shifts</p></div> : <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(350px, 1fr))', gap: '16px' }}>{activeShifts.map(sh => { const h = getHours(sh.clockIn); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const ab = sh.breaks?.find(br => !br.endTime && !br.manualEntry); const t = calcTravel(sh.travelSegments || []); const isTraveling = hasActiveTravel(sh); const name = getEmployeeName(sh.userId, sh.userEmail); return <div key={sh.id} style={styles.card}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}><div><p style={{ color: theme.text, fontWeight: '600' }}>{name}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>In: {fmtTime(sh.clockIn)}</p></div><div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}><span style={{ background: theme.successBg, color: theme.success, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>Active</span>{ab && <span style={{ background: theme.warningBg, color: theme.warning, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>On Break</span>}{isTraveling && <span style={{ background: theme.travelBg, color: theme.travel, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>🚗 Traveling</span>}</div></div><div style={{ display: 'grid', gridTemplateColumns: t > 0 ? 'repeat(4, 1fr)' : 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' }}><div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.textMuted, fontSize: '11px' }}>Worked</p><p style={{ color: theme.text, fontWeight: '600' }}>{fmtDur(h*60)}</p></div><div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.success, fontSize: '11px' }}>Paid</p><p style={{ color: theme.success, fontWeight: '600' }}>{b.paid}m</p></div><div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.warning, fontSize: '11px' }}>Unpaid</p><p style={{ color: theme.warning, fontWeight: '600' }}>{b.unpaid}m</p></div>{t > 0 && <div style={{ background: theme.travelBg, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.travel, fontSize: '11px' }}>Travel</p><p style={{ color: theme.travel, fontWeight: '600' }}>{t}m</p></div>}</div>{sh.locationHistory?.length > 0 && <div><LocationMap locations={sh.locationHistory} height="150px" /><button onClick={() => setMapModal({ locations: sh.locationHistory, title: name, clockInLocation: sh.clockInLocation })} style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', width: '100%' }}>View Map ({sh.locationHistory.length} pts)</button></div>}</div>; })}</div>}</div>}
 
-        {/* My Timesheet */}
-        {view === 'mysheet' && <div><h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>My Timesheet</h1><div style={styles.card}><div style={{ textAlign: 'center', marginBottom: '20px' }}><span style={{ display: 'inline-block', padding: '6px 16px', borderRadius: '20px', fontSize: '14px', fontWeight: 'bold', background: myShift ? (onBreak ? theme.warningBg : theme.successBg) : theme.cardAlt, color: myShift ? (onBreak ? theme.warning : theme.success) : theme.textMuted }}>{myShift ? (onBreak ? '☕ On Break' : '🟢 Clocked In') : '⚪ Clocked Out'}</span></div>{myShift ? <><p style={{ textAlign: 'center', color: theme.textMuted, marginBottom: '8px' }}>Started: {fmtTime(myShift.clockIn)}</p><p style={{ textAlign: 'center', color: theme.text, fontSize: '32px', fontWeight: '700', marginBottom: '20px' }}>{fmtDur(getHours(myShift.clockIn) * 60)}</p><div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>{!onBreak ? <button onClick={myStartBreak} style={{ ...styles.btn, flex: 1, background: theme.warning }}>☕ Start Break</button> : <button onClick={myEndBreak} style={{ ...styles.btn, flex: 1, background: theme.success }}>✓ End Break</button>}<button onClick={myClockOut} style={{ ...styles.btnDanger, flex: 1 }}>🔴 Clock Out</button></div><div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}><span style={{ color: theme.textMuted, fontSize: '13px', width: '100%' }}>Quick add:</span>{[10, 15, 20, 30].map(m => <button key={m} onClick={() => myAddBreak(m)} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontSize: '13px' }}>+{m}m</button>)}</div><div><label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label}</label><textarea value={myField1} onChange={e => setMyField1(e.target.value)} onBlur={saveMyField1} style={{ ...styles.input, minHeight: '80px', resize: 'vertical' }} /></div></> : <button onClick={myClockIn} style={{ ...styles.btn, width: '100%', padding: '16px', fontSize: '16px' }}>🟢 Clock In</button>}</div>{myShiftHistory.length > 0 && <div><h3 style={{ color: theme.text, marginBottom: '16px' }}>Recent Shifts</h3>{myShiftHistory.slice(0, 5).map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); return <div key={sh.id} style={{ ...styles.card, padding: '16px' }}><div style={{ display: 'flex', justifyContent: 'space-between' }}><div><p style={{ color: theme.text, fontWeight: '600' }}>{fmtDate(sh.clockIn)}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>{fmtTime(sh.clockIn)} - {fmtTime(sh.clockOut)}</p></div><div style={{ textAlign: 'right' }}><p style={{ color: theme.text, fontWeight: '600' }}>{fmtDur((h*60)-b.unpaid)}</p><p style={{ color: theme.textMuted, fontSize: '12px' }}>{b.paid}m paid, {b.unpaid}m unpaid</p></div></div></div>; })}</div>}</div>}
+        {/* My Timesheet - Enhanced with full employee features */}
+        {view === 'mysheet' && <div>
+          <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>My Timesheet</h1>
+          
+          {/* Clock In/Out Card */}
+          <div style={styles.card}>
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <span style={{ 
+                display: 'inline-block', 
+                padding: '6px 16px', 
+                borderRadius: '20px', 
+                fontSize: '14px', 
+                fontWeight: 'bold', 
+                background: myShift ? (onBreak ? theme.warningBg : myTraveling ? theme.travelBg : theme.successBg) : theme.cardAlt, 
+                color: myShift ? (onBreak ? theme.warning : myTraveling ? theme.travel : theme.success) : theme.textMuted 
+              }}>
+                {myShift ? (onBreak ? '☕ On Break' : myTraveling ? '🚗 Traveling' : '🟢 Clocked In') : '⚪ Clocked Out'}
+              </span>
+            </div>
+            
+            {myShift ? <>
+              <p style={{ textAlign: 'center', color: theme.textMuted, marginBottom: '8px' }}>Started: {fmtTime(myShift.clockIn)}</p>
+              <p style={{ textAlign: 'center', color: theme.text, fontSize: '32px', fontWeight: '700', marginBottom: '20px' }}>{fmtDur(getHours(myShift.clockIn) * 60)}</p>
+              
+              {/* Break/Travel buttons */}
+              {!onBreak && !myTraveling && (
+                <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+                  <button onClick={myStartBreak} style={{ ...styles.btn, flex: 1, background: theme.warning }}>☕ Start Break</button>
+                  <button onClick={myStartTravel} style={{ ...styles.btn, flex: 1, background: '#2563eb' }}>🚗 Start Travel</button>
+                </div>
+              )}
+              
+              {onBreak && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ background: theme.warningBg, padding: '16px', borderRadius: '12px', textAlign: 'center', marginBottom: '12px' }}>
+                    <p style={{ color: theme.warning, fontSize: '14px', marginBottom: '4px' }}>Break started</p>
+                    <p style={{ color: theme.warning, fontSize: '24px', fontWeight: '700' }}>
+                      {breakStart ? fmtDur(Math.round((Date.now() - breakStart.getTime()) / 60000)) : '--'}
+                    </p>
+                  </div>
+                  <button onClick={myEndBreak} style={{ ...styles.btn, width: '100%', background: theme.success }}>✓ End Break</button>
+                </div>
+              )}
+              
+              {myTraveling && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ background: theme.travelBg, padding: '16px', borderRadius: '12px', textAlign: 'center', marginBottom: '12px' }}>
+                    <p style={{ color: theme.travel, fontSize: '14px', marginBottom: '4px' }}>🚗 Traveling</p>
+                    <p style={{ color: theme.travel, fontSize: '24px', fontWeight: '700' }}>
+                      {myTravelStart ? fmtDur(Math.round((Date.now() - myTravelStart.getTime()) / 60000)) : '--'}
+                    </p>
+                  </div>
+                  <button onClick={myEndTravel} style={{ ...styles.btn, width: '100%', background: theme.success }}>✓ End Travel</button>
+                </div>
+              )}
+              
+              {!onBreak && !myTraveling && (
+                <button onClick={myClockOut} style={{ ...styles.btnDanger, width: '100%', marginBottom: '16px' }}>🔴 Clock Out</button>
+              )}
+              
+              {/* Quick add breaks */}
+              {!onBreak && !myTraveling && (
+                <div style={{ marginBottom: '16px' }}>
+                  <span style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '8px' }}>Quick add break:</span>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {[10, 15, 20, 30].map(m => (
+                      <button key={m} onClick={() => myAddBreak(m)} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontSize: '13px' }}>+{m}m</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              {/* Break & Travel Summary */}
+              {((myShift.breaks || []).length > 0 || (myShift.travelSegments || []).length > 0) && (
+                <div style={{ background: theme.cardAlt, padding: '12px', borderRadius: '8px', marginBottom: '16px' }}>
+                  <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', marginBottom: '8px' }}>Summary</p>
+                  {(myShift.breaks || []).length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ color: theme.textMuted, fontSize: '13px' }}>Breaks ({myShift.breaks.length})</span>
+                      <span style={{ color: theme.warning, fontWeight: '600', fontSize: '13px' }}>{(myShift.breaks || []).reduce((s, b) => s + (b.durationMinutes || 0), 0)}m</span>
+                    </div>
+                  )}
+                  {(myShift.travelSegments || []).length > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: theme.textMuted, fontSize: '13px' }}>Travel ({myShift.travelSegments!.length})</span>
+                      <span style={{ color: theme.travel, fontWeight: '600', fontSize: '13px' }}>{calcTravel(myShift.travelSegments || [])}m</span>
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Notes */}
+              <div>
+                <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label}</label>
+                <textarea value={myField1} onChange={e => setMyField1(e.target.value)} onBlur={saveMyField1} style={{ ...styles.input, minHeight: '80px', resize: 'vertical' }} />
+              </div>
+              
+              {/* Current Location */}
+              {myCurrentLocation && (
+                <div style={{ marginTop: '16px', padding: '12px', background: theme.cardAlt, borderRadius: '8px' }}>
+                  <p style={{ color: theme.text, fontWeight: '600', fontSize: '13px', marginBottom: '4px' }}>📍 Current Location</p>
+                  <p style={{ color: theme.textMuted, fontSize: '12px' }}>{myCurrentLocation.latitude.toFixed(6)}, {myCurrentLocation.longitude.toFixed(6)}</p>
+                  <p style={{ color: theme.textLight, fontSize: '11px' }}>Accuracy: ±{Math.round(myCurrentLocation.accuracy)}m</p>
+                </div>
+              )}
+              
+              {/* Map button for current shift */}
+              {myShift.locationHistory && myShift.locationHistory.length > 0 && (
+                <button onClick={() => setMapModal({ locations: myShift.locationHistory, title: 'My Current Shift', clockInLocation: myShift.clockInLocation })} style={{ ...styles.btn, width: '100%', marginTop: '16px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}` }}>
+                  🗺️ View Map ({myShift.locationHistory.length} points)
+                </button>
+              )}
+            </> : (
+              <>
+                <button onClick={myClockIn} style={{ ...styles.btn, width: '100%', padding: '16px', fontSize: '16px' }}>🟢 Clock In</button>
+                <button onClick={() => setShowAddManualShift(!showAddManualShift)} style={{ width: '100%', marginTop: '12px', padding: '14px', borderRadius: '12px', background: 'transparent', border: `1px dashed ${theme.cardBorder}`, color: theme.textMuted, cursor: 'pointer', fontSize: '14px' }}>
+                  {showAddManualShift ? '✕ Cancel' : '+ Add Past Shift Manually'}
+                </button>
+              </>
+            )}
+          </div>
+          
+          {/* Manual Shift Entry */}
+          {showAddManualShift && !myShift && (
+            <div style={{ ...styles.card, marginTop: '16px' }}>
+              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Add Manual Shift</h3>
+              
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>Date</label>
+                <input type="date" value={manualDate} onChange={e => setManualDate(e.target.value)} style={styles.input} />
+              </div>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>Start Time</label>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <select value={manualStartHour} onChange={e => setManualStartHour(e.target.value)} style={{ ...styles.input, flex: 1 }}>
+                      {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                    <select value={manualStartMinute} onChange={e => setManualStartMinute(e.target.value)} style={{ ...styles.input, flex: 1 }}>
+                      {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <select value={manualStartAmPm} onChange={e => setManualStartAmPm(e.target.value as 'AM' | 'PM')} style={{ ...styles.input, flex: 1 }}>
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>End Time</label>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <select value={manualEndHour} onChange={e => setManualEndHour(e.target.value)} style={{ ...styles.input, flex: 1 }}>
+                      {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                    </select>
+                    <select value={manualEndMinute} onChange={e => setManualEndMinute(e.target.value)} style={{ ...styles.input, flex: 1 }}>
+                      {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                    <select value={manualEndAmPm} onChange={e => setManualEndAmPm(e.target.value as 'AM' | 'PM')} style={{ ...styles.input, flex: 1 }}>
+                      <option value="AM">AM</option>
+                      <option value="PM">PM</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Breaks */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>Breaks</label>
+                {manualBreaks.map((mins, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.warningBg, padding: '8px 12px', borderRadius: '6px', marginBottom: '6px' }}>
+                    <span style={{ color: theme.warning, fontSize: '13px' }}>{mins}m break</span>
+                    <button onClick={() => setManualBreaks(manualBreaks.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: theme.warning, cursor: 'pointer' }}>✕</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {[10, 15, 20, 30].map(m => (
+                    <button key={m} onClick={() => setManualBreaks([...manualBreaks, m])} style={{ padding: '6px 12px', borderRadius: '6px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontSize: '12px' }}>+{m}m</button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Travel */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>Travel</label>
+                {manualTravel.map((mins, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.travelBg, padding: '8px 12px', borderRadius: '6px', marginBottom: '6px' }}>
+                    <span style={{ color: theme.travel, fontSize: '13px' }}>{mins}m travel</span>
+                    <button onClick={() => setManualTravel(manualTravel.filter((_, idx) => idx !== i))} style={{ background: 'none', border: 'none', color: theme.travel, cursor: 'pointer' }}>✕</button>
+                  </div>
+                ))}
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  {[15, 30, 45, 60].map(m => (
+                    <button key={m} onClick={() => setManualTravel([...manualTravel, m])} style={{ padding: '6px 12px', borderRadius: '6px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}`, cursor: 'pointer', fontSize: '12px' }}>+{m}m</button>
+                  ))}
+                </div>
+              </div>
+              
+              {/* Notes */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label}</label>
+                <textarea value={manualNotes} onChange={e => setManualNotes(e.target.value)} style={{ ...styles.input, minHeight: '60px', resize: 'vertical' }} />
+              </div>
+              
+              <button onClick={myAddManualShift} disabled={addingManualShift} style={{ ...styles.btn, width: '100%', background: theme.success, opacity: addingManualShift ? 0.7 : 1 }}>
+                {addingManualShift ? 'Adding...' : 'Add Shift'}
+              </button>
+            </div>
+          )}
+          
+          {/* Recent Shifts - Full expandable history */}
+          {myShiftHistory.length > 0 && (
+            <div style={{ marginTop: '24px' }}>
+              <h3 style={{ color: theme.text, marginBottom: '16px' }}>Recent Shifts</h3>
+              {myShiftHistory.map(sh => {
+                const h = getHours(sh.clockIn, sh.clockOut);
+                const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
+                const t = calcTravel(sh.travelSegments || []);
+                const isExpanded = expandedMyShifts.has(sh.id);
+                const isEditing = editingMyShift === sh.id;
+                
+                return (
+                  <div key={sh.id} style={{ ...styles.card, padding: '16px', marginBottom: '12px' }}>
+                    {/* Header - clickable to expand */}
+                    <div onClick={() => toggleMyShift(sh.id)} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
+                      <div>
+                        <p style={{ color: theme.text, fontWeight: '600' }}>{fmtDate(sh.clockIn)}</p>
+                        <p style={{ color: theme.textMuted, fontSize: '13px' }}>{fmtTime(sh.clockIn)} - {fmtTime(sh.clockOut)}</p>
+                      </div>
+                      <div style={{ textAlign: 'right' }}>
+                        <p style={{ color: theme.text, fontWeight: '600' }}>{fmtDur((h*60)-b.unpaid)}</p>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', fontSize: '12px' }}>
+                          {b.total > 0 && <span style={{ color: theme.warning }}>{b.total}m breaks</span>}
+                          {t > 0 && <span style={{ color: theme.travel }}>{t}m travel</span>}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Expanded details */}
+                    {isExpanded && (
+                      <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.cardBorder}` }}>
+                        {/* Stats */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' }}>
+                          <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
+                            <p style={{ color: theme.success, fontSize: '11px' }}>Paid Breaks</p>
+                            <p style={{ color: theme.success, fontWeight: '600' }}>{b.paid}m</p>
+                          </div>
+                          <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
+                            <p style={{ color: theme.warning, fontSize: '11px' }}>Unpaid Breaks</p>
+                            <p style={{ color: theme.warning, fontWeight: '600' }}>{b.unpaid}m</p>
+                          </div>
+                          <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
+                            <p style={{ color: theme.travel, fontSize: '11px' }}>Travel</p>
+                            <p style={{ color: theme.travel, fontWeight: '600' }}>{t}m</p>
+                          </div>
+                        </div>
+                        
+                        {/* Breaks list */}
+                        {(sh.breaks || []).length > 0 && (
+                          <div style={{ marginBottom: '12px' }}>
+                            <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>BREAKS</p>
+                            {sh.breaks.map((brk, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                                <span style={{ color: theme.textMuted, fontSize: '13px' }}>{brk.manualEntry ? `Break ${i + 1} (added)` : `Break ${i + 1}`}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ color: theme.text, fontWeight: '600' }}>{brk.durationMinutes || 0}m</span>
+                                  <button onClick={() => myDeleteBreakFromShift(sh.id, i)} style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '14px', padding: '2px' }}>✕</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Travel list */}
+                        {(sh.travelSegments || []).length > 0 && (
+                          <div style={{ marginBottom: '12px' }}>
+                            <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>TRAVEL</p>
+                            {sh.travelSegments!.map((trv, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                                <span style={{ color: theme.textMuted, fontSize: '13px' }}>🚗 Travel {i + 1}</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <span style={{ color: theme.travel, fontWeight: '600' }}>{trv.durationMinutes || 0}m</span>
+                                  <button onClick={() => myDeleteTravelFromShift(sh.id, i)} style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '14px', padding: '2px' }}>✕</button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        
+                        {/* Notes */}
+                        {getJobLogField(sh.jobLog, 'field1') && (
+                          <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
+                            <p style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '4px' }}>{companySettings.field1Label}</p>
+                            <p style={{ color: theme.text, fontSize: '13px' }}>{getJobLogField(sh.jobLog, 'field1')}</p>
+                          </div>
+                        )}
+                        
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                          <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('breaks'); }} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.warningBg, color: theme.warning, border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>+ Add Break</button>
+                          <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('travel'); }} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.travelBg, color: theme.travel, border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>+ Add Travel</button>
+                          {(sh.locationHistory?.length > 0 || sh.clockInLocation || sh.clockOutLocation) && (
+                            <button onClick={() => setMapModal({ locations: sh.locationHistory || [], title: fmtDate(sh.clockIn), clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>🗺️ View Map</button>
+                          )}
+                          <button onClick={() => { if (confirm('Delete this shift?')) myDeleteShift(sh.id); }} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.dangerBg, color: theme.danger, border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>🗑️ Delete</button>
+                        </div>
+                        
+                        {/* Add Break Panel */}
+                        {isEditing && myEditMode === 'breaks' && (
+                          <div style={{ background: theme.warningBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
+                            <p style={{ color: theme.warning, fontSize: '12px', fontWeight: '600', marginBottom: '10px' }}>Add Break</p>
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                              {[10, 15, 20, 30, 45, 60].map(mins => (
+                                <button key={mins} onClick={() => myAddBreakToShift(sh.id, mins)} disabled={addingBreakToShift} style={{ padding: '8px 14px', borderRadius: '6px', background: '#fef08a', color: '#854d0e', border: '1px solid #fde047', cursor: addingBreakToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingBreakToShift ? 0.7 : 1 }}>+{mins}m</button>
+                              ))}
+                            </div>
+                            <button onClick={closeMyEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #fde047', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Done</button>
+                          </div>
+                        )}
+                        
+                        {/* Add Travel Panel */}
+                        {isEditing && myEditMode === 'travel' && (
+                          <div style={{ background: theme.travelBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
+                            <p style={{ color: theme.travel, fontSize: '12px', fontWeight: '600', marginBottom: '10px' }}>Add Travel Time</p>
+                            <div style={{ marginBottom: '8px' }}>
+                              <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>Start</label>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <select value={addTravelStartHour} onChange={e => setAddTravelStartHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                                <select value={addTravelStartMinute} onChange={e => setAddTravelStartMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <select value={addTravelStartAmPm} onChange={e => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div style={{ marginBottom: '10px' }}>
+                              <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>End</label>
+                              <div style={{ display: 'flex', gap: '4px' }}>
+                                <select value={addTravelEndHour} onChange={e => setAddTravelEndHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                                <select value={addTravelEndMinute} onChange={e => setAddTravelEndMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <select value={addTravelEndAmPm} onChange={e => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <button onClick={() => myAddTravelToShift(sh.id, sh.clockIn?.toDate?.() || new Date())} disabled={addingTravelToShift} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: addingTravelToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingTravelToShift ? 0.7 : 1 }}>{addingTravelToShift ? 'Adding...' : 'Add Travel'}</button>
+                              <button onClick={closeMyEditPanel} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>}
 
         {/* Employees */}
         {view === 'employees' && <div><h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Employees</h1><div style={styles.card}><h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Invite New Employee</h3><form onSubmit={inviteEmployee}><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}><input placeholder="Email" type="email" value={newEmpEmail} onChange={e => setNewEmpEmail(e.target.value)} required style={{ ...styles.input, flex: '2', minWidth: '200px' }} /><input placeholder="Name (optional)" value={newEmpName} onChange={e => setNewEmpName(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '150px' }} /><button type="submit" style={styles.btn}>Create Invite</button></div></form></div>{invites.filter(i => i.status === 'pending').length > 0 && <div style={styles.card}><h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Pending Invites</h3>{invites.filter(i => i.status === 'pending').map(inv => <div key={inv.id} style={{ background: theme.cardAlt, padding: '16px', borderRadius: '8px', marginBottom: '12px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}><div><p style={{ color: theme.text, fontWeight: '600' }}>{inv.name || inv.email}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>{inv.email}</p>{inv.emailSent && <p style={{ color: theme.success, fontSize: '12px', marginTop: '4px' }}>✓ Email sent</p>}</div><button onClick={() => cancelInvite(inv.id)} style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '12px' }}>Cancel</button></div><div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}><button onClick={() => sendInviteEmail(inv)} disabled={sendingEmail === inv.id} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: theme.primary, color: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: '600', opacity: sendingEmail === inv.id ? 0.7 : 1 }}>{sendingEmail === inv.id ? '⏳ Sending...' : '📧 Send Email'}</button><button onClick={() => copyInviteLink(inv)} style={{ padding: '10px 16px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>📋 Copy Link</button></div></div>)}</div>}{employees.map(emp => <div key={emp.id} style={styles.card}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}><div><p style={{ color: theme.text, fontWeight: '600', marginBottom: '4px' }}>{emp.name || emp.email}</p><p style={{ color: theme.textMuted, fontSize: '14px' }}>{emp.email}</p></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>{emp.role === 'manager' && <span style={{ background: theme.primary, color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600' }}>Manager</span>}{emp.id !== user?.uid && <button onClick={() => setRemoveConfirm(emp.id)} style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>Remove</button>}</div></div><div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Tracking</span><button onClick={() => updateSettings(emp.id, { gpsTracking: !emp.settings?.gpsTracking })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.gpsTracking ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.gpsTracking ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Interval</span><select value={emp.settings?.gpsInterval || 10} onChange={e => updateSettings(emp.id, { gpsInterval: parseInt(e.target.value) })} style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}><option value={5}>5 min</option><option value={10}>10 min</option><option value={15}>15 min</option></select></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>Require Notes</span><button onClick={() => updateSettings(emp.id, { requireNotes: !emp.settings?.requireNotes })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.requireNotes ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.requireNotes ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>Chat Access</span><button onClick={() => updateSettings(emp.id, { chatEnabled: emp.settings?.chatEnabled === false })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.chatEnabled !== false ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.chatEnabled !== false ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div></div></div>)}</div>}
