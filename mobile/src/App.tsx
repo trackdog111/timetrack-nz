@@ -54,6 +54,8 @@ export default function App() {
     addTravelToShift,
     addBreakToShift,
     deleteBreakFromShift,
+    deleteTravelFromShift,
+    editShift,
     addManualShift,
     deleteShift
   } = useShift(user, settings);
@@ -303,6 +305,8 @@ export default function App() {
           onAddTravelToShift={addTravelToShift}
           onAddBreakToShift={addBreakToShift}
           onDeleteBreakFromShift={deleteBreakFromShift}
+          onDeleteTravelFromShift={deleteTravelFromShift}
+          onEditShift={editShift}
           onDeleteShift={deleteShift}
           showToast={showToast}
           paidRestMinutes={labels.paidRestMinutes}
