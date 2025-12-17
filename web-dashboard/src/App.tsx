@@ -140,35 +140,60 @@ function roundTime(date: Date, roundTo: 15 | 30, direction: 'down' | 'up'): Date
   return result;
 }
 
+// FIXED: MapModal with proper GPS marker handling
 function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutLocation }: { locations: Location[], onClose: () => void, title: string, theme: any, clockInLocation?: Location, clockOutLocation?: Location }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
-  const [mapLoaded, setMapLoaded] = useState(false);
-  if (!locations || locations.length === 0) return null;
-  const lats = locations.map(l => l.latitude);
-  const lngs = locations.map(l => l.longitude);
-  const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
-  const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
   
-  // FIX: Force tracking points to show correctly
-  // Only use explicit clockInLocation/clockOutLocation for those types, everything else is tracking
-  const getMarkerType = (loc: Location): 'clockIn' | 'clockOut' | 'tracking' => {
+  // Build combined list with explicit types
+  const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
+  const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
+  
+  // Combine all locations with their types
+  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking' }[] = [];
+  
+  // Add clock-in location first (if exists)
+  if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
+    allPoints.push({ loc: clockInLocation, type: 'clockIn' });
+  }
+  
+  // Add tracking locations (filter out duplicates of clock in/out)
+  (locations || []).forEach(loc => {
+    if (!loc || !loc.latitude || !loc.longitude) return;
+    
+    // Skip if this is the same as clock-in location
     if (clockInLocation && 
         Math.abs(loc.latitude - clockInLocation.latitude) < 0.0001 && 
         Math.abs(loc.longitude - clockInLocation.longitude) < 0.0001 &&
-        Math.abs(loc.timestamp - clockInLocation.timestamp) < 60000) {
-      return 'clockIn';
+        Math.abs(loc.timestamp - clockInLocation.timestamp) < 5000) {
+      return;
     }
+    
+    // Skip if this is the same as clock-out location
     if (clockOutLocation && 
         Math.abs(loc.latitude - clockOutLocation.latitude) < 0.0001 && 
         Math.abs(loc.longitude - clockOutLocation.longitude) < 0.0001 &&
-        Math.abs(loc.timestamp - clockOutLocation.timestamp) < 60000) {
-      return 'clockOut';
+        Math.abs(loc.timestamp - clockOutLocation.timestamp) < 5000) {
+      return;
     }
-    return 'tracking';
-  };
+    
+    // Everything else is a tracking point
+    allPoints.push({ loc, type: 'tracking' });
+  });
   
-  const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
-  const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
+  // Add clock-out location last (if exists)
+  if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
+    allPoints.push({ loc: clockOutLocation, type: 'clockOut' });
+  }
+  
+  // Sort by timestamp
+  allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
+  
+  if (allPoints.length === 0) return null;
+  
+  const lats = allPoints.map(p => p.loc.latitude);
+  const lngs = allPoints.map(p => p.loc.longitude);
+  const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
   
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={onClose}>
@@ -183,21 +208,18 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.tracking }}></span><span style={{ color: theme.textMuted, fontSize: '12px' }}>Tracking</span></div>
         </div>
         <div style={{ height: '350px', borderRadius: '8px', overflow: 'hidden', marginBottom: '16px', position: 'relative' }}>
-          <iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${minLng - 0.003},${minLat - 0.003},${maxLng + 0.003},${maxLat + 0.003}&layer=mapnik`} style={{ width: '100%', height: '100%', border: 'none' }} title="Map" onLoad={() => setMapLoaded(true)} />
+          <iframe src={`https://www.openstreetmap.org/export/embed.html?bbox=${minLng - 0.003},${minLat - 0.003},${maxLng + 0.003},${maxLat + 0.003}&layer=mapnik`} style={{ width: '100%', height: '100%', border: 'none' }} title="Map" />
         </div>
         <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-          {locations.map((loc, i) => {
-            const type = getMarkerType(loc);
-            return (
-              <div key={i} onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : 'transparent'), borderRadius: '6px', cursor: 'pointer', marginBottom: '4px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: markerColors[type], color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>{i + 1}</span>
-                  <span style={{ color: theme.text, fontSize: '13px' }}>{markerLabels[type]}</span>
-                </div>
-                <span style={{ color: theme.textMuted, fontSize: '12px' }}>{new Date(loc.timestamp).toLocaleTimeString('en-NZ')}</span>
+          {allPoints.map((point, i) => (
+            <div key={i} onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : 'transparent'), borderRadius: '6px', cursor: 'pointer', marginBottom: '4px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: markerColors[point.type], color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>{i + 1}</span>
+                <span style={{ color: theme.text, fontSize: '13px' }}>{markerLabels[point.type]}</span>
               </div>
-            );
-          })}
+              <span style={{ color: theme.textMuted, fontSize: '12px' }}>{new Date(point.loc.timestamp).toLocaleTimeString('en-NZ')}</span>
+            </div>
+          ))}
         </div>
       </div>
     </div>
@@ -858,7 +880,7 @@ export default function App() {
                                         <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
                                           {f1 && <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', marginBottom: '10px' }}><p style={{ color: theme.textMuted, fontSize: '11px', margin: 0 }}>📝 {companySettings.field1Label}</p><p style={{ color: theme.text, fontSize: '13px', margin: '4px 0 0 0' }}>{f1}</p></div>}
                                           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                            {sh.locationHistory?.length > 0 && <button onClick={() => setMapModal({ locations: sh.locationHistory, title: `${name} - ${fmtDateShort(sh.clockIn)}`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px' }}>📍 Map ({sh.locationHistory.length})</button>}
+                                            {(sh.locationHistory?.length > 0 || sh.clockInLocation) && <button onClick={() => setMapModal({ locations: sh.locationHistory || [], title: `${name} - ${fmtDateShort(sh.clockIn)}`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px' }}>📍 Map ({(sh.locationHistory?.length || 0) + (sh.clockInLocation ? 1 : 0) + (sh.clockOutLocation ? 1 : 0)})</button>}
                                             <button onClick={() => setEditShiftModal(sh)} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>✏️ Edit Shift</button>
                                           </div>
                                         </div>

@@ -2,7 +2,7 @@
 
 import { useState, useMemo } from 'react';
 import { Theme, createStyles } from '../theme';
-import { Shift } from '../types';
+import { Shift, Location } from '../types';
 import { fmtDur, fmtTime, fmtDate, getHours, calcBreaks, calcTravel } from '../utils';
 import { BreakRulesInfo } from './BreakRulesInfo';
 
@@ -77,6 +77,189 @@ function buildDateFromTime(baseDate: Date, hour: string, minute: string, ampm: '
 
 const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+// Map Modal Component
+function MapModal({ 
+  locations, 
+  onClose, 
+  title, 
+  theme,
+  clockInLocation,
+  clockOutLocation
+}: { 
+  locations: Location[], 
+  onClose: () => void, 
+  title: string, 
+  theme: Theme,
+  clockInLocation?: Location,
+  clockOutLocation?: Location
+}) {
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  
+  const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
+  const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
+  
+  // Combine all locations with their types
+  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking' }[] = [];
+  
+  // Add clock-in location first (if exists)
+  if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
+    allPoints.push({ loc: clockInLocation, type: 'clockIn' });
+  }
+  
+  // Add tracking locations (filter out duplicates of clock in/out)
+  (locations || []).forEach(loc => {
+    if (!loc || !loc.latitude || !loc.longitude) return;
+    
+    // Skip if this is the same as clock-in location
+    if (clockInLocation && 
+        Math.abs(loc.latitude - clockInLocation.latitude) < 0.0001 && 
+        Math.abs(loc.longitude - clockInLocation.longitude) < 0.0001 &&
+        Math.abs(loc.timestamp - clockInLocation.timestamp) < 5000) {
+      return;
+    }
+    
+    // Skip if this is the same as clock-out location
+    if (clockOutLocation && 
+        Math.abs(loc.latitude - clockOutLocation.latitude) < 0.0001 && 
+        Math.abs(loc.longitude - clockOutLocation.longitude) < 0.0001 &&
+        Math.abs(loc.timestamp - clockOutLocation.timestamp) < 5000) {
+      return;
+    }
+    
+    // Everything else is a tracking point
+    allPoints.push({ loc, type: 'tracking' });
+  });
+  
+  // Add clock-out location last (if exists)
+  if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
+    allPoints.push({ loc: clockOutLocation, type: 'clockOut' });
+  }
+  
+  // Sort by timestamp
+  allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
+  
+  if (allPoints.length === 0) return null;
+  
+  const lats = allPoints.map(p => p.loc.latitude);
+  const lngs = allPoints.map(p => p.loc.longitude);
+  const minLat = Math.min(...lats); const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs); const maxLng = Math.max(...lngs);
+  
+  return (
+    <div 
+      style={{ 
+        position: 'fixed', 
+        top: 0, 
+        left: 0, 
+        right: 0, 
+        bottom: 0, 
+        background: 'rgba(0,0,0,0.5)', 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        zIndex: 1000, 
+        padding: '16px' 
+      }} 
+      onClick={onClose}
+    >
+      <div 
+        style={{ 
+          background: theme.card, 
+          borderRadius: '12px', 
+          padding: '16px', 
+          width: '100%', 
+          maxWidth: '500px', 
+          maxHeight: '85vh', 
+          overflow: 'auto' 
+        }} 
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <h2 style={{ color: theme.text, margin: 0, fontSize: '16px' }}>{title}</h2>
+          <button 
+            onClick={onClose} 
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              fontSize: '24px', 
+              cursor: 'pointer', 
+              color: theme.textMuted,
+              padding: '4px'
+            }}
+          >
+            ×
+          </button>
+        </div>
+        
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.clockIn }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Clock In</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.clockOut }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Clock Out</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.tracking }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Tracking</span>
+          </div>
+        </div>
+        
+        {/* Map */}
+        <div style={{ height: '250px', borderRadius: '8px', overflow: 'hidden', marginBottom: '12px' }}>
+          <iframe 
+            src={`https://www.openstreetmap.org/export/embed.html?bbox=${minLng - 0.005},${minLat - 0.005},${maxLng + 0.005},${maxLat + 0.005}&layer=mapnik`} 
+            style={{ width: '100%', height: '100%', border: 'none' }} 
+            title="Location Map" 
+          />
+        </div>
+        
+        {/* Location List */}
+        <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
+          {allPoints.map((point, i) => (
+            <div 
+              key={i} 
+              onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
+              style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                padding: '8px 10px', 
+                background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : 'transparent'), 
+                borderRadius: '6px', 
+                cursor: 'pointer', 
+                marginBottom: '4px' 
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ 
+                  width: '20px', 
+                  height: '20px', 
+                  borderRadius: '50%', 
+                  background: markerColors[point.type], 
+                  color: 'white', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: '10px',
+                  fontWeight: '600'
+                }}>
+                  {i + 1}
+                </span>
+                <span style={{ color: theme.text, fontSize: '13px' }}>{markerLabels[point.type]}</span>
+              </div>
+              <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+                {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function HistoryView({
   theme,
   shiftHistory,
@@ -97,6 +280,14 @@ export function HistoryView({
   const [editingShiftId, setEditingShiftId] = useState<string | null>(null);
   const [editMode, setEditMode] = useState<'travel' | 'breaks' | 'times' | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  
+  // Map modal state
+  const [mapModal, setMapModal] = useState<{
+    locations: Location[],
+    title: string,
+    clockInLocation?: Location,
+    clockOutLocation?: Location
+  } | null>(null);
   
   // Travel form state
   const [addTravelStartHour, setAddTravelStartHour] = useState('9');
@@ -276,10 +467,41 @@ export function HistoryView({
     setSavingEdit(false);
   };
 
+  const openMapModal = (shift: Shift) => {
+    const shiftDate = shift.clockIn?.toDate?.();
+    const dateStr = shiftDate ? fmtDate(shift.clockIn) : 'Shift';
+    setMapModal({
+      locations: shift.locationHistory || [],
+      title: dateStr,
+      clockInLocation: shift.clockInLocation,
+      clockOutLocation: shift.clockOutLocation
+    });
+  };
+
+  // Count total location points for a shift
+  const getLocationCount = (shift: Shift): number => {
+    let count = shift.locationHistory?.length || 0;
+    if (shift.clockInLocation) count++;
+    if (shift.clockOutLocation) count++;
+    return count;
+  };
+
   const weekKeys = Object.keys(groupedShifts);
 
   return (
     <div style={{ padding: '16px' }}>
+      {/* Map Modal */}
+      {mapModal && (
+        <MapModal
+          locations={mapModal.locations}
+          onClose={() => setMapModal(null)}
+          title={mapModal.title}
+          theme={theme}
+          clockInLocation={mapModal.clockInLocation}
+          clockOutLocation={mapModal.clockOutLocation}
+        />
+      )}
+
       <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>
         Shift History
       </h2>
@@ -369,6 +591,7 @@ export function HistoryView({
                     const travelMinutes = calcTravel(shift.travelSegments || []);
                     const workingMinutes = (shiftHours * 60) - breakAllocation.unpaid;
                     const isEditing = editingShiftId === shift.id;
+                    const locationCount = getLocationCount(shift);
 
                     return (
                       <div key={shift.id} style={{ 
@@ -522,11 +745,29 @@ export function HistoryView({
                           </p>
                         )}
 
-                        {/* Location points */}
-                        {shift.locationHistory?.length > 0 && (
-                          <p style={{ color: theme.textLight, fontSize: '11px', margin: '8px 0 0 0' }}>
-                            📍 {shift.locationHistory.length} location points recorded
-                          </p>
+                        {/* Location points with view button */}
+                        {locationCount > 0 && (
+                          <button
+                            onClick={() => openMapModal(shift)}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '6px',
+                              marginTop: '8px',
+                              padding: '8px 12px',
+                              background: theme.cardAlt,
+                              border: `1px solid ${theme.primary}`,
+                              borderRadius: '8px',
+                              color: theme.primary,
+                              fontSize: '12px',
+                              fontWeight: '500',
+                              cursor: 'pointer',
+                              width: '100%',
+                              justifyContent: 'center'
+                            }}
+                          >
+                            📍 View {locationCount} location point{locationCount !== 1 ? 's' : ''} on map
+                          </button>
                         )}
 
                         {/* Action buttons when not editing */}
@@ -662,21 +903,21 @@ export function HistoryView({
                                 <select
                                   value={editClockInHour}
                                   onChange={(e) => setEditClockInHour(e.target.value)}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
                                 >
                                   {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
                                 </select>
                                 <select
                                   value={editClockInMinute}
                                   onChange={(e) => setEditClockInMinute(e.target.value)}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
                                 >
                                   {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                                 <select
                                   value={editClockInAmPm}
-                                  onChange={(e) => setEditClockInAmPm(e.target.value as 'AM'|'PM')}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  onChange={(e) => setEditClockInAmPm(e.target.value as 'AM' | 'PM')}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
                                 >
                                   <option value="AM">AM</option>
                                   <option value="PM">PM</option>
@@ -691,21 +932,21 @@ export function HistoryView({
                                 <select
                                   value={editClockOutHour}
                                   onChange={(e) => setEditClockOutHour(e.target.value)}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
                                 >
                                   {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
                                 </select>
                                 <select
                                   value={editClockOutMinute}
                                   onChange={(e) => setEditClockOutMinute(e.target.value)}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
                                 >
                                   {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                                 <select
                                   value={editClockOutAmPm}
-                                  onChange={(e) => setEditClockOutAmPm(e.target.value as 'AM'|'PM')}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  onChange={(e) => setEditClockOutAmPm(e.target.value as 'AM' | 'PM')}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
                                 >
                                   <option value="AM">AM</option>
                                   <option value="PM">PM</option>
@@ -714,20 +955,18 @@ export function HistoryView({
                             </div>
 
                             {/* Notes */}
-                            <div style={{ marginBottom: '10px' }}>
+                            <div style={{ marginBottom: '12px' }}>
                               <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Notes</label>
                               <textarea
                                 value={editNotes}
                                 onChange={(e) => setEditNotes(e.target.value)}
-                                placeholder="Optional notes..."
-                                style={{
-                                  width: '100%',
-                                  padding: '8px',
-                                  borderRadius: '6px',
-                                  border: '1px solid #bae6fd',
+                                style={{ 
+                                  width: '100%', 
+                                  padding: '8px', 
+                                  fontSize: '13px', 
+                                  borderRadius: '6px', 
+                                  border: '1px solid #bae6fd', 
                                   background: 'white',
-                                  color: '#0f172a',
-                                  fontSize: '13px',
                                   minHeight: '60px',
                                   resize: 'vertical',
                                   boxSizing: 'border-box'
@@ -736,7 +975,7 @@ export function HistoryView({
                             </div>
 
                             {/* Buttons */}
-                            <div style={{ display: 'flex', gap: '6px' }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
                               <button
                                 onClick={() => handleSaveEditTimes(shift)}
                                 disabled={savingEdit}
@@ -744,7 +983,7 @@ export function HistoryView({
                                   flex: 1,
                                   padding: '10px',
                                   borderRadius: '6px',
-                                  background: '#0ea5e9',
+                                  background: '#0284c7',
                                   color: 'white',
                                   border: 'none',
                                   cursor: savingEdit ? 'not-allowed' : 'pointer',
@@ -758,11 +997,11 @@ export function HistoryView({
                               <button
                                 onClick={closeEditPanel}
                                 style={{
-                                  padding: '10px 14px',
+                                  padding: '10px 16px',
                                   borderRadius: '6px',
                                   background: 'white',
                                   color: '#64748b',
-                                  border: '1px solid #e2e8f0',
+                                  border: '1px solid #bae6fd',
                                   cursor: 'pointer',
                                   fontWeight: '500',
                                   fontSize: '13px'
@@ -776,37 +1015,32 @@ export function HistoryView({
 
                         {/* Add Break Panel */}
                         {isEditing && editMode === 'breaks' && (
-                          <div style={{ marginTop: '10px', background: '#fef3c7', borderRadius: '8px', padding: '12px' }}>
-                            <p style={{ color: '#92400e', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>
+                          <div style={{ marginTop: '10px', background: '#fefce8', borderRadius: '8px', padding: '12px' }}>
+                            <p style={{ color: '#854d0e', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>
                               Add Break
                             </p>
-                            
-                            {/* Quick add buttons */}
                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                              {[10, 15, 20, 30].map(mins => (
+                              {[10, 15, 20, 30, 45, 60].map(mins => (
                                 <button
                                   key={mins}
                                   onClick={() => handleAddBreak(shift.id, mins)}
                                   disabled={addingBreak}
                                   style={{
-                                    flex: 1,
-                                    minWidth: '50px',
-                                    padding: '10px 6px',
+                                    padding: '8px 14px',
                                     borderRadius: '6px',
-                                    background: '#f59e0b',
-                                    color: 'white',
-                                    border: 'none',
+                                    background: '#fef08a',
+                                    color: '#854d0e',
+                                    border: '1px solid #fde047',
                                     cursor: addingBreak ? 'not-allowed' : 'pointer',
                                     fontWeight: '600',
                                     fontSize: '13px',
                                     opacity: addingBreak ? 0.7 : 1
                                   }}
                                 >
-                                  {mins}m
+                                  +{mins}m
                                 </button>
                               ))}
                             </div>
-
                             <button
                               onClick={closeEditPanel}
                               style={{
@@ -815,7 +1049,7 @@ export function HistoryView({
                                 borderRadius: '6px',
                                 background: 'white',
                                 color: '#64748b',
-                                border: '1px solid #e2e8f0',
+                                border: '1px solid #fde047',
                                 cursor: 'pointer',
                                 fontWeight: '500',
                                 fontSize: '13px'
@@ -828,33 +1062,33 @@ export function HistoryView({
 
                         {/* Add Travel Panel */}
                         {isEditing && editMode === 'travel' && (
-                          <div style={{ marginTop: '10px', background: '#dbeafe', borderRadius: '8px', padding: '12px' }}>
-                            <p style={{ color: '#1d4ed8', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>
+                          <div style={{ marginTop: '10px', background: '#eff6ff', borderRadius: '8px', padding: '12px' }}>
+                            <p style={{ color: '#1e40af', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>
                               Add Travel Time
                             </p>
 
                             {/* Start Time */}
-                            <div style={{ marginBottom: '10px' }}>
-                              <label style={{ display: 'block', color: '#1d4ed8', fontSize: '11px', marginBottom: '4px' }}>Start</label>
+                            <div style={{ marginBottom: '8px' }}>
+                              <label style={{ display: 'block', color: '#1e40af', fontSize: '11px', marginBottom: '4px' }}>Start</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <select
                                   value={addTravelStartHour}
                                   onChange={(e) => setAddTravelStartHour(e.target.value)}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
                                 >
                                   {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
                                 </select>
                                 <select
                                   value={addTravelStartMinute}
                                   onChange={(e) => setAddTravelStartMinute(e.target.value)}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
                                 >
-                                  {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                                 <select
                                   value={addTravelStartAmPm}
-                                  onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM'|'PM')}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
                                 >
                                   <option value="AM">AM</option>
                                   <option value="PM">PM</option>
@@ -864,26 +1098,26 @@ export function HistoryView({
 
                             {/* End Time */}
                             <div style={{ marginBottom: '10px' }}>
-                              <label style={{ display: 'block', color: '#1d4ed8', fontSize: '11px', marginBottom: '4px' }}>End</label>
+                              <label style={{ display: 'block', color: '#1e40af', fontSize: '11px', marginBottom: '4px' }}>End</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
                                 <select
                                   value={addTravelEndHour}
                                   onChange={(e) => setAddTravelEndHour(e.target.value)}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
                                 >
                                   {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
                                 </select>
                                 <select
                                   value={addTravelEndMinute}
                                   onChange={(e) => setAddTravelEndMinute(e.target.value)}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
                                 >
-                                  {['00','15','30','45'].map(m => <option key={m} value={m}>{m}</option>)}
+                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
                                 </select>
                                 <select
                                   value={addTravelEndAmPm}
-                                  onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM'|'PM')}
-                                  style={{ ...styles.select, flex: 1, padding: '8px', fontSize: '13px' }}
+                                  onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')}
+                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
                                 >
                                   <option value="AM">AM</option>
                                   <option value="PM">PM</option>
@@ -892,9 +1126,9 @@ export function HistoryView({
                             </div>
 
                             {/* Buttons */}
-                            <div style={{ display: 'flex', gap: '6px' }}>
+                            <div style={{ display: 'flex', gap: '8px' }}>
                               <button
-                                onClick={() => handleAddTravel(shift.id, shift.clockIn.toDate())}
+                                onClick={() => handleAddTravel(shift.id, shift.clockIn?.toDate?.() || new Date())}
                                 disabled={addingTravelToShift}
                                 style={{
                                   flex: 1,
@@ -903,7 +1137,7 @@ export function HistoryView({
                                   background: '#2563eb',
                                   color: 'white',
                                   border: 'none',
-                                  cursor: 'pointer',
+                                  cursor: addingTravelToShift ? 'not-allowed' : 'pointer',
                                   fontWeight: '600',
                                   fontSize: '13px',
                                   opacity: addingTravelToShift ? 0.7 : 1
@@ -914,11 +1148,11 @@ export function HistoryView({
                               <button
                                 onClick={closeEditPanel}
                                 style={{
-                                  padding: '10px 14px',
+                                  padding: '10px 16px',
                                   borderRadius: '6px',
                                   background: 'white',
                                   color: '#64748b',
-                                  border: '1px solid #e2e8f0',
+                                  border: '1px solid #bfdbfe',
                                   cursor: 'pointer',
                                   fontWeight: '500',
                                   fontSize: '13px'
@@ -939,15 +1173,31 @@ export function HistoryView({
         })
       )}
 
-      {/* Break Rules */}
-      <div style={{ marginTop: '16px' }}>
-        <BreakRulesInfo 
-          isOpen={showBreakRules} 
-          onToggle={() => setShowBreakRules(!showBreakRules)} 
+      {/* Break rules info button */}
+      <div style={{ marginTop: '20px', textAlign: 'center' }}>
+        <button
+          onClick={() => setShowBreakRules(true)}
+          style={{
+            padding: '10px 20px',
+            borderRadius: '8px',
+            background: 'transparent',
+            color: theme.textMuted,
+            border: `1px solid ${theme.cardAlt}`,
+            cursor: 'pointer',
+            fontSize: '13px'
+          }}
+        >
+          ℹ️ NZ Break Rules
+        </button>
+      </div>
+
+      {showBreakRules && (
+        <BreakRulesInfo
           theme={theme}
+          onClose={() => setShowBreakRules(false)}
           paidRestMinutes={paidRestMinutes}
         />
-      </div>
+      )}
     </div>
   );
 }
