@@ -187,6 +187,7 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
       const style = document.createElement('style');
       style.id = 'custom-marker-css';
       style.textContent = `
+        .leaflet-div-icon { background: none !important; border: none !important; }
         .custom-marker { background: none !important; border: none !important; }
         .custom-marker div { box-sizing: border-box; }
       `;
