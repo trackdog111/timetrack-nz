@@ -294,21 +294,7 @@ export function ClockView({
           {cameraError ? (
             <div style={{ padding: '20px', textAlign: 'center' }}>
               <p style={{ color: '#ef4444', fontSize: '16px', marginBottom: '16px' }}>{cameraError}</p>
-              <button
-                onClick={skipPhoto}
-                style={{
-                  background: theme.primary,
-                  color: 'white',
-                  padding: '14px 28px',
-                  borderRadius: '12px',
-                  border: 'none',
-                  fontSize: '16px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                Clock In Without Photo
-              </button>
+              <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px' }}>Photo is required to clock in. Please allow camera access and try again.</p>
             </div>
           ) : capturedPhoto ? (
             <img
