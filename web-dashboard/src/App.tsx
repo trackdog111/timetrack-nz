@@ -150,35 +150,41 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
   const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
   const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
   
-  // Combine all locations with their types
-  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking' }[] = [];
+  // Combine all locations with their types - include ALL points with display coordinates
+  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking', displayLat: number, displayLng: number }[] = [];
   
   if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
-    allPoints.push({ loc: clockInLocation, type: 'clockIn' });
+    allPoints.push({ loc: clockInLocation, type: 'clockIn', displayLat: clockInLocation.latitude, displayLng: clockInLocation.longitude });
   }
   
+  // Add ALL tracking locations from history
   (locations || []).forEach(loc => {
     if (!loc || !loc.latitude || !loc.longitude) return;
-    if (clockInLocation && 
-        loc.latitude === clockInLocation.latitude && 
-        loc.longitude === clockInLocation.longitude &&
-        loc.timestamp === clockInLocation.timestamp) {
-      return;
-    }
-    if (clockOutLocation && 
-        loc.latitude === clockOutLocation.latitude && 
-        loc.longitude === clockOutLocation.longitude &&
-        loc.timestamp === clockOutLocation.timestamp) {
-      return;
-    }
-    allPoints.push({ loc, type: 'tracking' });
+    allPoints.push({ loc, type: 'tracking', displayLat: loc.latitude, displayLng: loc.longitude });
   });
   
   if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
-    allPoints.push({ loc: clockOutLocation, type: 'clockOut' });
+    allPoints.push({ loc: clockOutLocation, type: 'clockOut', displayLat: clockOutLocation.latitude, displayLng: clockOutLocation.longitude });
   }
   
   allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
+  
+  // Offset overlapping markers slightly so all are visible
+  const offsetAmount = 0.0003; // ~30 meters offset
+  for (let i = 1; i < allPoints.length; i++) {
+    for (let j = 0; j < i; j++) {
+      const dist = Math.sqrt(
+        Math.pow(allPoints[i].displayLat - allPoints[j].displayLat, 2) +
+        Math.pow(allPoints[i].displayLng - allPoints[j].displayLng, 2)
+      );
+      // If points are very close (within ~50m), offset the later one
+      if (dist < 0.0005) {
+        const angle = (i * 60) * (Math.PI / 180); // Spread in different directions
+        allPoints[i].displayLat += offsetAmount * Math.cos(angle);
+        allPoints[i].displayLng += offsetAmount * Math.sin(angle);
+      }
+    }
+  }
   
   // Load Leaflet from CDN
   useEffect(() => {
@@ -233,9 +239,9 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
       mapInstanceRef.current.remove();
     }
     
-    // Calculate bounds
-    const lats = allPoints.map(p => p.loc.latitude);
-    const lngs = allPoints.map(p => p.loc.longitude);
+    // Calculate bounds using display coordinates
+    const lats = allPoints.map(p => p.displayLat);
+    const lngs = allPoints.map(p => p.displayLng);
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
     const minLng = Math.min(...lngs);
@@ -254,26 +260,7 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
     
-    // Add markers
-    allPoints.forEach((point, index) => {
-      const color = markerColors[point.type];
-      const label = markerLabels[point.type];
-      const time = new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
-      
-      // Create custom icon
-      const icon = L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="width:28px;height:28px;background:${color};border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:bold;">${index + 1}</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14]
-      });
-      
-      L.marker([point.loc.latitude, point.loc.longitude], { icon })
-        .addTo(map)
-        .bindPopup(`<b>${label}</b><br>${time}`);
-    });
-    
-    // Draw path line connecting points
+    // Draw path line using ACTUAL coordinates (not offset)
     if (allPoints.length > 1) {
       const pathCoords = allPoints.map(p => [p.loc.latitude, p.loc.longitude]);
       L.polyline(pathCoords, { 
@@ -283,6 +270,25 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
         dashArray: '10, 10'
       }).addTo(map);
     }
+    
+    // Add markers using DISPLAY coordinates (with offset for overlapping)
+    allPoints.forEach((point, index) => {
+      const color = markerColors[point.type];
+      const label = markerLabels[point.type];
+      const time = new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      
+      // Create custom icon
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: `<div style="width:28px;height:28px;background:${color};border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:bold;">${index + 1}</div>`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      
+      L.marker([point.displayLat, point.displayLng], { icon })
+        .addTo(map)
+        .bindPopup(`<b>${label}</b><br>${time}`);
+    });
     
     return () => {
       if (mapInstanceRef.current) {
@@ -329,7 +335,7 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
                 <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: markerColors[point.type], color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>{i + 1}</span>
                 <span style={{ color: theme.text, fontSize: '13px' }}>{markerLabels[point.type]}</span>
               </div>
-              <span style={{ color: theme.textMuted, fontSize: '12px' }}>{new Date(point.loc.timestamp).toLocaleTimeString('en-NZ')}</span>
+              <span style={{ color: theme.textMuted, fontSize: '12px' }}>{new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
             </div>
           ))}
         </div>

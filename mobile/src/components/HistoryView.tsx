@@ -101,44 +101,44 @@ function MapModal({
   const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
   const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
   
-  // Combine all locations with their types
-  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking' }[] = [];
+  // Combine all locations with their types - include ALL points with display coordinates
+  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking', displayLat: number, displayLng: number }[] = [];
   
   // Add clock-in location first (if exists)
   if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
-    allPoints.push({ loc: clockInLocation, type: 'clockIn' });
+    allPoints.push({ loc: clockInLocation, type: 'clockIn', displayLat: clockInLocation.latitude, displayLng: clockInLocation.longitude });
   }
   
-  // Add tracking locations (filter out EXACT duplicates of clock in/out only)
+  // Add ALL tracking locations from history
   (locations || []).forEach(loc => {
     if (!loc || !loc.latitude || !loc.longitude) return;
-    
-    // Skip only if this is an EXACT duplicate of clock-in location
-    if (clockInLocation && 
-        loc.latitude === clockInLocation.latitude && 
-        loc.longitude === clockInLocation.longitude &&
-        loc.timestamp === clockInLocation.timestamp) {
-      return;
-    }
-    
-    // Skip only if this is an EXACT duplicate of clock-out location
-    if (clockOutLocation && 
-        loc.latitude === clockOutLocation.latitude && 
-        loc.longitude === clockOutLocation.longitude &&
-        loc.timestamp === clockOutLocation.timestamp) {
-      return;
-    }
-    
-    allPoints.push({ loc, type: 'tracking' });
+    allPoints.push({ loc, type: 'tracking', displayLat: loc.latitude, displayLng: loc.longitude });
   });
   
   // Add clock-out location last (if exists)
   if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
-    allPoints.push({ loc: clockOutLocation, type: 'clockOut' });
+    allPoints.push({ loc: clockOutLocation, type: 'clockOut', displayLat: clockOutLocation.latitude, displayLng: clockOutLocation.longitude });
   }
   
   // Sort by timestamp
   allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
+  
+  // Offset overlapping markers slightly so all are visible
+  const offsetAmount = 0.0003; // ~30 meters offset
+  for (let i = 1; i < allPoints.length; i++) {
+    for (let j = 0; j < i; j++) {
+      const dist = Math.sqrt(
+        Math.pow(allPoints[i].displayLat - allPoints[j].displayLat, 2) +
+        Math.pow(allPoints[i].displayLng - allPoints[j].displayLng, 2)
+      );
+      // If points are very close (within ~50m), offset the later one
+      if (dist < 0.0005) {
+        const angle = (i * 60) * (Math.PI / 180); // Spread in different directions
+        allPoints[i].displayLat += offsetAmount * Math.cos(angle);
+        allPoints[i].displayLng += offsetAmount * Math.sin(angle);
+      }
+    }
+  }
 
   // Load Leaflet from CDN
   useEffect(() => {
@@ -146,10 +146,10 @@ function MapModal({
       if (!document.getElementById('custom-marker-css')) {
         const style = document.createElement('style');
         style.id = 'custom-marker-css';
-        style.textContent = `
+        style.textContent = \`
           .leaflet-div-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
           .custom-marker { background: transparent !important; border: none !important; }
-        `;
+        \`;
         document.head.appendChild(style);
       }
     };
@@ -190,9 +190,9 @@ function MapModal({
       mapInstanceRef.current.remove();
     }
     
-    // Calculate bounds
-    const lats = allPoints.map(p => p.loc.latitude);
-    const lngs = allPoints.map(p => p.loc.longitude);
+    // Calculate bounds using display coordinates
+    const lats = allPoints.map(p => p.displayLat);
+    const lngs = allPoints.map(p => p.displayLng);
     const minLat = Math.min(...lats);
     const maxLat = Math.max(...lats);
     const minLng = Math.min(...lngs);
@@ -211,25 +211,7 @@ function MapModal({
       attribution: '© OpenStreetMap'
     }).addTo(map);
     
-    // Add markers
-    allPoints.forEach((point, index) => {
-      const color = markerColors[point.type];
-      const label = markerLabels[point.type];
-      const time = new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' });
-      
-      const icon = L.divIcon({
-        className: 'custom-marker',
-        html: `<div style="width:28px;height:28px;background:${color};border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:bold;">${index + 1}</div>`,
-        iconSize: [28, 28],
-        iconAnchor: [14, 14]
-      });
-      
-      L.marker([point.loc.latitude, point.loc.longitude], { icon })
-        .addTo(map)
-        .bindPopup(`<b>${label}</b><br>${time}`);
-    });
-    
-    // Draw path line
+    // Draw path line using ACTUAL coordinates (not offset)
     if (allPoints.length > 1) {
       const pathCoords = allPoints.map(p => [p.loc.latitude, p.loc.longitude]);
       L.polyline(pathCoords, { 
@@ -239,6 +221,24 @@ function MapModal({
         dashArray: '10, 10'
       }).addTo(map);
     }
+    
+    // Add markers using DISPLAY coordinates (with offset for overlapping)
+    allPoints.forEach((point, index) => {
+      const color = markerColors[point.type];
+      const label = markerLabels[point.type];
+      const time = new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      
+      const icon = L.divIcon({
+        className: 'custom-marker',
+        html: \`<div style="width:28px;height:28px;background:\${color};border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:bold;">\${index + 1}</div>\`,
+        iconSize: [28, 28],
+        iconAnchor: [14, 14]
+      });
+      
+      L.marker([point.displayLat, point.displayLng], { icon })
+        .addTo(map)
+        .bindPopup(\`<b>\${label}</b><br>\${time}\`);
+    });
     
     return () => {
       if (mapInstanceRef.current) {
@@ -356,7 +356,7 @@ function MapModal({
                 <span style={{ color: theme.text, fontSize: '13px' }}>{markerLabels[point.type]}</span>
               </div>
               <span style={{ color: theme.textMuted, fontSize: '12px' }}>
-                {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}
+                {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
               </span>
             </div>
           ))}
@@ -475,7 +475,6 @@ export function HistoryView({
       showToast('Travel added ✓');
       setEditingShiftId(null);
       setEditMode(null);
-      // Reset form
       setAddTravelStartHour('9');
       setAddTravelStartMinute('00');
       setAddTravelStartAmPm('AM');
@@ -523,7 +522,6 @@ export function HistoryView({
     setEditingShiftId(shiftId);
     setEditMode(mode);
     
-    // Pre-populate times if editing times
     if (mode === 'times' && shift) {
       const clockIn = shift.clockIn?.toDate?.();
       const clockOut = shift.clockOut?.toDate?.();
@@ -558,7 +556,6 @@ export function HistoryView({
     const clockIn = buildDateFromTime(baseDate, editClockInHour, editClockInMinute, editClockInAmPm);
     let clockOut = buildDateFromTime(baseDate, editClockOutHour, editClockOutMinute, editClockOutAmPm);
     
-    // Handle overnight shifts
     if (clockOut <= clockIn) {
       clockOut.setDate(clockOut.getDate() + 1);
     }
@@ -584,7 +581,6 @@ export function HistoryView({
     });
   };
 
-  // Count total location points for a shift
   const getLocationCount = (shift: Shift): number => {
     let count = shift.locationHistory?.length || 0;
     if (shift.clockInLocation) count++;
@@ -596,7 +592,6 @@ export function HistoryView({
 
   return (
     <div style={{ padding: '16px' }}>
-      {/* Map Modal */}
       {mapModal && (
         <MapModal
           locations={mapModal.locations}
@@ -626,7 +621,6 @@ export function HistoryView({
           
           return (
             <div key={weekKey} style={{ marginBottom: '12px' }}>
-              {/* Week Header - Collapsed by default */}
               <div
                 onClick={() => toggleWeek(weekKey)}
                 style={{
@@ -646,51 +640,26 @@ export function HistoryView({
                     {isExpanded ? '▼' : '▶'}
                   </span>
                   <div>
-                    <p style={{ 
-                      color: isExpanded ? 'white' : theme.text, 
-                      fontWeight: '600', 
-                      fontSize: '15px',
-                      margin: 0 
-                    }}>
+                    <p style={{ color: isExpanded ? 'white' : theme.text, fontWeight: '600', fontSize: '15px', margin: 0 }}>
                       Week Ending: {fmtWeekEnding(weekEnd)}
                     </p>
-                    <p style={{ 
-                      color: isExpanded ? 'rgba(255,255,255,0.7)' : theme.textMuted, 
-                      fontSize: '12px',
-                      margin: '2px 0 0 0'
-                    }}>
+                    <p style={{ color: isExpanded ? 'rgba(255,255,255,0.7)' : theme.textMuted, fontSize: '12px', margin: '2px 0 0 0' }}>
                       {shifts.length} shift{shifts.length !== 1 ? 's' : ''}
                     </p>
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <p style={{ 
-                    color: isExpanded ? 'white' : theme.primary, 
-                    fontWeight: '700', 
-                    fontSize: '18px',
-                    margin: 0
-                  }}>
+                  <p style={{ color: isExpanded ? 'white' : theme.primary, fontWeight: '700', fontSize: '18px', margin: 0 }}>
                     {fmtDur(totalMinutes)}
                   </p>
-                  <p style={{ 
-                    color: isExpanded ? 'rgba(255,255,255,0.7)' : theme.textMuted, 
-                    fontSize: '11px',
-                    margin: '2px 0 0 0'
-                  }}>
+                  <p style={{ color: isExpanded ? 'rgba(255,255,255,0.7)' : theme.textMuted, fontSize: '11px', margin: '2px 0 0 0' }}>
                     total
                   </p>
                 </div>
               </div>
 
-              {/* Expanded Shifts */}
               {isExpanded && (
-                <div style={{
-                  background: theme.cardAlt,
-                  borderRadius: '0 0 12px 12px',
-                  border: `1px solid ${theme.cardAlt}`,
-                  borderTop: 'none',
-                  overflow: 'hidden'
-                }}>
+                <div style={{ background: theme.cardAlt, borderRadius: '0 0 12px 12px', border: `1px solid ${theme.cardAlt}`, borderTop: 'none', overflow: 'hidden' }}>
                   {shifts.sort((a, b) => (b.clockIn?.toDate?.()?.getTime() || 0) - (a.clockIn?.toDate?.()?.getTime() || 0)).map(shift => {
                     const shiftHours = getHours(shift.clockIn, shift.clockOut);
                     const breakAllocation = calcBreaks(shift.breaks || [], shiftHours, paidRestMinutes);
@@ -700,26 +669,13 @@ export function HistoryView({
                     const locationCount = getLocationCount(shift);
 
                     return (
-                      <div key={shift.id} style={{ 
-                        background: theme.card,
-                        padding: '14px 16px',
-                        borderBottom: `1px solid ${theme.cardAlt}`
-                      }}>
-                        {/* Shift Header */}
+                      <div key={shift.id} style={{ background: theme.card, padding: '14px 16px', borderBottom: `1px solid ${theme.cardAlt}` }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
                           <div>
                             <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>
                               {fmtDate(shift.clockIn)}
-                              {shift.manualEntry && (
-                                <span style={{ marginLeft: '8px', fontSize: '10px', background: theme.cardAlt, color: theme.textMuted, padding: '2px 6px', borderRadius: '4px' }}>
-                                  Manual
-                                </span>
-                              )}
-                              {shift.editedAt && (
-                                <span style={{ marginLeft: '8px', fontSize: '10px', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px' }}>
-                                  Edited
-                                </span>
-                              )}
+                              {shift.manualEntry && <span style={{ marginLeft: '8px', fontSize: '10px', background: theme.cardAlt, color: theme.textMuted, padding: '2px 6px', borderRadius: '4px' }}>Manual</span>}
+                              {shift.editedAt && <span style={{ marginLeft: '8px', fontSize: '10px', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px' }}>Edited</span>}
                             </p>
                             <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0 0' }}>
                               {fmtTime(shift.clockIn)} - {fmtTime(shift.clockOut)}
@@ -731,7 +687,6 @@ export function HistoryView({
                           </div>
                         </div>
 
-                        {/* Summary stats */}
                         <div style={{ background: theme.cardAlt, borderRadius: '8px', padding: '8px 10px', marginTop: '8px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                             <span style={{ color: theme.textMuted }}>Total shift:</span>
@@ -753,519 +708,124 @@ export function HistoryView({
                           )}
                         </div>
 
-                        {/* Breaks list (when editing breaks) */}
                         {isEditing && editMode === 'breaks' && (shift.breaks || []).length > 0 && (
                           <div style={{ marginTop: '10px', background: '#fef3c7', borderRadius: '8px', padding: '10px' }}>
-                            <p style={{ color: '#92400e', fontSize: '12px', fontWeight: '600', marginBottom: '6px', margin: 0 }}>
-                              Breaks ({shift.breaks!.length})
-                            </p>
+                            <p style={{ color: '#92400e', fontSize: '12px', fontWeight: '600', marginBottom: '6px', margin: 0 }}>Breaks ({shift.breaks!.length})</p>
                             {shift.breaks!.map((b, i) => (
-                              <div key={i} style={{ 
-                                display: 'flex', 
-                                justifyContent: 'space-between', 
-                                alignItems: 'center',
-                                padding: '6px 8px',
-                                background: 'white',
-                                borderRadius: '6px',
-                                marginTop: '6px'
-                              }}>
-                                <span style={{ color: '#1e293b', fontSize: '13px' }}>
-                                  {b.durationMinutes || 0}m break
-                                  {b.manualEntry && <span style={{ color: '#64748b', fontSize: '10px', marginLeft: '4px' }}>(manual)</span>}
-                                </span>
-                                <button
-                                  onClick={() => handleDeleteBreak(shift.id, i)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    background: '#fee2e2',
-                                    color: '#dc2626',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontSize: '11px',
-                                    fontWeight: '500'
-                                  }}
-                                >
-                                  Remove
-                                </button>
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: 'white', borderRadius: '6px', marginTop: '6px' }}>
+                                <span style={{ color: '#1e293b', fontSize: '13px' }}>{b.durationMinutes || 0}m break{b.manualEntry && <span style={{ color: '#64748b', fontSize: '10px', marginLeft: '4px' }}>(manual)</span>}</span>
+                                <button onClick={() => handleDeleteBreak(shift.id, i)} style={{ padding: '4px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}>Remove</button>
                               </div>
                             ))}
                           </div>
                         )}
 
-                        {/* Travel list (when editing travel) */}
                         {isEditing && editMode === 'travel' && (shift.travelSegments || []).length > 0 && (
                           <div style={{ marginTop: '10px', background: '#dbeafe', borderRadius: '8px', padding: '10px' }}>
-                            <p style={{ color: '#1d4ed8', fontSize: '12px', fontWeight: '600', marginBottom: '6px', margin: 0 }}>
-                              Travel ({shift.travelSegments!.length})
-                            </p>
+                            <p style={{ color: '#1d4ed8', fontSize: '12px', fontWeight: '600', marginBottom: '6px', margin: 0 }}>Travel ({shift.travelSegments!.length})</p>
                             {shift.travelSegments!.map((t, i) => (
-                              <div key={i} style={{ 
-                                display: 'flex', 
-                                justifyContent: 'space-between', 
-                                alignItems: 'center',
-                                padding: '6px 8px',
-                                background: 'white',
-                                borderRadius: '6px',
-                                marginTop: '6px'
-                              }}>
-                                <span style={{ color: '#1e293b', fontSize: '13px' }}>
-                                  {t.durationMinutes || 0}m travel
-                                </span>
-                                <button
-                                  onClick={() => handleDeleteTravel(shift.id, i)}
-                                  style={{
-                                    padding: '4px 8px',
-                                    borderRadius: '4px',
-                                    background: '#fee2e2',
-                                    color: '#dc2626',
-                                    border: 'none',
-                                    cursor: 'pointer',
-                                    fontSize: '11px',
-                                    fontWeight: '500'
-                                  }}
-                                >
-                                  Remove
-                                </button>
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: 'white', borderRadius: '6px', marginTop: '6px' }}>
+                                <span style={{ color: '#1e293b', fontSize: '13px' }}>{t.durationMinutes || 0}m travel</span>
+                                <button onClick={() => handleDeleteTravel(shift.id, i)} style={{ padding: '4px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}>Remove</button>
                               </div>
                             ))}
                           </div>
                         )}
 
-                        {/* Job log fields */}
-                        {shift.jobLog?.field1 && (
-                          <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '8px', margin: '8px 0 0 0' }}>
-                            📝 {shift.jobLog.field1}
-                          </p>
-                        )}
+                        {shift.jobLog?.field1 && <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '8px', margin: '8px 0 0 0' }}>📝 {shift.jobLog.field1}</p>}
+                        {shift.jobLog?.field2 && <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>🔧 {shift.jobLog.field2}</p>}
+                        {shift.jobLog?.field3 && <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>📋 {shift.jobLog.field3}</p>}
 
-                        {shift.jobLog?.field2 && (
-                          <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>
-                            🔧 {shift.jobLog.field2}
-                          </p>
-                        )}
-
-                        {shift.jobLog?.field3 && (
-                          <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>
-                            📋 {shift.jobLog.field3}
-                          </p>
-                        )}
-
-                        {/* Location points with view button */}
                         {locationCount > 0 && (
-                          <button
-                            onClick={() => openMapModal(shift)}
-                            style={{
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '6px',
-                              marginTop: '8px',
-                              padding: '8px 12px',
-                              background: theme.cardAlt,
-                              border: `1px solid ${theme.primary}`,
-                              borderRadius: '8px',
-                              color: theme.primary,
-                              fontSize: '12px',
-                              fontWeight: '500',
-                              cursor: 'pointer',
-                              width: '100%',
-                              justifyContent: 'center'
-                            }}
-                          >
+                          <button onClick={() => openMapModal(shift)} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '8px 12px', background: theme.cardAlt, border: `1px solid ${theme.primary}`, borderRadius: '8px', color: theme.primary, fontSize: '12px', fontWeight: '500', cursor: 'pointer', width: '100%', justifyContent: 'center' }}>
                             📍 View {locationCount} location point{locationCount !== 1 ? 's' : ''} on map
                           </button>
                         )}
 
-                        {/* Action buttons when not editing */}
                         {!isEditing && deleteConfirmId !== shift.id && (
                           <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
-                            <button
-                              onClick={() => openEditPanel(shift.id, 'times', shift)}
-                              style={{
-                                flex: 1,
-                                minWidth: '80px',
-                                padding: '8px',
-                                borderRadius: '8px',
-                                background: 'transparent',
-                                color: theme.primary,
-                                border: `1px dashed ${theme.primary}`,
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: '500'
-                              }}
-                            >
-                              ✏️ Edit Times
-                            </button>
-                            <button
-                              onClick={() => openEditPanel(shift.id, 'breaks')}
-                              style={{
-                                flex: 1,
-                                minWidth: '80px',
-                                padding: '8px',
-                                borderRadius: '8px',
-                                background: 'transparent',
-                                color: '#f59e0b',
-                                border: '1px dashed #fcd34d',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: '500'
-                              }}
-                            >
-                              + Break
-                            </button>
-                            <button
-                              onClick={() => openEditPanel(shift.id, 'travel')}
-                              style={{
-                                flex: 1,
-                                minWidth: '80px',
-                                padding: '8px',
-                                borderRadius: '8px',
-                                background: 'transparent',
-                                color: '#2563eb',
-                                border: '1px dashed #bfdbfe',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: '500'
-                              }}
-                            >
-                              + Travel
-                            </button>
-                            <button
-                              onClick={() => setDeleteConfirmId(shift.id)}
-                              style={{
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                background: 'transparent',
-                                color: '#dc2626',
-                                border: '1px dashed #fca5a5',
-                                cursor: 'pointer',
-                                fontSize: '12px',
-                                fontWeight: '500'
-                              }}
-                            >
-                              🗑️
-                            </button>
+                            <button onClick={() => openEditPanel(shift.id, 'times', shift)} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: theme.primary, border: `1px dashed ${theme.primary}`, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>✏️ Edit Times</button>
+                            <button onClick={() => openEditPanel(shift.id, 'breaks')} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: '#f59e0b', border: '1px dashed #fcd34d', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>+ Break</button>
+                            <button onClick={() => openEditPanel(shift.id, 'travel')} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: '#2563eb', border: '1px dashed #bfdbfe', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>+ Travel</button>
+                            <button onClick={() => setDeleteConfirmId(shift.id)} style={{ padding: '8px 12px', borderRadius: '8px', background: 'transparent', color: '#dc2626', border: '1px dashed #fca5a5', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>🗑️</button>
                           </div>
                         )}
 
-                        {/* Delete confirmation */}
                         {deleteConfirmId === shift.id && (
                           <div style={{ marginTop: '10px', background: '#fee2e2', borderRadius: '8px', padding: '12px' }}>
-                            <p style={{ color: '#991b1b', fontSize: '13px', fontWeight: '600', margin: '0 0 10px 0' }}>
-                              Delete this shift?
-                            </p>
-                            <p style={{ color: '#b91c1c', fontSize: '12px', margin: '0 0 12px 0' }}>
-                              This cannot be undone.
-                            </p>
+                            <p style={{ color: '#991b1b', fontSize: '13px', fontWeight: '600', margin: '0 0 10px 0' }}>Delete this shift?</p>
+                            <p style={{ color: '#b91c1c', fontSize: '12px', margin: '0 0 12px 0' }}>This cannot be undone.</p>
                             <div style={{ display: 'flex', gap: '8px' }}>
-                              <button
-                                onClick={() => handleDeleteShift(shift.id)}
-                                disabled={deletingShift}
-                                style={{
-                                  flex: 1,
-                                  padding: '10px',
-                                  borderRadius: '6px',
-                                  background: '#dc2626',
-                                  color: 'white',
-                                  border: 'none',
-                                  cursor: deletingShift ? 'not-allowed' : 'pointer',
-                                  fontWeight: '600',
-                                  fontSize: '13px',
-                                  opacity: deletingShift ? 0.7 : 1
-                                }}
-                              >
-                                {deletingShift ? 'Deleting...' : 'Yes, Delete'}
-                              </button>
-                              <button
-                                onClick={() => setDeleteConfirmId(null)}
-                                style={{
-                                  padding: '10px 16px',
-                                  borderRadius: '6px',
-                                  background: 'white',
-                                  color: '#64748b',
-                                  border: '1px solid #e2e8f0',
-                                  cursor: 'pointer',
-                                  fontWeight: '500',
-                                  fontSize: '13px'
-                                }}
-                              >
-                                Cancel
-                              </button>
+                              <button onClick={() => handleDeleteShift(shift.id)} disabled={deletingShift} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#dc2626', color: 'white', border: 'none', cursor: deletingShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: deletingShift ? 0.7 : 1 }}>{deletingShift ? 'Deleting...' : 'Yes, Delete'}</button>
+                              <button onClick={() => setDeleteConfirmId(null)} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
                             </div>
                           </div>
                         )}
 
-                        {/* Edit Times Panel */}
                         {isEditing && editMode === 'times' && (
                           <div style={{ marginTop: '10px', background: '#e0f2fe', borderRadius: '8px', padding: '12px' }}>
-                            <p style={{ color: '#0369a1', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>
-                              Edit Shift Times
-                            </p>
-
-                            {/* Clock In */}
+                            <p style={{ color: '#0369a1', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Edit Shift Times</p>
                             <div style={{ marginBottom: '10px' }}>
                               <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Clock In</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <select
-                                  value={editClockInHour}
-                                  onChange={(e) => setEditClockInHour(e.target.value)}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
-                                >
-                                  {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
-                                <select
-                                  value={editClockInMinute}
-                                  onChange={(e) => setEditClockInMinute(e.target.value)}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
-                                >
-                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
-                                <select
-                                  value={editClockInAmPm}
-                                  onChange={(e) => setEditClockInAmPm(e.target.value as 'AM' | 'PM')}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
-                                >
-                                  <option value="AM">AM</option>
-                                  <option value="PM">PM</option>
-                                </select>
+                                <select value={editClockInHour} onChange={(e) => setEditClockInHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>{[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}</select>
+                                <select value={editClockInMinute} onChange={(e) => setEditClockInMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>{['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                <select value={editClockInAmPm} onChange={(e) => setEditClockInAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}><option value="AM">AM</option><option value="PM">PM</option></select>
                               </div>
                             </div>
-
-                            {/* Clock Out */}
                             <div style={{ marginBottom: '10px' }}>
                               <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Clock Out</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <select
-                                  value={editClockOutHour}
-                                  onChange={(e) => setEditClockOutHour(e.target.value)}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
-                                >
-                                  {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
-                                <select
-                                  value={editClockOutMinute}
-                                  onChange={(e) => setEditClockOutMinute(e.target.value)}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
-                                >
-                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
-                                <select
-                                  value={editClockOutAmPm}
-                                  onChange={(e) => setEditClockOutAmPm(e.target.value as 'AM' | 'PM')}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}
-                                >
-                                  <option value="AM">AM</option>
-                                  <option value="PM">PM</option>
-                                </select>
+                                <select value={editClockOutHour} onChange={(e) => setEditClockOutHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>{[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}</select>
+                                <select value={editClockOutMinute} onChange={(e) => setEditClockOutMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>{['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                <select value={editClockOutAmPm} onChange={(e) => setEditClockOutAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}><option value="AM">AM</option><option value="PM">PM</option></select>
                               </div>
                             </div>
-
-                            {/* Notes */}
                             <div style={{ marginBottom: '12px' }}>
                               <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Notes</label>
-                              <textarea
-                                value={editNotes}
-                                onChange={(e) => setEditNotes(e.target.value)}
-                                style={{ 
-                                  width: '100%', 
-                                  padding: '8px', 
-                                  fontSize: '13px', 
-                                  borderRadius: '6px', 
-                                  border: '1px solid #bae6fd', 
-                                  background: 'white',
-                                  minHeight: '60px',
-                                  resize: 'vertical',
-                                  boxSizing: 'border-box'
-                                }}
-                              />
+                              <textarea value={editNotes} onChange={(e) => setEditNotes(e.target.value)} style={{ width: '100%', padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white', minHeight: '60px', resize: 'vertical', boxSizing: 'border-box' }} />
                             </div>
-
-                            {/* Buttons */}
                             <div style={{ display: 'flex', gap: '8px' }}>
-                              <button
-                                onClick={() => handleSaveEditTimes(shift)}
-                                disabled={savingEdit}
-                                style={{
-                                  flex: 1,
-                                  padding: '10px',
-                                  borderRadius: '6px',
-                                  background: '#0284c7',
-                                  color: 'white',
-                                  border: 'none',
-                                  cursor: savingEdit ? 'not-allowed' : 'pointer',
-                                  fontWeight: '600',
-                                  fontSize: '13px',
-                                  opacity: savingEdit ? 0.7 : 1
-                                }}
-                              >
-                                {savingEdit ? 'Saving...' : 'Save Changes'}
-                              </button>
-                              <button
-                                onClick={closeEditPanel}
-                                style={{
-                                  padding: '10px 16px',
-                                  borderRadius: '6px',
-                                  background: 'white',
-                                  color: '#64748b',
-                                  border: '1px solid #bae6fd',
-                                  cursor: 'pointer',
-                                  fontWeight: '500',
-                                  fontSize: '13px'
-                                }}
-                              >
-                                Cancel
-                              </button>
+                              <button onClick={() => handleSaveEditTimes(shift)} disabled={savingEdit} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#0284c7', color: 'white', border: 'none', cursor: savingEdit ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: savingEdit ? 0.7 : 1 }}>{savingEdit ? 'Saving...' : 'Save Changes'}</button>
+                              <button onClick={closeEditPanel} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #bae6fd', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
                             </div>
                           </div>
                         )}
 
-                        {/* Add Break Panel */}
                         {isEditing && editMode === 'breaks' && (
                           <div style={{ marginTop: '10px', background: '#fefce8', borderRadius: '8px', padding: '12px' }}>
-                            <p style={{ color: '#854d0e', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>
-                              Add Break
-                            </p>
+                            <p style={{ color: '#854d0e', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Break</p>
                             <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
                               {[10, 15, 20, 30, 45, 60].map(mins => (
-                                <button
-                                  key={mins}
-                                  onClick={() => handleAddBreak(shift.id, mins)}
-                                  disabled={addingBreak}
-                                  style={{
-                                    padding: '8px 14px',
-                                    borderRadius: '6px',
-                                    background: '#fef08a',
-                                    color: '#854d0e',
-                                    border: '1px solid #fde047',
-                                    cursor: addingBreak ? 'not-allowed' : 'pointer',
-                                    fontWeight: '600',
-                                    fontSize: '13px',
-                                    opacity: addingBreak ? 0.7 : 1
-                                  }}
-                                >
-                                  +{mins}m
-                                </button>
+                                <button key={mins} onClick={() => handleAddBreak(shift.id, mins)} disabled={addingBreak} style={{ padding: '8px 14px', borderRadius: '6px', background: '#fef08a', color: '#854d0e', border: '1px solid #fde047', cursor: addingBreak ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingBreak ? 0.7 : 1 }}>+{mins}m</button>
                               ))}
                             </div>
-                            <button
-                              onClick={closeEditPanel}
-                              style={{
-                                width: '100%',
-                                padding: '8px',
-                                borderRadius: '6px',
-                                background: 'white',
-                                color: '#64748b',
-                                border: '1px solid #fde047',
-                                cursor: 'pointer',
-                                fontWeight: '500',
-                                fontSize: '13px'
-                              }}
-                            >
-                              Done
-                            </button>
+                            <button onClick={closeEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #fde047', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Done</button>
                           </div>
                         )}
 
-                        {/* Add Travel Panel */}
                         {isEditing && editMode === 'travel' && (
                           <div style={{ marginTop: '10px', background: '#eff6ff', borderRadius: '8px', padding: '12px' }}>
-                            <p style={{ color: '#1e40af', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>
-                              Add Travel Time
-                            </p>
-
-                            {/* Start Time */}
+                            <p style={{ color: '#1e40af', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Travel Time</p>
                             <div style={{ marginBottom: '8px' }}>
                               <label style={{ display: 'block', color: '#1e40af', fontSize: '11px', marginBottom: '4px' }}>Start</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <select
-                                  value={addTravelStartHour}
-                                  onChange={(e) => setAddTravelStartHour(e.target.value)}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
-                                >
-                                  {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
-                                <select
-                                  value={addTravelStartMinute}
-                                  onChange={(e) => setAddTravelStartMinute(e.target.value)}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
-                                >
-                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
-                                <select
-                                  value={addTravelStartAmPm}
-                                  onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
-                                >
-                                  <option value="AM">AM</option>
-                                  <option value="PM">PM</option>
-                                </select>
+                                <select value={addTravelStartHour} onChange={(e) => setAddTravelStartHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>{[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}</select>
+                                <select value={addTravelStartMinute} onChange={(e) => setAddTravelStartMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>{['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                <select value={addTravelStartAmPm} onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}><option value="AM">AM</option><option value="PM">PM</option></select>
                               </div>
                             </div>
-
-                            {/* End Time */}
                             <div style={{ marginBottom: '10px' }}>
                               <label style={{ display: 'block', color: '#1e40af', fontSize: '11px', marginBottom: '4px' }}>End</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <select
-                                  value={addTravelEndHour}
-                                  onChange={(e) => setAddTravelEndHour(e.target.value)}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
-                                >
-                                  {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
-                                </select>
-                                <select
-                                  value={addTravelEndMinute}
-                                  onChange={(e) => setAddTravelEndMinute(e.target.value)}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
-                                >
-                                  {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
-                                </select>
-                                <select
-                                  value={addTravelEndAmPm}
-                                  onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')}
-                                  style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}
-                                >
-                                  <option value="AM">AM</option>
-                                  <option value="PM">PM</option>
-                                </select>
+                                <select value={addTravelEndHour} onChange={(e) => setAddTravelEndHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>{[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}</select>
+                                <select value={addTravelEndMinute} onChange={(e) => setAddTravelEndMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>{['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}</select>
+                                <select value={addTravelEndAmPm} onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}><option value="AM">AM</option><option value="PM">PM</option></select>
                               </div>
                             </div>
-
-                            {/* Buttons */}
                             <div style={{ display: 'flex', gap: '8px' }}>
-                              <button
-                                onClick={() => handleAddTravel(shift.id, shift.clockIn?.toDate?.() || new Date())}
-                                disabled={addingTravelToShift}
-                                style={{
-                                  flex: 1,
-                                  padding: '10px',
-                                  borderRadius: '6px',
-                                  background: '#2563eb',
-                                  color: 'white',
-                                  border: 'none',
-                                  cursor: addingTravelToShift ? 'not-allowed' : 'pointer',
-                                  fontWeight: '600',
-                                  fontSize: '13px',
-                                  opacity: addingTravelToShift ? 0.7 : 1
-                                }}
-                              >
-                                {addingTravelToShift ? 'Adding...' : 'Add Travel'}
-                              </button>
-                              <button
-                                onClick={closeEditPanel}
-                                style={{
-                                  padding: '10px 16px',
-                                  borderRadius: '6px',
-                                  background: 'white',
-                                  color: '#64748b',
-                                  border: '1px solid #bfdbfe',
-                                  cursor: 'pointer',
-                                  fontWeight: '500',
-                                  fontSize: '13px'
-                                }}
-                              >
-                                Cancel
-                              </button>
+                              <button onClick={() => handleAddTravel(shift.id, shift.clockIn?.toDate?.() || new Date())} disabled={addingTravelToShift} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: addingTravelToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingTravelToShift ? 0.7 : 1 }}>{addingTravelToShift ? 'Adding...' : 'Add Travel'}</button>
+                              <button onClick={closeEditPanel} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
                             </div>
                           </div>
                         )}
@@ -1279,14 +839,8 @@ export function HistoryView({
         })
       )}
 
-      {/* Break rules info */}
       <div style={{ marginTop: '20px' }}>
-        <BreakRulesInfo
-          isOpen={showBreakRules}
-          onToggle={() => setShowBreakRules(!showBreakRules)}
-          theme={theme}
-          paidRestMinutes={paidRestMinutes}
-        />
+        <BreakRulesInfo isOpen={showBreakRules} onToggle={() => setShowBreakRules(!showBreakRules)} theme={theme} paidRestMinutes={paidRestMinutes} />
       </div>
     </div>
   );
