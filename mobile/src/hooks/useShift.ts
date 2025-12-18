@@ -246,9 +246,9 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
           startLocation: location || undefined
         }]
       };
-      // Add GPS to locationHistory for map tracking
+      // Add GPS to locationHistory for map tracking with source label
       if (location) {
-        updateData.locationHistory = arrayUnion(location);
+        updateData.locationHistory = arrayUnion({ ...location, source: 'breakStart' });
       }
       await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
       setOnBreak(true);
@@ -270,9 +270,9 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
           : b
       );
       const updateData: any = { breaks: updatedBreaks };
-      // Add GPS to locationHistory for map tracking
+      // Add GPS to locationHistory for map tracking with source label
       if (location) {
-        updateData.locationHistory = arrayUnion(location);
+        updateData.locationHistory = arrayUnion({ ...location, source: 'breakEnd' });
       }
       await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
       setOnBreak(false);
@@ -386,9 +386,9 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
           startLocation: location || undefined
         }]
       };
-      // Add GPS to locationHistory for map tracking
+      // Add GPS to locationHistory for map tracking with source label
       if (location) {
-        updateData.locationHistory = arrayUnion(location);
+        updateData.locationHistory = arrayUnion({ ...location, source: 'travelStart' });
       }
       await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
       setTraveling(true);
@@ -410,9 +410,9 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
           : t
       );
       const updateData: any = { travelSegments: updatedTravel };
-      // Add GPS to locationHistory for map tracking
+      // Add GPS to locationHistory for map tracking with source label
       if (location) {
-        updateData.locationHistory = arrayUnion(location);
+        updateData.locationHistory = arrayUnion({ ...location, source: 'travelEnd' });
       }
       await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
       setTraveling(false);

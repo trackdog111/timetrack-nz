@@ -98,21 +98,45 @@ function MapModal({
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   
-  const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
-  const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
+  const markerColors = { 
+    clockIn: '#16a34a', 
+    clockOut: '#dc2626', 
+    tracking: '#2563eb',
+    travelStart: '#8b5cf6',
+    travelEnd: '#8b5cf6',
+    breakStart: '#f59e0b',
+    breakEnd: '#f59e0b'
+  };
+  const markerLabels = { 
+    clockIn: 'Clock In', 
+    clockOut: 'Clock Out', 
+    tracking: 'Tracking',
+    travelStart: 'Travel Start',
+    travelEnd: 'Travel End',
+    breakStart: 'Break Start',
+    breakEnd: 'Break End'
+  };
   
   // Combine all locations with their types - include ALL points with display coordinates
-  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking', displayLat: number, displayLng: number }[] = [];
+  type PointType = 'clockIn' | 'clockOut' | 'tracking' | 'travelStart' | 'travelEnd' | 'breakStart' | 'breakEnd';
+  const allPoints: { loc: Location, type: PointType, displayLat: number, displayLng: number }[] = [];
   
   // Add clock-in location first (if exists)
   if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
     allPoints.push({ loc: clockInLocation, type: 'clockIn', displayLat: clockInLocation.latitude, displayLng: clockInLocation.longitude });
   }
   
-  // Add ALL tracking locations from history
+  // Add ALL tracking locations from history - check source field for proper labeling
   (locations || []).forEach(loc => {
     if (!loc || !loc.latitude || !loc.longitude) return;
-    allPoints.push({ loc, type: 'tracking', displayLat: loc.latitude, displayLng: loc.longitude });
+    // Check if location has a source field for proper labeling
+    const source = (loc as any).source;
+    let pointType: PointType = 'tracking';
+    if (source === 'travelStart') pointType = 'travelStart';
+    else if (source === 'travelEnd') pointType = 'travelEnd';
+    else if (source === 'breakStart') pointType = 'breakStart';
+    else if (source === 'breakEnd') pointType = 'breakEnd';
+    allPoints.push({ loc, type: pointType, displayLat: loc.latitude, displayLng: loc.longitude });
   });
   
   // Add clock-out location last (if exists)
@@ -294,7 +318,7 @@ function MapModal({
         </div>
         
         {/* Legend */}
-        <div style={{ display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.clockIn }}></span>
             <span style={{ color: theme.textMuted, fontSize: '11px' }}>Clock In</span>
@@ -302,6 +326,14 @@ function MapModal({
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.clockOut }}></span>
             <span style={{ color: theme.textMuted, fontSize: '11px' }}>Clock Out</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.travelStart }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Travel</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.breakStart }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Break</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.tracking }}></span>
