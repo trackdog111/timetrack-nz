@@ -148,7 +148,7 @@ function MapModal({
   allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
   
   // Offset overlapping markers slightly so all are visible
-  const offsetAmount = 0.0003; // ~30 meters offset
+  const offsetAmount = 0.00005; // ~5 meters offset
   for (let i = 1; i < allPoints.length; i++) {
     for (let j = 0; j < i; j++) {
       const dist = Math.sqrt(
@@ -156,7 +156,7 @@ function MapModal({
         Math.pow(allPoints[i].displayLng - allPoints[j].displayLng, 2)
       );
       // If points are very close (within ~50m), offset the later one
-      if (dist < 0.0005) {
+      if (dist < 0.0001) {
         const angle = (i * 60) * (Math.PI / 180); // Spread in different directions
         allPoints[i].displayLat += offsetAmount * Math.cos(angle);
         allPoints[i].displayLng += offsetAmount * Math.sin(angle);
