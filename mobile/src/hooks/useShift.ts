@@ -81,7 +81,8 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
       }
     };
 
-    trackLocation();
+    // Don't call trackLocation() immediately - clockIn already captured the initial location
+    // Just set up the interval for subsequent tracking
     gpsIntervalRef.current = setInterval(trackLocation, settings.gpsInterval * 60 * 1000);
 
     return () => {
