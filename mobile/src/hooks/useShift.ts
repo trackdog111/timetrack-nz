@@ -204,7 +204,7 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
         };
       }
 
-      await updateDoc(doc(db, 'shifts', currentShift.id), {
+      const updateData: any = {
         clockOut: Timestamp.now(),
         clockOutLocation: location,
         breaks: updatedBreaks,
@@ -213,7 +213,14 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
         'jobLog.field2': field2,
         'jobLog.field3': field3,
         status: 'completed'
-      });
+      };
+
+      // Add GPS to locationHistory for map tracking
+      if (location) {
+        updateData.locationHistory = arrayUnion(location);
+      }
+
+      await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
 
       setOnBreak(false);
       setCurrentBreakStart(null);
@@ -226,13 +233,23 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     }
   };
 
-  // Start break
+  // Start break - NOW WITH GPS CAPTURE
   const startBreak = async () => {
     if (!currentShift) return;
     try {
-      await updateDoc(doc(db, 'shifts', currentShift.id), {
-        breaks: [...(currentShift.breaks || []), { startTime: Timestamp.now(), manualEntry: false }]
-      });
+      const location = await getCurrentLocation();
+      const updateData: any = {
+        breaks: [...(currentShift.breaks || []), { 
+          startTime: Timestamp.now(), 
+          manualEntry: false,
+          startLocation: location || undefined
+        }]
+      };
+      // Add GPS to locationHistory for map tracking
+      if (location) {
+        updateData.locationHistory = arrayUnion(location);
+      }
+      await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
       setOnBreak(true);
       setCurrentBreakStart(new Date());
     } catch (err: any) {
@@ -240,17 +257,23 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     }
   };
 
-  // End break
+  // End break - NOW WITH GPS CAPTURE
   const endBreak = async () => {
     if (!currentShift || !currentBreakStart) return;
     try {
+      const location = await getCurrentLocation();
       const durationMinutes = Math.round((new Date().getTime() - currentBreakStart.getTime()) / 60000);
       const updatedBreaks = currentShift.breaks.map((b, i) =>
         i === currentShift.breaks.length - 1 && !b.endTime && !b.manualEntry
-          ? { ...b, endTime: Timestamp.now(), durationMinutes }
+          ? { ...b, endTime: Timestamp.now(), durationMinutes, endLocation: location || undefined }
           : b
       );
-      await updateDoc(doc(db, 'shifts', currentShift.id), { breaks: updatedBreaks });
+      const updateData: any = { breaks: updatedBreaks };
+      // Add GPS to locationHistory for map tracking
+      if (location) {
+        updateData.locationHistory = arrayUnion(location);
+      }
+      await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
       setOnBreak(false);
       setCurrentBreakStart(null);
     } catch (err: any) {
@@ -351,17 +374,22 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     }
   };
 
-  // Start travel
+  // Start travel - NOW WITH GPS ADDED TO LOCATION HISTORY
   const startTravel = async () => {
     if (!currentShift) return;
     try {
       const location = await getCurrentLocation();
-      await updateDoc(doc(db, 'shifts', currentShift.id), {
+      const updateData: any = {
         travelSegments: [...(currentShift.travelSegments || []), {
           startTime: Timestamp.now(),
           startLocation: location || undefined
         }]
-      });
+      };
+      // Add GPS to locationHistory for map tracking
+      if (location) {
+        updateData.locationHistory = arrayUnion(location);
+      }
+      await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
       setTraveling(true);
       setCurrentTravelStart(new Date());
     } catch (err: any) {
@@ -369,7 +397,7 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     }
   };
 
-  // End travel
+  // End travel - NOW WITH GPS ADDED TO LOCATION HISTORY
   const endTravel = async () => {
     if (!currentShift || !currentTravelStart) return;
     try {
@@ -380,7 +408,12 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
           ? { ...t, endTime: Timestamp.now(), endLocation: location || undefined, durationMinutes }
           : t
       );
-      await updateDoc(doc(db, 'shifts', currentShift.id), { travelSegments: updatedTravel });
+      const updateData: any = { travelSegments: updatedTravel };
+      // Add GPS to locationHistory for map tracking
+      if (location) {
+        updateData.locationHistory = arrayUnion(location);
+      }
+      await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
       setTraveling(false);
       setCurrentTravelStart(null);
     } catch (err: any) {
