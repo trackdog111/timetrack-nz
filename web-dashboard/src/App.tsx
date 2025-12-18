@@ -759,8 +759,31 @@ export default function App() {
     }); 
     setSuccess('Clocked out!'); 
   };
-  const myStartBreak = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { breaks: [...(myShift.breaks || []), { startTime: Timestamp.now(), manualEntry: false }] }); setOnBreak(true); setBreakStart(new Date()); };
-  const myEndBreak = async () => { if (!myShift || !breakStart) return; const ub = myShift.breaks.map((b, i) => i === myShift.breaks.length - 1 && !b.endTime && !b.manualEntry ? { ...b, endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) } : b); await updateDoc(doc(db, 'shifts', myShift.id), { breaks: ub }); setOnBreak(false); setBreakStart(null); };
+  const myStartBreak = async () => { 
+    if (!myShift) return; 
+    const location = await getMyCurrentLocation();
+    const updateData: any = { 
+      breaks: [...(myShift.breaks || []), { startTime: Timestamp.now(), manualEntry: false }] 
+    };
+    if (location) {
+      updateData.locationHistory = arrayUnion(location);
+    }
+    await updateDoc(doc(db, 'shifts', myShift.id), updateData); 
+    setOnBreak(true); 
+    setBreakStart(new Date()); 
+  };
+  const myEndBreak = async () => { 
+    if (!myShift || !breakStart) return; 
+    const location = await getMyCurrentLocation();
+    const ub = myShift.breaks.map((b, i) => i === myShift.breaks.length - 1 && !b.endTime && !b.manualEntry ? { ...b, endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) } : b); 
+    const updateData: any = { breaks: ub };
+    if (location) {
+      updateData.locationHistory = arrayUnion(location);
+    }
+    await updateDoc(doc(db, 'shifts', myShift.id), updateData); 
+    setOnBreak(false); 
+    setBreakStart(null); 
+  };
   const myAddBreak = async (m: number) => { if (!myShift) return; const now = Timestamp.now(); await updateDoc(doc(db, 'shifts', myShift.id), { breaks: [...(myShift.breaks || []), { startTime: now, endTime: now, durationMinutes: m, manualEntry: true }] }); };
   const saveMyField1 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field1': myField1 }); };
 
@@ -802,21 +825,22 @@ export default function App() {
       const location = await getMyCurrentLocation();
       if (location && myShift) {
         try {
-          const shiftDoc = await getDoc(doc(db, 'shifts', myShift.id));
-          if (shiftDoc.exists()) {
-            const currentHistory = shiftDoc.data().locationHistory || [];
-            await updateDoc(doc(db, 'shifts', myShift.id), {
-              locationHistory: [...currentHistory, location]
-            });
-          }
+          await updateDoc(doc(db, 'shifts', myShift.id), {
+            locationHistory: arrayUnion(location)
+          });
+          console.log('GPS tracked:', new Date().toLocaleTimeString());
         } catch (err) {
           console.error('Error updating location:', err);
         }
       }
     };
 
+    // Track immediately on mount
     trackLocation();
-    gpsIntervalRef.current = setInterval(trackLocation, 10 * 60 * 1000); // 10 min interval
+    
+    // Then track every 10 minutes (600000ms)
+    // Note: Browser may throttle this if tab is in background
+    gpsIntervalRef.current = setInterval(trackLocation, 10 * 60 * 1000);
 
     return () => {
       if (gpsIntervalRef.current) {
@@ -841,12 +865,17 @@ export default function App() {
   const myStartTravel = async () => {
     if (!myShift) return;
     const location = await getMyCurrentLocation();
-    await updateDoc(doc(db, 'shifts', myShift.id), {
+    const updateData: any = {
       travelSegments: [...(myShift.travelSegments || []), { 
         startTime: Timestamp.now(), 
         startLocation: location || undefined 
       }]
-    });
+    };
+    // Also add to locationHistory so it shows on map
+    if (location) {
+      updateData.locationHistory = arrayUnion(location);
+    }
+    await updateDoc(doc(db, 'shifts', myShift.id), updateData);
     setMyTraveling(true);
     setMyTravelStart(new Date());
   };
@@ -860,7 +889,12 @@ export default function App() {
         ? { ...t, endTime: Timestamp.now(), endLocation: location || undefined, durationMinutes }
         : t
     );
-    await updateDoc(doc(db, 'shifts', myShift.id), { travelSegments: updatedTravel });
+    const updateData: any = { travelSegments: updatedTravel };
+    // Also add to locationHistory so it shows on map
+    if (location) {
+      updateData.locationHistory = arrayUnion(location);
+    }
+    await updateDoc(doc(db, 'shifts', myShift.id), updateData);
     setMyTraveling(false);
     setMyTravelStart(null);
   };
