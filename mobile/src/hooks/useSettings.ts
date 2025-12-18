@@ -73,6 +73,7 @@ export function useSettings(user: User | null) {
           paidRestMinutes: data.paidRestMinutes || defaultLabels.paidRestMinutes,
           payWeekEndDay: data.payWeekEndDay ?? defaultLabels.payWeekEndDay
         });
+        setSettings(prev => ({ ...prev, photoVerification: data.photoVerification || false }));
       }
     });
 
