@@ -77,6 +77,7 @@ export interface EmployeeSettings {
   gpsInterval: number;
   requireNotes: boolean;
   chatEnabled: boolean;
+  photoVerification?: boolean;
   companyLabels?: CompanyLabels;
 }
 
