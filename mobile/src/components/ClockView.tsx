@@ -16,7 +16,7 @@ interface ClockViewProps {
   currentTravelStart: Date | null;
   settings: EmployeeSettings;
   paidRestMinutes: number;
-  onClockIn: (photoBase64?: string) => void;
+  photoVerification: boolean;  onClockIn: (photoBase64?: string) => void;
   onClockOut: () => void;
   onStartBreak: () => void;
   onEndBreak: () => void;
@@ -49,6 +49,7 @@ export function ClockView({
   currentTravelStart,
   settings,
   paidRestMinutes,
+  photoVerification,
   onClockIn,
   onClockOut,
   onStartBreak,
@@ -416,23 +417,7 @@ export function ClockView({
           )}
         </div>
 
-        {/* Skip option */}
-        {!capturedPhoto && !cameraError && (
-          <button
-            onClick={skipPhoto}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'rgba(255,255,255,0.6)',
-              padding: '12px',
-              fontSize: '14px',
-              cursor: 'pointer',
-              marginBottom: '20px'
-            }}
-          >
-            Skip photo
-          </button>
-        )}
+        
       </div>
     );
   }
@@ -446,8 +431,8 @@ export function ClockView({
             <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>
               Ready to start?
             </h2>
-            <button onClick={startCamera} style={{ ...styles.btn, width: '100%', padding: '20px', fontSize: '18px', background: theme.success }}>
-              📸 Clock In
+            <button onClick={photoVerification ? startCamera : () => onClockIn()} style={{ ...styles.btn, width: '100%', padding: '20px', fontSize: '18px', background: theme.success }}>
+              {photoVerification ? '📸 Clock In' : '⏱️ Clock In'}
             </button>
             <button
               onClick={() => setShowAddShift(!showAddShift)}
