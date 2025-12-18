@@ -252,6 +252,7 @@ export default function App() {
           currentTravelStart={currentTravelStart}
           settings={settings}
           paidRestMinutes={labels.paidRestMinutes}
+          photoVerification={settings.photoVerification || false}
           onClockIn={clockIn}
           onClockOut={handleClockOut}
           onStartBreak={startBreak}
