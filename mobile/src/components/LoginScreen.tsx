@@ -143,11 +143,11 @@ export function LoginScreen({
         <div style={{ display: 'flex', background: theme.cardAlt, borderRadius: '12px', padding: '4px', marginBottom: '24px' }}>
           <button
             onClick={() => { setAuthMode('signin'); setError(''); }}
-            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: authMode === 'signin' ? theme.primary : 'transparent', color: authMode === 'signin' ? 'white' : theme.textMuted, fontWeight: '600', cursor: 'pointer' }}
+            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: authMode === 'signin' ? theme.primary : 'transparent', color: authMode === 'signin' ? 'white' : theme.text, fontWeight: '600', cursor: 'pointer' }}
           >Sign In</button>
           <button
             onClick={() => { setAuthMode('invite'); setError(''); setInviteStep('email'); setFoundInvite(null); }}
-            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: authMode === 'invite' ? theme.primary : 'transparent', color: authMode === 'invite' ? 'white' : theme.textMuted, fontWeight: '600', cursor: 'pointer' }}
+            style={{ flex: 1, padding: '10px', borderRadius: '10px', border: 'none', background: authMode === 'invite' ? theme.primary : 'transparent', color: authMode === 'invite' ? 'white' : theme.text, fontWeight: '600', cursor: 'pointer' }}
           >New Employee</button>
         </div>
 
