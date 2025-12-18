@@ -19,7 +19,7 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-interface Location { latitude: number; longitude: number; accuracy: number; timestamp: number; }
+interface Location { latitude: number; longitude: number; accuracy: number; timestamp: number; source?: 'travelStart' | 'travelEnd' | 'breakStart' | 'breakEnd'; }
 interface Break { startTime: Timestamp; endTime?: Timestamp; durationMinutes?: number; manualEntry?: boolean; }
 interface TravelSegment { startTime: Timestamp; endTime?: Timestamp; durationMinutes?: number; startLocation?: Location; endLocation?: Location; }
 interface JobLog { field1?: string; field2?: string; field3?: string; notes?: string; }
@@ -140,27 +140,45 @@ function roundTime(date: Date, roundTo: 15 | 30, direction: 'down' | 'up'): Date
   return result;
 }
 
-// Leaflet Map Modal with colored markers
+// Leaflet Map Modal with colored markers and source labels
 function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutLocation }: { locations: Location[], onClose: () => void, title: string, theme: any, clockInLocation?: Location, clockOutLocation?: Location }) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   
-  const markerColors = { clockIn: '#16a34a', clockOut: '#dc2626', tracking: '#2563eb' };
-  const markerLabels = { clockIn: 'Clock In', clockOut: 'Clock Out', tracking: 'Tracking' };
+  // Extended marker colors including travel and break sources
+  const markerColors: Record<string, string> = { 
+    clockIn: '#16a34a', 
+    clockOut: '#dc2626', 
+    tracking: '#2563eb',
+    travelStart: '#8b5cf6',
+    travelEnd: '#8b5cf6',
+    breakStart: '#f59e0b',
+    breakEnd: '#f59e0b'
+  };
+  const markerLabels: Record<string, string> = { 
+    clockIn: 'Clock In', 
+    clockOut: 'Clock Out', 
+    tracking: 'Tracking',
+    travelStart: 'Travel Start',
+    travelEnd: 'Travel End',
+    breakStart: 'Break Start',
+    breakEnd: 'Break End'
+  };
   
-  // Combine all locations with their types - include ALL points with display coordinates
-  const allPoints: { loc: Location, type: 'clockIn' | 'clockOut' | 'tracking', displayLat: number, displayLng: number }[] = [];
+  // Combine all locations with their types
+  const allPoints: { loc: Location, type: string, displayLat: number, displayLng: number }[] = [];
   
   if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
     allPoints.push({ loc: clockInLocation, type: 'clockIn', displayLat: clockInLocation.latitude, displayLng: clockInLocation.longitude });
   }
   
-  // Add ALL tracking locations from history
+  // Add ALL tracking locations from history, respecting source field
   (locations || []).forEach(loc => {
     if (!loc || !loc.latitude || !loc.longitude) return;
-    allPoints.push({ loc, type: 'tracking', displayLat: loc.latitude, displayLng: loc.longitude });
+    const type = loc.source || 'tracking';
+    allPoints.push({ loc, type, displayLat: loc.latitude, displayLng: loc.longitude });
   });
   
   if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
@@ -170,16 +188,15 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
   allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
   
   // Offset overlapping markers slightly so all are visible
-  const offsetAmount = 0.0003; // ~30 meters offset
+  const offsetAmount = 0.0003;
   for (let i = 1; i < allPoints.length; i++) {
     for (let j = 0; j < i; j++) {
       const dist = Math.sqrt(
         Math.pow(allPoints[i].displayLat - allPoints[j].displayLat, 2) +
         Math.pow(allPoints[i].displayLng - allPoints[j].displayLng, 2)
       );
-      // If points are very close (within ~50m), offset the later one
       if (dist < 0.0005) {
-        const angle = (i * 60) * (Math.PI / 180); // Spread in different directions
+        const angle = (i * 60) * (Math.PI / 180);
         allPoints[i].displayLat += offsetAmount * Math.cos(angle);
         allPoints[i].displayLng += offsetAmount * Math.sin(angle);
       }
@@ -188,7 +205,6 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
   
   // Load Leaflet from CDN
   useEffect(() => {
-    // Helper to inject custom CSS
     const injectCustomCSS = () => {
       if (!document.getElementById('custom-marker-css')) {
         const style = document.createElement('style');
@@ -207,13 +223,11 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
       return;
     }
     
-    // Load CSS
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
     document.head.appendChild(link);
     
-    // Load JS
     const script = document.createElement('script');
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
     script.onload = () => {
@@ -221,10 +235,6 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
       setLeafletLoaded(true);
     };
     document.head.appendChild(script);
-    
-    return () => {
-      // Cleanup handled by map destroy
-    };
   }, []);
   
   // Initialize map once Leaflet is loaded
@@ -234,12 +244,10 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
     const L = (window as any).L;
     if (!L) return;
     
-    // Destroy existing map
     if (mapInstanceRef.current) {
       mapInstanceRef.current.remove();
     }
     
-    // Calculate bounds using display coordinates
     const lats = allPoints.map(p => p.displayLat);
     const lngs = allPoints.map(p => p.displayLng);
     const minLat = Math.min(...lats);
@@ -247,7 +255,6 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
     const minLng = Math.min(...lngs);
     const maxLng = Math.max(...lngs);
     
-    // Create map
     const map = L.map(mapRef.current).fitBounds([
       [minLat - 0.002, minLng - 0.002],
       [maxLat + 0.002, maxLng + 0.002]
@@ -255,12 +262,10 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
     
     mapInstanceRef.current = map;
     
-    // Add tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
     
-    // Draw path line using ACTUAL coordinates (not offset)
     if (allPoints.length > 1) {
       const pathCoords = allPoints.map(p => [p.loc.latitude, p.loc.longitude]);
       L.polyline(pathCoords, { 
@@ -271,13 +276,11 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
       }).addTo(map);
     }
     
-    // Add markers using DISPLAY coordinates (with offset for overlapping)
     allPoints.forEach((point, index) => {
-      const color = markerColors[point.type];
-      const label = markerLabels[point.type];
+      const color = markerColors[point.type] || markerColors.tracking;
+      const label = markerLabels[point.type] || 'Location';
       const time = new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
       
-      // Create custom icon
       const icon = L.divIcon({
         className: 'custom-marker',
         html: `<div style="width:28px;height:28px;background:${color};border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:bold;">${index + 1}</div>`,
@@ -300,50 +303,79 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
   
   if (allPoints.length === 0) return null;
   
+  // Get unique types for legend
+  const uniqueTypes = [...new Set(allPoints.map(p => p.type))];
+  
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: '16px' }} onClick={onClose}>
-      <div style={{ background: theme.card, borderRadius: '12px', padding: '20px', width: '100%', maxWidth: '900px', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ color: theme.text, margin: 0, fontSize: '18px' }}>{title}</h2>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: theme.textMuted }}>×</button>
-        </div>
-        <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.clockIn }}></span><span style={{ color: theme.textMuted, fontSize: '12px' }}>Clock In</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.clockOut }}></span><span style={{ color: theme.textMuted, fontSize: '12px' }}>Clock Out</span></div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors.tracking }}></span><span style={{ color: theme.textMuted, fontSize: '12px' }}>Tracking</span></div>
-        </div>
-        <div 
-          ref={mapRef} 
-          style={{ 
-            height: '350px', 
-            borderRadius: '8px', 
-            overflow: 'hidden', 
-            marginBottom: '16px',
-            background: '#e5e7eb'
-          }} 
-        >
-          {!leafletLoaded && (
-            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}>
-              Loading map...
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: theme.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
+      {/* Header */}
+      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.card }}>
+        <h2 style={{ color: theme.text, margin: 0, fontSize: '18px' }}>{title}</h2>
+        <button onClick={onClose} style={{ background: theme.cardAlt, border: 'none', fontSize: '16px', cursor: 'pointer', color: theme.text, padding: '8px 16px', borderRadius: '8px', fontWeight: '600' }}>Close</button>
+      </div>
+      
+      {/* Legend */}
+      <div style={{ padding: '12px 20px', background: theme.card, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+        {uniqueTypes.map(type => (
+          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors[type] || markerColors.tracking }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '12px' }}>{markerLabels[type] || 'Location'}</span>
+          </div>
+        ))}
+      </div>
+      
+      {/* Map */}
+      <div 
+        ref={mapRef} 
+        style={{ flex: 1, minHeight: '300px', background: '#e5e7eb' }} 
+      >
+        {!leafletLoaded && (
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}>
+            Loading map...
+          </div>
+        )}
+      </div>
+      
+      {/* Location List */}
+      <div style={{ maxHeight: '200px', overflowY: 'auto', background: theme.card, borderTop: `1px solid ${theme.cardBorder}` }}>
+        {allPoints.map((point, i) => (
+          <div 
+            key={i} 
+            onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
+            style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '12px 20px', 
+              background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
+              cursor: 'pointer',
+              borderBottom: `1px solid ${theme.cardBorder}`
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ 
+                width: '24px', 
+                height: '24px', 
+                borderRadius: '50%', 
+                background: markerColors[point.type] || markerColors.tracking, 
+                color: 'white', 
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                fontSize: '11px',
+                fontWeight: '600'
+              }}>{i + 1}</span>
+              <span style={{ color: theme.text, fontSize: '14px', fontWeight: '500' }}>{markerLabels[point.type] || 'Location'}</span>
             </div>
-          )}
-        </div>
-        <div style={{ maxHeight: '200px', overflowY: 'auto' }}>
-          {allPoints.map((point, i) => (
-            <div key={i} onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : 'transparent'), borderRadius: '6px', cursor: 'pointer', marginBottom: '4px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: markerColors[point.type], color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px' }}>{i + 1}</span>
-                <span style={{ color: theme.text, fontSize: '13px' }}>{markerLabels[point.type]}</span>
-              </div>
-              <span style={{ color: theme.textMuted, fontSize: '12px' }}>{new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
-            </div>
-          ))}
-        </div>
+            <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+              {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
-
 function LocationMap({ locations, height = '200px' }: { locations: Location[], height?: string }) {
   if (!locations || locations.length === 0) return <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>No location data</div>;
   const lastLoc = locations[locations.length - 1];
