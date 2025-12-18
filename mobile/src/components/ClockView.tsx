@@ -1,6 +1,6 @@
 // TimeTrack NZ - Clock View Component
 
-import { useState } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { Theme, createStyles } from '../theme';
 import { Shift, Location, EmployeeSettings } from '../types';
 import { fmtDur, fmtTime, getHours, calcBreaks, calcTravel, getBreakEntitlements } from '../utils';
@@ -15,8 +15,8 @@ interface ClockViewProps {
   traveling: boolean;
   currentTravelStart: Date | null;
   settings: EmployeeSettings;
-  paidRestMinutes: number; // From company settings
-  onClockIn: () => void;
+  paidRestMinutes: number;
+  onClockIn: (photoBase64?: string) => void;
   onClockOut: () => void;
   onStartBreak: () => void;
   onEndBreak: () => void;
@@ -66,6 +66,14 @@ export function ClockView({
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [manualMinutes, setManualMinutes] = useState('');
   
+  // Camera state
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [capturedPhoto, setCapturedPhoto] = useState<string | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  
   // Manual shift entry state
   const [showAddShift, setShowAddShift] = useState(false);
   const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -84,11 +92,103 @@ export function ClockView({
   const [manualNotes, setManualNotes] = useState('');
   const [addingShift, setAddingShift] = useState(false);
 
-  // Calculations - now using paidRestMinutes from company settings
+  // Calculations
   const shiftHours = currentShift ? getHours(currentShift.clockIn) : 0;
   const breakAllocation = currentShift ? calcBreaks(currentShift.breaks || [], shiftHours, paidRestMinutes) : null;
   const entitlements = getBreakEntitlements(shiftHours, paidRestMinutes);
   const totalBreakMinutes = currentShift?.breaks?.reduce((s, b) => s + (b.durationMinutes || 0), 0) || 0;
+
+  // Start camera
+  const startCamera = useCallback(async () => {
+    setCameraError(null);
+    setCapturedPhoto(null);
+    setCameraReady(false);
+    setShowCamera(true);
+    
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
+        audio: false
+      });
+      
+      streamRef.current = stream;
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        videoRef.current.onloadedmetadata = () => {
+          videoRef.current?.play();
+          setCameraReady(true);
+        };
+      }
+    } catch (err: any) {
+      console.error('Camera error:', err);
+      setCameraError(err.name === 'NotAllowedError' 
+        ? 'Camera access denied. Please allow camera permission and try again.'
+        : 'Could not access camera. Please check your device settings.');
+    }
+  }, []);
+
+  // Stop camera
+  const stopCamera = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setShowCamera(false);
+    setCapturedPhoto(null);
+    setCameraReady(false);
+    setCameraError(null);
+  }, []);
+
+  // Capture photo
+  const capturePhoto = useCallback(() => {
+    if (!videoRef.current || !cameraReady) return;
+    
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    
+    // Set canvas size (smaller for compression)
+    const maxSize = 480;
+    const scale = Math.min(maxSize / video.videoWidth, maxSize / video.videoHeight);
+    canvas.width = video.videoWidth * scale;
+    canvas.height = video.videoHeight * scale;
+    
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    
+    // Mirror the image (front camera is mirrored)
+    ctx.translate(canvas.width, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Convert to base64 JPEG with compression
+    const photoData = canvas.toDataURL('image/jpeg', 0.7);
+    setCapturedPhoto(photoData);
+    
+    // Stop video stream after capture
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+  }, [cameraReady]);
+
+  // Retake photo
+  const retakePhoto = useCallback(() => {
+    setCapturedPhoto(null);
+    startCamera();
+  }, [startCamera]);
+
+  // Confirm and clock in with photo
+  const confirmClockIn = useCallback(() => {
+    onClockIn(capturedPhoto || undefined);
+    stopCamera();
+  }, [capturedPhoto, onClockIn, stopCamera]);
+
+  // Skip photo and clock in without
+  const skipPhoto = useCallback(() => {
+    onClockIn();
+    stopCamera();
+  }, [onClockIn, stopCamera]);
 
   const handleAddPresetBreak = async (minutes: number) => {
     const success = await onAddPresetBreak(minutes);
@@ -140,6 +240,203 @@ export function ClockView({
     setAddingShift(false);
   };
 
+  // Camera Modal
+  if (showCamera) {
+    return (
+      <div style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        background: '#000',
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column'
+      }}>
+        {/* Header */}
+        <div style={{
+          padding: '16px 20px',
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <h2 style={{ color: 'white', fontSize: '18px', fontWeight: '600', margin: 0 }}>
+            📸 Clock-In Photo
+          </h2>
+          <button
+            onClick={stopCamera}
+            style={{
+              background: 'rgba(255,255,255,0.2)',
+              border: 'none',
+              color: 'white',
+              fontSize: '16px',
+              padding: '8px 16px',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+
+        {/* Camera View / Captured Photo */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+          position: 'relative'
+        }}>
+          {cameraError ? (
+            <div style={{ padding: '20px', textAlign: 'center' }}>
+              <p style={{ color: '#ef4444', fontSize: '16px', marginBottom: '16px' }}>{cameraError}</p>
+              <button
+                onClick={skipPhoto}
+                style={{
+                  background: theme.primary,
+                  color: 'white',
+                  padding: '14px 28px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                Clock In Without Photo
+              </button>
+            </div>
+          ) : capturedPhoto ? (
+            <img
+              src={capturedPhoto}
+              alt="Captured"
+              style={{
+                maxWidth: '100%',
+                maxHeight: '100%',
+                objectFit: 'contain',
+                borderRadius: '12px'
+              }}
+            />
+          ) : (
+            <>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                style={{
+                  maxWidth: '100%',
+                  maxHeight: '100%',
+                  objectFit: 'contain',
+                  transform: 'scaleX(-1)' // Mirror for selfie view
+                }}
+              />
+              {!cameraReady && (
+                <div style={{
+                  position: 'absolute',
+                  color: 'white',
+                  fontSize: '16px'
+                }}>
+                  Starting camera...
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Controls */}
+        <div style={{
+          padding: '20px',
+          background: 'rgba(0,0,0,0.8)',
+          display: 'flex',
+          justifyContent: 'center',
+          gap: '16px'
+        }}>
+          {!capturedPhoto && !cameraError && (
+            <button
+              onClick={capturePhoto}
+              disabled={!cameraReady}
+              style={{
+                width: '72px',
+                height: '72px',
+                borderRadius: '50%',
+                background: cameraReady ? 'white' : 'rgba(255,255,255,0.3)',
+                border: '4px solid rgba(255,255,255,0.5)',
+                cursor: cameraReady ? 'pointer' : 'not-allowed',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}
+            >
+              <div style={{
+                width: '56px',
+                height: '56px',
+                borderRadius: '50%',
+                background: cameraReady ? theme.success : 'rgba(255,255,255,0.5)'
+              }} />
+            </button>
+          )}
+          
+          {capturedPhoto && (
+            <>
+              <button
+                onClick={retakePhoto}
+                style={{
+                  background: 'rgba(255,255,255,0.2)',
+                  color: 'white',
+                  padding: '16px 24px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                🔄 Retake
+              </button>
+              <button
+                onClick={confirmClockIn}
+                style={{
+                  background: theme.success,
+                  color: 'white',
+                  padding: '16px 32px',
+                  borderRadius: '12px',
+                  border: 'none',
+                  fontSize: '16px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                ✓ Clock In
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Skip option */}
+        {!capturedPhoto && !cameraError && (
+          <button
+            onClick={skipPhoto}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'rgba(255,255,255,0.6)',
+              padding: '12px',
+              fontSize: '14px',
+              cursor: 'pointer',
+              marginBottom: '20px'
+            }}
+          >
+            Skip photo
+          </button>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: '16px' }}>
       {/* Clock In/Out Card */}
@@ -149,8 +446,8 @@ export function ClockView({
             <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>
               Ready to start?
             </h2>
-            <button onClick={onClockIn} style={{ ...styles.btn, width: '100%', padding: '20px', fontSize: '18px', background: theme.success }}>
-              Clock In
+            <button onClick={startCamera} style={{ ...styles.btn, width: '100%', padding: '20px', fontSize: '18px', background: theme.success }}>
+              📸 Clock In
             </button>
             <button
               onClick={() => setShowAddShift(!showAddShift)}
@@ -167,6 +464,21 @@ export function ClockView({
               <p style={{ color: theme.success, fontSize: '16px', fontWeight: '600', marginTop: '8px' }}>
                 {fmtDur(shiftHours * 60)} worked
               </p>
+              {currentShift.clockInPhotoUrl && (
+                <div style={{ marginTop: '12px' }}>
+                  <img 
+                    src={currentShift.clockInPhotoUrl} 
+                    alt="Clock in" 
+                    style={{ 
+                      width: '60px', 
+                      height: '60px', 
+                      borderRadius: '50%', 
+                      objectFit: 'cover',
+                      border: `3px solid ${theme.success}`
+                    }} 
+                  />
+                </div>
+              )}
             </div>
 
             {/* Break/Travel buttons */}
@@ -606,7 +918,7 @@ export function ClockView({
         </div>
       )}
 
-      {/* Break Rules Info - now with paidRestMinutes */}
+      {/* Break Rules Info */}
       <BreakRulesInfo 
         isOpen={showBreakRules} 
         onToggle={() => setShowBreakRules(!showBreakRules)} 

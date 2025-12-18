@@ -36,6 +36,7 @@ export interface Shift {
   clockOut?: any;
   clockInLocation?: Location;
   clockOutLocation?: Location;
+  clockInPhotoUrl?: string;  // Photo verification at clock-in
   locationHistory: Location[];
   breaks: Break[];
   travelSegments?: TravelSegment[];

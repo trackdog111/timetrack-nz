@@ -15,6 +15,7 @@ import {
   Timestamp,
   arrayUnion
 } from 'firebase/firestore';
+import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage';
 import { db } from '../firebase';
 import { Shift, Location } from '../types';
 import { EmployeeSettings } from '../types';
@@ -33,6 +34,7 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
   const [error, setError] = useState('');
 
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const storage = getStorage();
 
   // Get current GPS location
   const getCurrentLocation = (): Promise<Location | null> => {
@@ -144,12 +146,37 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
     return () => unsubscribe();
   }, [user]);
 
-  // Clock in
-  const clockIn = async () => {
+  // Upload photo to Firebase Storage
+  const uploadClockInPhoto = async (photoBase64: string, shiftId: string): Promise<string | null> => {
+    if (!user) return null;
+    
+    try {
+      // Create a unique path: clock-in-photos/{userId}/{shiftId}.jpg
+      const photoRef = ref(storage, `clock-in-photos/${user.uid}/${shiftId}.jpg`);
+      
+      // Upload the base64 string (remove data URL prefix if present)
+      const base64Data = photoBase64.replace(/^data:image\/\w+;base64,/, '');
+      await uploadString(photoRef, base64Data, 'base64', {
+        contentType: 'image/jpeg'
+      });
+      
+      // Get the download URL
+      const downloadUrl = await getDownloadURL(photoRef);
+      return downloadUrl;
+    } catch (err) {
+      console.error('Error uploading photo:', err);
+      return null;
+    }
+  };
+
+  // Clock in - NOW WITH OPTIONAL PHOTO
+  const clockIn = async (photoBase64?: string) => {
     if (!user) return;
     try {
       const location = await getCurrentLocation();
-      await addDoc(collection(db, 'shifts'), {
+      
+      // Create shift first
+      const shiftRef = await addDoc(collection(db, 'shifts'), {
         userId: user.uid,
         userEmail: user.email,
         clockIn: Timestamp.now(),
@@ -160,6 +187,14 @@ export function useShift(user: User | null, settings: EmployeeSettings) {
         jobLog: { field1: '', field2: '', field3: '' },
         status: 'active'
       });
+
+      // If photo provided, upload and update shift with URL
+      if (photoBase64) {
+        const photoUrl = await uploadClockInPhoto(photoBase64, shiftRef.id);
+        if (photoUrl) {
+          await updateDoc(shiftRef, { clockInPhotoUrl: photoUrl });
+        }
+      }
     } catch (err: any) {
       setError(err.message);
     }
