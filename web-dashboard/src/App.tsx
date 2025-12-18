@@ -1816,16 +1816,7 @@ export default function App() {
                                         </div>
                                       </div>
                                       
-                                      {/* Expanded shift details */}
-                                      {isOpen && (
-                                        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
-                                          {f1 && <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', marginBottom: '10px' }}><p style={{ color: theme.textMuted, fontSize: '11px', margin: 0 }}>📝 {companySettings.field1Label}</p><p style={{ color: theme.text, fontSize: '13px', margin: '4px 0 0 0' }}>{f1}</p></div>}
-                                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                            {(sh.locationHistory?.length > 0 || sh.clockInLocation) && <button onClick={() => setMapModal({ locations: sh.locationHistory || [], title: `${name} - ${fmtDateShort(sh.clockIn)}`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px' }}>📍 Map ({(sh.locationHistory?.length || 0) + (sh.clockInLocation ? 1 : 0) + (sh.clockOutLocation ? 1 : 0)})</button>}
-                                            <button onClick={() => setEditShiftModal(sh)} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>✏️ Edit Shift</button>
-                                          </div>
-                                        </div>
-                                      )}
+                                      
                                     </div>
                                   );
                                 })}
