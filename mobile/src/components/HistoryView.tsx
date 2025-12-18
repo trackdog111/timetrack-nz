@@ -146,10 +146,7 @@ function MapModal({
       if (!document.getElementById('custom-marker-css')) {
         const style = document.createElement('style');
         style.id = 'custom-marker-css';
-        style.textContent = \`
-          .leaflet-div-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
-          .custom-marker { background: transparent !important; border: none !important; }
-        \`;
+        style.textContent = '.leaflet-div-icon { background: transparent !important; border: none !important; box-shadow: none !important; } .custom-marker { background: transparent !important; border: none !important; }';
         document.head.appendChild(style);
       }
     };
@@ -230,14 +227,14 @@ function MapModal({
       
       const icon = L.divIcon({
         className: 'custom-marker',
-        html: \`<div style="width:28px;height:28px;background:\${color};border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:bold;">\${index + 1}</div>\`,
+        html: '<div style="width:28px;height:28px;background:' + color + ';border:3px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3);display:flex;align-items:center;justify-content:center;color:white;font-size:11px;font-weight:bold;">' + (index + 1) + '</div>',
         iconSize: [28, 28],
         iconAnchor: [14, 14]
       });
       
       L.marker([point.displayLat, point.displayLng], { icon })
         .addTo(map)
-        .bindPopup(\`<b>\${label}</b><br>\${time}\`);
+        .bindPopup('<b>' + label + '</b><br>' + time);
     });
     
     return () => {
@@ -472,7 +469,7 @@ export function HistoryView({
     );
     
     if (success) {
-      showToast('Travel added ✓');
+      showToast('Travel added');
       setEditingShiftId(null);
       setEditMode(null);
       setAddTravelStartHour('9');
@@ -488,7 +485,7 @@ export function HistoryView({
   const handleDeleteTravel = async (shiftId: string, travelIndex: number) => {
     const success = await onDeleteTravelFromShift(shiftId, travelIndex);
     if (success) {
-      showToast('Travel removed ✓');
+      showToast('Travel removed');
     }
   };
 
@@ -496,7 +493,7 @@ export function HistoryView({
     setAddingBreak(true);
     const success = await onAddBreakToShift(shiftId, minutes);
     if (success) {
-      showToast(`${minutes}m break added ✓`);
+      showToast(minutes + 'm break added');
     }
     setAddingBreak(false);
   };
@@ -504,7 +501,7 @@ export function HistoryView({
   const handleDeleteBreak = async (shiftId: string, breakIndex: number) => {
     const success = await onDeleteBreakFromShift(shiftId, breakIndex);
     if (success) {
-      showToast('Break removed ✓');
+      showToast('Break removed');
     }
   };
 
@@ -512,7 +509,7 @@ export function HistoryView({
     setDeletingShift(true);
     const success = await onDeleteShift(shiftId);
     if (success) {
-      showToast('Shift deleted ✓');
+      showToast('Shift deleted');
       setDeleteConfirmId(null);
     }
     setDeletingShift(false);
@@ -563,7 +560,7 @@ export function HistoryView({
     const success = await onEditShift(shift.id, clockIn, clockOut, editNotes);
     
     if (success) {
-      showToast('Shift updated ✓');
+      showToast('Shift updated');
       closeEditPanel();
     }
     
@@ -589,6 +586,9 @@ export function HistoryView({
   };
 
   const weekKeys = Object.keys(groupedShifts);
+
+  const hourOptions = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+  const minuteOptions = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
 
   return (
     <div style={{ padding: '16px' }}>
@@ -631,7 +631,7 @@ export function HistoryView({
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  border: `1px solid ${isExpanded ? theme.primary : theme.cardAlt}`,
+                  border: '1px solid ' + (isExpanded ? theme.primary : theme.cardAlt),
                   borderBottom: isExpanded ? 'none' : undefined
                 }}
               >
@@ -659,7 +659,7 @@ export function HistoryView({
               </div>
 
               {isExpanded && (
-                <div style={{ background: theme.cardAlt, borderRadius: '0 0 12px 12px', border: `1px solid ${theme.cardAlt}`, borderTop: 'none', overflow: 'hidden' }}>
+                <div style={{ background: theme.cardAlt, borderRadius: '0 0 12px 12px', border: '1px solid ' + theme.cardAlt, borderTop: 'none', overflow: 'hidden' }}>
                   {shifts.sort((a, b) => (b.clockIn?.toDate?.()?.getTime() || 0) - (a.clockIn?.toDate?.()?.getTime() || 0)).map(shift => {
                     const shiftHours = getHours(shift.clockIn, shift.clockOut);
                     const breakAllocation = calcBreaks(shift.breaks || [], shiftHours, paidRestMinutes);
@@ -669,7 +669,7 @@ export function HistoryView({
                     const locationCount = getLocationCount(shift);
 
                     return (
-                      <div key={shift.id} style={{ background: theme.card, padding: '14px 16px', borderBottom: `1px solid ${theme.cardAlt}` }}>
+                      <div key={shift.id} style={{ background: theme.card, padding: '14px 16px', borderBottom: '1px solid ' + theme.cardAlt }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
                           <div>
                             <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>
@@ -732,22 +732,22 @@ export function HistoryView({
                           </div>
                         )}
 
-                        {shift.jobLog?.field1 && <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '8px', margin: '8px 0 0 0' }}>📝 {shift.jobLog.field1}</p>}
-                        {shift.jobLog?.field2 && <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>🔧 {shift.jobLog.field2}</p>}
-                        {shift.jobLog?.field3 && <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>📋 {shift.jobLog.field3}</p>}
+                        {shift.jobLog?.field1 && <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '8px', margin: '8px 0 0 0' }}>Notes: {shift.jobLog.field1}</p>}
+                        {shift.jobLog?.field2 && <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>Job: {shift.jobLog.field2}</p>}
+                        {shift.jobLog?.field3 && <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>Details: {shift.jobLog.field3}</p>}
 
                         {locationCount > 0 && (
-                          <button onClick={() => openMapModal(shift)} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '8px 12px', background: theme.cardAlt, border: `1px solid ${theme.primary}`, borderRadius: '8px', color: theme.primary, fontSize: '12px', fontWeight: '500', cursor: 'pointer', width: '100%', justifyContent: 'center' }}>
-                            📍 View {locationCount} location point{locationCount !== 1 ? 's' : ''} on map
+                          <button onClick={() => openMapModal(shift)} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '8px 12px', background: theme.cardAlt, border: '1px solid ' + theme.primary, borderRadius: '8px', color: theme.primary, fontSize: '12px', fontWeight: '500', cursor: 'pointer', width: '100%', justifyContent: 'center' }}>
+                            View {locationCount} location point{locationCount !== 1 ? 's' : ''} on map
                           </button>
                         )}
 
                         {!isEditing && deleteConfirmId !== shift.id && (
                           <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
-                            <button onClick={() => openEditPanel(shift.id, 'times', shift)} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: theme.primary, border: `1px dashed ${theme.primary}`, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>✏️ Edit Times</button>
+                            <button onClick={() => openEditPanel(shift.id, 'times', shift)} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: theme.primary, border: '1px dashed ' + theme.primary, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Edit Times</button>
                             <button onClick={() => openEditPanel(shift.id, 'breaks')} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: '#f59e0b', border: '1px dashed #fcd34d', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>+ Break</button>
                             <button onClick={() => openEditPanel(shift.id, 'travel')} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: '#2563eb', border: '1px dashed #bfdbfe', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>+ Travel</button>
-                            <button onClick={() => setDeleteConfirmId(shift.id)} style={{ padding: '8px 12px', borderRadius: '8px', background: 'transparent', color: '#dc2626', border: '1px dashed #fca5a5', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>🗑️</button>
+                            <button onClick={() => setDeleteConfirmId(shift.id)} style={{ padding: '8px 12px', borderRadius: '8px', background: 'transparent', color: '#dc2626', border: '1px dashed #fca5a5', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Delete</button>
                           </div>
                         )}
 
@@ -768,17 +768,31 @@ export function HistoryView({
                             <div style={{ marginBottom: '10px' }}>
                               <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Clock In</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <select value={editClockInHour} onChange={(e) => setEditClockInHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>{[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}</select>
-                                <select value={editClockInMinute} onChange={(e) => setEditClockInMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>{['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}</select>
-                                <select value={editClockInAmPm} onChange={(e) => setEditClockInAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}><option value="AM">AM</option><option value="PM">PM</option></select>
+                                <select value={editClockInHour} onChange={(e) => setEditClockInHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>
+                                  {hourOptions.map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                                <select value={editClockInMinute} onChange={(e) => setEditClockInMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>
+                                  {minuteOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <select value={editClockInAmPm} onChange={(e) => setEditClockInAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
                               </div>
                             </div>
                             <div style={{ marginBottom: '10px' }}>
                               <label style={{ display: 'block', color: '#0369a1', fontSize: '11px', marginBottom: '4px' }}>Clock Out</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <select value={editClockOutHour} onChange={(e) => setEditClockOutHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>{[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}</select>
-                                <select value={editClockOutMinute} onChange={(e) => setEditClockOutMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>{['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}</select>
-                                <select value={editClockOutAmPm} onChange={(e) => setEditClockOutAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}><option value="AM">AM</option><option value="PM">PM</option></select>
+                                <select value={editClockOutHour} onChange={(e) => setEditClockOutHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>
+                                  {hourOptions.map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                                <select value={editClockOutMinute} onChange={(e) => setEditClockOutMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>
+                                  {minuteOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <select value={editClockOutAmPm} onChange={(e) => setEditClockOutAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bae6fd', background: 'white' }}>
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
                               </div>
                             </div>
                             <div style={{ marginBottom: '12px' }}>
@@ -810,17 +824,31 @@ export function HistoryView({
                             <div style={{ marginBottom: '8px' }}>
                               <label style={{ display: 'block', color: '#1e40af', fontSize: '11px', marginBottom: '4px' }}>Start</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <select value={addTravelStartHour} onChange={(e) => setAddTravelStartHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>{[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}</select>
-                                <select value={addTravelStartMinute} onChange={(e) => setAddTravelStartMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>{['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}</select>
-                                <select value={addTravelStartAmPm} onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}><option value="AM">AM</option><option value="PM">PM</option></select>
+                                <select value={addTravelStartHour} onChange={(e) => setAddTravelStartHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  {hourOptions.map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                                <select value={addTravelStartMinute} onChange={(e) => setAddTravelStartMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  {minuteOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <select value={addTravelStartAmPm} onChange={(e) => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
                               </div>
                             </div>
                             <div style={{ marginBottom: '10px' }}>
                               <label style={{ display: 'block', color: '#1e40af', fontSize: '11px', marginBottom: '4px' }}>End</label>
                               <div style={{ display: 'flex', gap: '4px' }}>
-                                <select value={addTravelEndHour} onChange={(e) => setAddTravelEndHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>{[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}</select>
-                                <select value={addTravelEndMinute} onChange={(e) => setAddTravelEndMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>{['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}</select>
-                                <select value={addTravelEndAmPm} onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}><option value="AM">AM</option><option value="PM">PM</option></select>
+                                <select value={addTravelEndHour} onChange={(e) => setAddTravelEndHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  {hourOptions.map(h => <option key={h} value={h}>{h}</option>)}
+                                </select>
+                                <select value={addTravelEndMinute} onChange={(e) => setAddTravelEndMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  {minuteOptions.map(m => <option key={m} value={m}>{m}</option>)}
+                                </select>
+                                <select value={addTravelEndAmPm} onChange={(e) => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                  <option value="AM">AM</option>
+                                  <option value="PM">PM</option>
+                                </select>
                               </div>
                             </div>
                             <div style={{ display: 'flex', gap: '8px' }}>
