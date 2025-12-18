@@ -188,14 +188,14 @@ function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutL
   allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
   
   // Offset overlapping markers slightly so all are visible
-  const offsetAmount = 0.0003;
+  const offsetAmount = 0.00002;
   for (let i = 1; i < allPoints.length; i++) {
     for (let j = 0; j < i; j++) {
       const dist = Math.sqrt(
         Math.pow(allPoints[i].displayLat - allPoints[j].displayLat, 2) +
         Math.pow(allPoints[i].displayLng - allPoints[j].displayLng, 2)
       );
-      if (dist < 0.0005) {
+      if (dist < 0.00005) {
         const angle = (i * 60) * (Math.PI / 180);
         allPoints[i].displayLat += offsetAmount * Math.cos(angle);
         allPoints[i].displayLng += offsetAmount * Math.sin(angle);
@@ -846,8 +846,7 @@ export default function App() {
     });
   };
 
-  // Initial location fetch
-  useEffect(() => { getMyCurrentLocation(); }, []);
+ 
 
   // GPS tracking interval during active shift
   useEffect(() => {
@@ -1304,7 +1303,7 @@ export default function App() {
   const navItems = [{ id: 'live', label: '🟢 Live View' }, { id: 'mysheet', label: '⏱️ My Timesheet' }, { id: 'employees', label: '👥 Employees' }, { id: 'timesheets', label: '📋 Timesheets' }, { id: 'reports', label: '📊 Reports' }, { id: 'chat', label: '💬 Chat' }, { id: 'settings', label: '⚙️ Settings' }];
 
   return (
-    <div style={{ minHeight: '100vh', background: theme.bg }}>
+    <main style={{ minHeight: '100vh', background: theme.bg }}>
       {isMobile && <div style={{ position: 'fixed', top: 0, left: 0, right: 0, height: '56px', background: theme.sidebar, borderBottom: `1px solid ${theme.sidebarBorder}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', zIndex: 100 }}><button onClick={() => setSidebarOpen(true)} style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer', color: theme.text }}>☰</button><span style={{ fontWeight: '700', color: theme.text }}>TimeTrack NZ</span><button onClick={() => setDark(!dark)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer' }}>{dark ? '☀️' : '🌙'}</button></div>}
       {isMobile && sidebarOpen && <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 200 }} onClick={() => setSidebarOpen(false)} />}
       <div style={{ position: 'fixed', top: 0, left: isMobile ? (sidebarOpen ? 0 : -280) : 0, width: '260px', height: '100vh', background: theme.sidebar, borderRight: `1px solid ${theme.sidebarBorder}`, padding: '20px', zIndex: 300, transition: 'left 0.3s', overflowY: 'auto' }}>
@@ -1852,6 +1851,6 @@ export default function App() {
         {/* Settings */}
         {view === 'settings' && <div><h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Settings</h1><div style={styles.card}><h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>🏢 Company Settings</h3><div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}><div><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 1 Label</label><input value={editingCompanySettings.field1Label} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field1Label: e.target.value })} style={styles.input} /></div><div><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 2 Label</label><input value={editingCompanySettings.field2Label} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field2Label: e.target.value })} style={styles.input} /></div><div><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 3 Label</label><input value={editingCompanySettings.field3Label} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field3Label: e.target.value })} style={styles.input} /></div><div><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Manager Display Name</label><input value={editingCompanySettings.managerDisplayName} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, managerDisplayName: e.target.value })} style={styles.input} /></div></div><div style={{ marginBottom: '16px' }}><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Paid Rest Break Duration</label><select value={editingCompanySettings.paidRestMinutes || 10} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, paidRestMinutes: parseInt(e.target.value) })} style={{ ...styles.input, maxWidth: isMobile ? '100%' : '300px' }}><option value={10}>10 minutes (NZ law minimum)</option><option value={15}>15 minutes</option><option value={20}>20 minutes</option><option value={25}>25 minutes</option><option value={30}>30 minutes</option></select></div><div style={{ marginBottom: '16px' }}><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Pay Week End Day</label><select value={editingCompanySettings.payWeekEndDay} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, payWeekEndDay: parseInt(e.target.value) })} style={{ ...styles.input, maxWidth: isMobile ? '100%' : '300px' }}>{weekDayNames.map((d, i) => <option key={i} value={i}>{d}</option>)}</select><p style={{ color: theme.textMuted, fontSize: '11px', marginTop: '4px' }}>Timesheets grouped by weeks ending on this day</p></div><button onClick={saveCompanySettings} disabled={savingCompanySettings} style={{ ...styles.btn, opacity: savingCompanySettings ? 0.7 : 1 }}>{savingCompanySettings ? 'Saving...' : 'Save Settings'}</button></div><div style={styles.card}><h3 style={{ color: theme.danger, marginBottom: '16px', fontSize: '16px' }}>⚠️ Delete Old Data</h3><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}><div style={{ flex: '1', minWidth: '140px' }}><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Start</label><input type="date" value={cleanupStart} onChange={e => setCleanupStart(e.target.value)} style={styles.input} /></div><div style={{ flex: '1', minWidth: '140px' }}><label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>End</label><input type="date" value={cleanupEnd} onChange={e => setCleanupEnd(e.target.value)} style={styles.input} /></div></div>{cleanupStart && cleanupEnd && <div style={{ background: theme.dangerBg, padding: '16px', borderRadius: '8px', marginBottom: '16px' }}><p style={{ color: theme.danger, marginBottom: '12px' }}>Will delete {allShifts.filter(s => { if (!s.clockIn?.toDate) return false; const d = s.clockIn.toDate(); const st = new Date(cleanupStart); const en = new Date(cleanupEnd); en.setHours(23,59,59); return d >= st && d <= en && s.status === 'completed'; }).length} shifts</p><label style={{ color: theme.danger, display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}><input type="checkbox" checked={cleanupConfirm} onChange={e => setCleanupConfirm(e.target.checked)} />I understand this cannot be undone</label></div>}<button onClick={cleanup} disabled={!cleanupConfirm} style={{ ...styles.btnDanger, opacity: cleanupConfirm ? 1 : 0.5, cursor: cleanupConfirm ? 'pointer' : 'not-allowed' }}>Delete Data</button></div><div style={{ ...styles.card, marginTop: '24px' }}><h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Database Stats</h3><div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}><div style={{ background: theme.cardAlt, padding: '16px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.text, fontSize: '24px', fontWeight: '700' }}>{allShifts.length}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>Shifts</p></div><div style={{ background: theme.cardAlt, padding: '16px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.text, fontSize: '24px', fontWeight: '700' }}>{employees.length}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>Employees</p></div><div style={{ background: theme.cardAlt, padding: '16px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.text, fontSize: '24px', fontWeight: '700' }}>{messages.length}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>Messages</p></div></div></div></div>}
       </div>
-    </div>
+    </main>
   );
 }
