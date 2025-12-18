@@ -279,117 +279,115 @@ function MapModal({
         left: 0, 
         right: 0, 
         bottom: 0, 
-        background: 'rgba(0,0,0,0.5)', 
+        background: theme.bg, 
         display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center', 
-        zIndex: 1000, 
-        padding: '16px' 
-      }} 
-      onClick={onClose}
+        flexDirection: 'column',
+        zIndex: 1000
+      }}
     >
-      <div 
-        style={{ 
-          background: theme.card, 
-          borderRadius: '12px', 
-          padding: '16px', 
-          width: '100%', 
-          maxWidth: '500px', 
-          maxHeight: '85vh', 
-          overflow: 'auto' 
-        }} 
-        onClick={e => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
-          <h2 style={{ color: theme.text, margin: 0, fontSize: '16px' }}>{title}</h2>
-          <button 
-            onClick={onClose} 
+      {/* Header */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        padding: '16px',
+        borderBottom: '1px solid ' + theme.cardAlt
+      }}>
+        <h2 style={{ color: theme.text, margin: 0, fontSize: '18px', fontWeight: '600' }}>{title}</h2>
+        <button 
+          onClick={onClose} 
+          style={{ 
+            background: theme.cardAlt, 
+            border: 'none', 
+            fontSize: '20px', 
+            cursor: 'pointer', 
+            color: theme.text,
+            padding: '8px 12px',
+            borderRadius: '8px',
+            fontWeight: '600'
+          }}
+        >
+          ✕
+        </button>
+      </div>
+      
+      {/* Legend */}
+      <div style={{ display: 'flex', gap: '8px', padding: '12px 16px', flexWrap: 'wrap', background: theme.card }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.clockIn }}></span>
+          <span style={{ color: theme.textMuted, fontSize: '11px' }}>Clock In</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.clockOut }}></span>
+          <span style={{ color: theme.textMuted, fontSize: '11px' }}>Clock Out</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.travelStart }}></span>
+          <span style={{ color: theme.textMuted, fontSize: '11px' }}>Travel</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.breakStart }}></span>
+          <span style={{ color: theme.textMuted, fontSize: '11px' }}>Break</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.tracking }}></span>
+          <span style={{ color: theme.textMuted, fontSize: '11px' }}>Tracking</span>
+        </div>
+      </div>
+      
+      {/* Map - takes remaining space */}
+      <div style={{ flex: 1, position: 'relative', minHeight: '200px' }}>
+        {!leafletLoaded && (
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: theme.cardAlt }}>
+            <span style={{ color: theme.textMuted }}>Loading map...</span>
+          </div>
+        )}
+        <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+      </div>
+      
+      {/* Location List - scrollable bottom section */}
+      <div style={{ 
+        maxHeight: '35%', 
+        overflowY: 'auto', 
+        background: theme.card,
+        borderTop: '1px solid ' + theme.cardAlt
+      }}>
+        {allPoints.map((point, i) => (
+          <div 
+            key={i} 
+            onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
             style={{ 
-              background: 'none', 
-              border: 'none', 
-              fontSize: '24px', 
-              cursor: 'pointer', 
-              color: theme.textMuted,
-              padding: '4px'
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              padding: '12px 16px', 
+              background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
+              cursor: 'pointer',
+              borderBottom: '1px solid ' + theme.cardAlt
             }}
           >
-            ×
-          </button>
-        </div>
-        
-        {/* Legend */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.clockIn }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Clock In</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.clockOut }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Clock Out</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.travelStart }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Travel</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.breakStart }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Break</span>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors.tracking }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '11px' }}>Tracking</span>
-          </div>
-        </div>
-        
-        {/* Map */}
-        <div style={{ height: '250px', borderRadius: '8px', overflow: 'hidden', marginBottom: '12px', position: 'relative' }}>
-          {!leafletLoaded && (
-            <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: theme.cardAlt }}>
-              <span style={{ color: theme.textMuted }}>Loading map...</span>
-            </div>
-          )}
-          <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
-        </div>
-        
-        {/* Location List */}
-        <div style={{ maxHeight: '180px', overflowY: 'auto' }}>
-          {allPoints.map((point, i) => (
-            <div 
-              key={i} 
-              onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
-              style={{ 
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ 
+                width: '28px', 
+                height: '28px', 
+                borderRadius: '50%', 
+                background: markerColors[point.type], 
+                color: 'white', 
                 display: 'flex', 
-                justifyContent: 'space-between', 
-                padding: '8px 10px', 
-                background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : 'transparent'), 
-                borderRadius: '6px', 
-                cursor: 'pointer', 
-                marginBottom: '4px' 
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ 
-                  width: '20px', 
-                  height: '20px', 
-                  borderRadius: '50%', 
-                  background: markerColors[point.type], 
-                  color: 'white', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  fontSize: '10px',
-                  fontWeight: '600'
-                }}>
-                  {i + 1}
-                </span>
-                <span style={{ color: theme.text, fontSize: '13px' }}>{markerLabels[point.type]}</span>
-              </div>
-              <span style={{ color: theme.textMuted, fontSize: '12px' }}>
-                {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                alignItems: 'center', 
+                justifyContent: 'center', 
+                fontSize: '12px',
+                fontWeight: '600'
+              }}>
+                {i + 1}
               </span>
+              <span style={{ color: theme.text, fontSize: '14px', fontWeight: '500' }}>{markerLabels[point.type]}</span>
             </div>
-          ))}
-        </div>
+            <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+              {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+            </span>
+          </div>
+        ))}
       </div>
     </div>
   );
