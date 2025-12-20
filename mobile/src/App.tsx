@@ -130,7 +130,7 @@ export default function App() {
   // Loading state
   if (loading) {
     return (
-      <div style={{ 
+      <main style={{ 
         minHeight: '100vh', 
         background: theme.bg, 
         display: 'flex', 
@@ -138,24 +138,26 @@ export default function App() {
         justifyContent: 'center' 
       }}>
         <p style={{ color: theme.textMuted }}>Loading...</p>
-      </div>
+      </main>
     );
   }
 
   // Login screen
   if (!user) {
     return (
-      <LoginScreen
-        theme={theme}
-        onSignIn={signIn}
-        onCheckInvite={checkInvite}
-        onAcceptInvite={acceptInvite}
-        onResetPassword={resetPassword}
-        error={authError}
-        setError={setAuthError}
-        initialEmail={initialEmail}
-        initialAuthMode={initialAuthMode}
-      />
+      <main style={{ minHeight: '100vh', background: theme.bg }}>
+        <LoginScreen
+          theme={theme}
+          onSignIn={signIn}
+          onCheckInvite={checkInvite}
+          onAcceptInvite={acceptInvite}
+          onResetPassword={resetPassword}
+          error={authError}
+          setError={setAuthError}
+          initialEmail={initialEmail}
+          initialAuthMode={initialAuthMode}
+        />
+      </main>
     );
   }
 

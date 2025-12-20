@@ -79,8 +79,8 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
     });
   };
 
-  // Initial location fetch
-  useEffect(() => { getCurrentLocation(); }, []);
+  // NOTE: Removed initial location fetch to avoid geolocation prompt on page load
+  // Location is fetched when user clicks Clock In instead
 
   // Auto-travel detection logic
   const processAutoTravelDetection = useCallback(async (location: Location) => {
