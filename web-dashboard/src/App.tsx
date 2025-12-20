@@ -1341,10 +1341,10 @@ export default function App() {
     card: { background: theme.card, padding: '20px', borderRadius: '12px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
   };
 
-  if (loading) return <div style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ color: theme.text }}>Loading...</p></div>;
+  if (loading) return <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ color: theme.text }}>Loading...</p></main>;
 
   if (!user) return (
-    <div style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+    <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div style={{ ...styles.card, width: '100%', maxWidth: '400px' }}>
         <h1 style={{ color: theme.text, textAlign: 'center', marginBottom: '8px' }}>TimeTrack NZ</h1>
         <p style={{ color: theme.textMuted, textAlign: 'center', marginBottom: '24px' }}>Manager Dashboard</p>
@@ -1360,7 +1360,7 @@ export default function App() {
         {authMode === 'signin' && <button onClick={() => setAuthMode('reset')} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', marginTop: '16px', display: 'block', width: '100%', textAlign: 'center' }}>Forgot password?</button>}
         {authMode === 'reset' && <button onClick={() => setAuthMode('signin')} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', marginTop: '16px', display: 'block', width: '100%', textAlign: 'center' }}>← Back</button>}
       </div>
-    </div>
+    </main>
   );
 
   const navItems = [{ id: 'live', label: '🟢 Live View' }, { id: 'mysheet', label: '⏱️ My Timesheet' }, { id: 'employees', label: '👥 Employees' }, { id: 'timesheets', label: '📋 Timesheets' }, { id: 'reports', label: '📊 Reports' }, { id: 'chat', label: '💬 Chat' }, { id: 'settings', label: '⚙️ Settings' }];
