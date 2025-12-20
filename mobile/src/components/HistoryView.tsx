@@ -724,26 +724,37 @@ export function HistoryView({
         />
       )}
 
-      <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>
+      <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '12px' }}>
         Shift History
       </h2>
       
-      {/* Date Filter Buttons */}
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
-        <button onClick={setThisWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>This Week</button>
-        <button onClick={setLastWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Last Week</button>
-        <button onClick={setThisMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>This Month</button>
-        <button onClick={setLastMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Last Month</button>
+      {/* Date Filter Card */}
+      <div style={{ ...styles.card, marginBottom: '16px' }}>
+        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+          <button onClick={setThisWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>This Week</button>
+          <button onClick={setLastWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Last Week</button>
+          <button onClick={setThisMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>This Month</button>
+          <button onClick={setLastMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Last Month</button>
+        </div>
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'end' }}>
+          <div style={{ flex: 1, minWidth: '120px' }}>
+            <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>From</label>
+            <input type="date" value={filterStart} onChange={e => setFilterStart(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, fontSize: '14px', boxSizing: 'border-box' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: '120px' }}>
+            <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>To</label>
+            <input type="date" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} style={{ width: '100%', padding: '10px', borderRadius: '8px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, fontSize: '14px', boxSizing: 'border-box' }} />
+          </div>
+          {(filterStart || filterEnd) && (
+            <button onClick={clearFilter} style={{ padding: '10px 16px', borderRadius: '8px', border: '1px solid #dc2626', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>Clear</button>
+          )}
+        </div>
         {(filterStart || filterEnd) && (
-          <button onClick={clearFilter} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #dc2626', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Clear</button>
+          <p style={{ color: theme.primary, fontSize: '12px', marginTop: '12px', fontWeight: '500', margin: '12px 0 0 0' }}>
+            Showing: {filterStart || 'any'} → {filterEnd || 'any'}
+          </p>
         )}
       </div>
-      
-      {(filterStart || filterEnd) && (
-        <p style={{ color: theme.primary, fontSize: '12px', marginBottom: '12px', fontWeight: '500' }}>
-          Showing: {filterStart || 'any'} → {filterEnd || 'any'}
-        </p>
-      )}
       
       <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
         Week ends on {weekDayNames[payWeekEndDay]}
