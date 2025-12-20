@@ -1,7 +1,7 @@
 // TimeTrack NZ - Main App Component
 // Refactored from monolithic 800-line file into clean modular structure
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import { lightTheme, darkTheme } from './theme';
@@ -25,7 +25,28 @@ export default function App() {
   // Settings hook
   const { settings, labels } = useSettings(user);
 
-  // Shift hook
+  // UI state
+  const [dark, setDark] = useState(false);
+  const [view, setView] = useState<ViewType>('clock');
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Toast function ref - allows us to pass to useShift without hoisting issues
+  const showToastRef = useRef<(message: string) => void>(() => {});
+  
+  // Update the ref when component mounts
+  showToastRef.current = (message: string) => {
+    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
+    setToast(message);
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 2000);
+  };
+
+  // Stable callback that uses the ref
+  const showToast = useCallback((message: string) => {
+    showToastRef.current(message);
+  }, []);
+
+  // Shift hook - now with toast callback for auto-travel notifications
   const {
     currentShift,
     shiftHistory,
@@ -57,8 +78,10 @@ export default function App() {
     deleteTravelFromShift,
     editShift,
     addManualShift,
-    deleteShift
-  } = useShift(user, settings);
+    deleteShift,
+    autoTravelActive,
+    anchorLocation
+  } = useShift(user, settings, showToast);
 
   // Chat hook
   const {
@@ -70,12 +93,6 @@ export default function App() {
     sendMessage,
     sendJobUpdate
   } = useChat(user, settings.chatEnabled);
-
-  // UI state
-  const [dark, setDark] = useState(false);
-  const [view, setView] = useState<ViewType>('clock');
-  const [toast, setToast] = useState<string | null>(null);
-  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Invite URL handling
   const [initialEmail, setInitialEmail] = useState('');
@@ -94,13 +111,6 @@ export default function App() {
 
   // Theme
   const theme = dark ? darkTheme : lightTheme;
-
-  // Toast helper
-  const showToast = (message: string) => {
-    if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
-    setToast(message);
-    toastTimeoutRef.current = setTimeout(() => setToast(null), 2000);
-  };
 
   // Combined error from both hooks
   const error = authError || shiftError;
@@ -263,6 +273,8 @@ export default function App() {
           onDeleteBreak={deleteBreak}
           onAddManualShift={addManualShift}
           showToast={showToast}
+          autoTravelEnabled={settings.autoTravel || false}
+          autoTravelActive={autoTravelActive}
         />
       )}
 

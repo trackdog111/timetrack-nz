@@ -79,6 +79,10 @@ export interface EmployeeSettings {
   chatEnabled: boolean;
   photoVerification?: boolean;
   companyLabels?: CompanyLabels;
+  // Auto-travel detection settings
+  autoTravel?: boolean;
+  autoTravelInterval?: number; // 1, 2, or 5 minutes
+  detectionDistance?: number;  // 100, 200, or 500 meters
 }
 
 export interface ChatMessage {
