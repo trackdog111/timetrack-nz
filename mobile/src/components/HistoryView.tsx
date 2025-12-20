@@ -414,6 +414,10 @@ export function HistoryView({
   const [editMode, setEditMode] = useState<'travel' | 'breaks' | 'times' | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   
+  // Date filter state
+  const [filterStart, setFilterStart] = useState<string>('');
+  const [filterEnd, setFilterEnd] = useState<string>('');
+  
   // Map modal state
   const [mapModal, setMapModal] = useState<{
     locations: Location[],
@@ -474,6 +478,93 @@ export function HistoryView({
     
     return sorted;
   }, [shiftHistory, payWeekEndDay, paidRestMinutes]);
+
+  // Date filter functions
+  const setThisWeek = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToStart = day === 0 ? 6 : day - 1;
+    const start = new Date(now);
+    start.setDate(now.getDate() - diffToStart);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    setFilterStart(start.toISOString().split('T')[0]);
+    setFilterEnd(end.toISOString().split('T')[0]);
+  };
+
+  const setLastWeek = () => {
+    const now = new Date();
+    const day = now.getDay();
+    const diffToStart = day === 0 ? 6 : day - 1;
+    const thisWeekStart = new Date(now);
+    thisWeekStart.setDate(now.getDate() - diffToStart);
+    const start = new Date(thisWeekStart);
+    start.setDate(thisWeekStart.getDate() - 7);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    setFilterStart(start.toISOString().split('T')[0]);
+    setFilterEnd(end.toISOString().split('T')[0]);
+  };
+
+  const setThisMonth = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    setFilterStart(start.toISOString().split('T')[0]);
+    setFilterEnd(end.toISOString().split('T')[0]);
+  };
+
+  const setLastMonth = () => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const end = new Date(now.getFullYear(), now.getMonth(), 0);
+    setFilterStart(start.toISOString().split('T')[0]);
+    setFilterEnd(end.toISOString().split('T')[0]);
+  };
+
+  const clearFilter = () => {
+    setFilterStart('');
+    setFilterEnd('');
+  };
+
+  // Filter grouped shifts by date range
+  const filteredGroupedShifts = useMemo(() => {
+    if (!filterStart && !filterEnd) return groupedShifts;
+    
+    const startDate = filterStart ? new Date(filterStart) : null;
+    const endDate = filterEnd ? new Date(filterEnd) : null;
+    if (endDate) endDate.setHours(23, 59, 59, 999);
+    
+    const filtered: typeof groupedShifts = {};
+    
+    Object.entries(groupedShifts).forEach(([weekKey, weekData]) => {
+      const filteredShifts = weekData.shifts.filter(shift => {
+        const shiftDate = shift.clockIn?.toDate?.();
+        if (!shiftDate) return false;
+        if (startDate && shiftDate < startDate) return false;
+        if (endDate && shiftDate > endDate) return false;
+        return true;
+      });
+      
+      if (filteredShifts.length > 0) {
+        const totalMinutes = filteredShifts.reduce((sum, shift) => {
+          const h = getHours(shift.clockIn, shift.clockOut);
+          const b = calcBreaks(shift.breaks || [], h, paidRestMinutes);
+          return sum + (h * 60) - b.unpaid;
+        }, 0);
+        
+        filtered[weekKey] = {
+          weekEnd: weekData.weekEnd,
+          shifts: filteredShifts,
+          totalMinutes
+        };
+      }
+    });
+    
+    return filtered;
+  }, [groupedShifts, filterStart, filterEnd, paidRestMinutes]);
 
   const toggleWeek = (weekKey: string) => {
     const newExpanded = new Set(expandedWeeks);
@@ -615,7 +706,7 @@ export function HistoryView({
     return count;
   };
 
-  const weekKeys = Object.keys(groupedShifts);
+  const weekKeys = Object.keys(filteredGroupedShifts);
 
   const hourOptions = [12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
   const minuteOptions = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
@@ -636,6 +727,24 @@ export function HistoryView({
       <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '8px' }}>
         Shift History
       </h2>
+      
+      {/* Date Filter Buttons */}
+      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+        <button onClick={setThisWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>This Week</button>
+        <button onClick={setLastWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Last Week</button>
+        <button onClick={setThisMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>This Month</button>
+        <button onClick={setLastMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid ' + theme.cardAlt, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Last Month</button>
+        {(filterStart || filterEnd) && (
+          <button onClick={clearFilter} style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #dc2626', background: 'transparent', color: '#dc2626', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Clear</button>
+        )}
+      </div>
+      
+      {(filterStart || filterEnd) && (
+        <p style={{ color: theme.primary, fontSize: '12px', marginBottom: '12px', fontWeight: '500' }}>
+          Showing: {filterStart || 'any'} → {filterEnd || 'any'}
+        </p>
+      )}
+      
       <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
         Week ends on {weekDayNames[payWeekEndDay]}
       </p>
@@ -646,7 +755,7 @@ export function HistoryView({
         </div>
       ) : (
         weekKeys.map(weekKey => {
-          const { weekEnd, shifts, totalMinutes } = groupedShifts[weekKey];
+          const { weekEnd, shifts, totalMinutes } = filteredGroupedShifts[weekKey];
           const isExpanded = expandedWeeks.has(weekKey);
           
           return (
