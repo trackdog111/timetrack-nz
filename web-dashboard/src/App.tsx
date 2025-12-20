@@ -674,6 +674,12 @@ export default function App() {
   const [timesheetFilterStart, setTimesheetFilterStart] = useState('');
   const [timesheetFilterEnd, setTimesheetFilterEnd] = useState('');
   const [finalizingWeek, setFinalizingWeek] = useState<string | null>(null);
+  
+  // Inline timesheet editing states
+  const [timesheetEditingShiftId, setTimesheetEditingShiftId] = useState<string | null>(null);
+  const [timesheetEditMode, setTimesheetEditMode] = useState<'breaks' | 'travel' | null>(null);
+  const [timesheetDeleteConfirmId, setTimesheetDeleteConfirmId] = useState<string | null>(null);
+  const [deletingTimesheetShift, setDeletingTimesheetShift] = useState(false);
 
   const theme = dark ? darkTheme : lightTheme;
 
@@ -748,6 +754,63 @@ export default function App() {
     }
     
     setFinalizingWeek(null);
+  };
+
+  // Inline timesheet editing handlers
+  const handleTimesheetAddBreak = async (shiftId: string, minutes: number) => {
+    setAddingBreakToShift(true);
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const now = Timestamp.now();
+      await updateDoc(shiftRef, {
+        breaks: arrayUnion({ startTime: now, endTime: now, durationMinutes: minutes, manualEntry: true }),
+        editedAt: now,
+        editedBy: user?.uid,
+        editedByEmail: user?.email
+      });
+      setSuccess(`${minutes}m break added`);
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to add break');
+    }
+    setAddingBreakToShift(false);
+  };
+
+  const handleTimesheetAddTravel = async (shiftId: string, minutes: number) => {
+    setAddingTravelToShift(true);
+    try {
+      const shiftRef = doc(db, 'shifts', shiftId);
+      const now = Timestamp.now();
+      await updateDoc(shiftRef, {
+        travelSegments: arrayUnion({ startTime: now, endTime: now, durationMinutes: minutes }),
+        editedAt: now,
+        editedBy: user?.uid,
+        editedByEmail: user?.email
+      });
+      setSuccess(`${minutes}m travel added`);
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to add travel');
+    }
+    setAddingTravelToShift(false);
+  };
+
+  const handleTimesheetDeleteShift = async (shiftId: string) => {
+    setDeletingTimesheetShift(true);
+    try {
+      await deleteDoc(doc(db, 'shifts', shiftId));
+      setSuccess('Shift deleted');
+      setTimeout(() => setSuccess(''), 2000);
+      setTimesheetDeleteConfirmId(null);
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete shift');
+    }
+    setDeletingTimesheetShift(false);
+  };
+
+  const closeTimesheetEditPanel = () => {
+    setTimesheetEditingShiftId(null);
+    setTimesheetEditMode(null);
   };
 
   const genReport = () => { if (!reportStart || !reportEnd) { setError('Select dates'); return; } const s = new Date(reportStart); s.setHours(0,0,0,0); const e = new Date(reportEnd); e.setHours(23,59,59,999); let data = allShifts.filter(sh => { if (!sh.clockIn?.toDate) return false; const d = sh.clockIn.toDate(); return d >= s && d <= e && sh.status === 'completed'; }); if (reportEmp !== 'all') data = data.filter(sh => sh.userId === reportEmp); setReportData(data); };
@@ -1696,7 +1759,7 @@ export default function App() {
         {/* Employees */}
         {view === 'employees' && <div><h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Employees</h1><div style={styles.card}><h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Invite New Employee</h3><form onSubmit={inviteEmployee}><div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}><input placeholder="Email" type="email" value={newEmpEmail} onChange={e => setNewEmpEmail(e.target.value)} required style={{ ...styles.input, flex: '2', minWidth: '200px' }} /><input placeholder="Name (optional)" value={newEmpName} onChange={e => setNewEmpName(e.target.value)} style={{ ...styles.input, flex: '1', minWidth: '150px' }} /><button type="submit" style={styles.btn}>Create Invite</button></div></form></div>{invites.filter(i => i.status === 'pending').length > 0 && <div style={styles.card}><h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Pending Invites</h3>{invites.filter(i => i.status === 'pending').map(inv => <div key={inv.id} style={{ background: theme.cardAlt, padding: '16px', borderRadius: '8px', marginBottom: '12px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '12px' }}><div><p style={{ color: theme.text, fontWeight: '600' }}>{inv.name || inv.email}</p><p style={{ color: theme.textMuted, fontSize: '13px' }}>{inv.email}</p>{inv.emailSent && <p style={{ color: theme.success, fontSize: '12px', marginTop: '4px' }}>✓ Email sent</p>}</div><button onClick={() => cancelInvite(inv.id)} style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '12px' }}>Cancel</button></div><div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}><button onClick={() => sendInviteEmail(inv)} disabled={sendingEmail === inv.id} style={{ padding: '10px 16px', borderRadius: '8px', border: 'none', background: theme.primary, color: 'white', cursor: 'pointer', fontSize: '13px', fontWeight: '600', opacity: sendingEmail === inv.id ? 0.7 : 1 }}>{sendingEmail === inv.id ? '⏳ Sending...' : '📧 Send Email'}</button><button onClick={() => copyInviteLink(inv)} style={{ padding: '10px 16px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '13px', fontWeight: '600' }}>📋 Copy Link</button></div></div>)}</div>}{employees.map(emp => <div key={emp.id} style={styles.card}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}><div><p style={{ color: theme.text, fontWeight: '600', marginBottom: '4px' }}>{emp.name || emp.email}</p><p style={{ color: theme.textMuted, fontSize: '14px' }}>{emp.email}</p></div><div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>{emp.role === 'manager' && <span style={{ background: theme.primary, color: 'white', padding: '4px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '600' }}>Manager</span>}{emp.id !== user?.uid && <button onClick={() => setRemoveConfirm(emp.id)} style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>Remove</button>}</div></div><div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Tracking</span><button onClick={() => updateSettings(emp.id, { gpsTracking: !emp.settings?.gpsTracking })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.gpsTracking ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.gpsTracking ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Interval</span><select value={emp.settings?.gpsInterval || 10} onChange={e => updateSettings(emp.id, { gpsInterval: parseInt(e.target.value) })} style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}><option value={5}>5 min</option><option value={10}>10 min</option><option value={15}>15 min</option></select></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>Require Notes</span><button onClick={() => updateSettings(emp.id, { requireNotes: !emp.settings?.requireNotes })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.requireNotes ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.requireNotes ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div><div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}><span style={{ color: theme.textMuted, fontSize: '14px' }}>Chat Access</span><button onClick={() => updateSettings(emp.id, { chatEnabled: emp.settings?.chatEnabled === false })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: emp.settings?.chatEnabled !== false ? theme.success : '#cbd5e1', position: 'relative' }}><span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: emp.settings?.chatEnabled !== false ? '27px' : '3px', transition: 'left 0.2s' }} /></button></div></div></div>)}</div>}
 
-        {/* Timesheets - Nested Accordion with Edit & Finalize */}
+       {/* Timesheets - Mobile-style with inline editing */}
         {view === 'timesheets' && <div>
           <h1 style={{ color: theme.text, marginBottom: '16px', fontSize: isMobile ? '22px' : '28px' }}>Timesheets</h1>
           
@@ -1740,7 +1803,7 @@ export default function App() {
               const shiftCount = Object.values(weeks).reduce((sum, w) => sum + w.shifts.length, 0);
               
               return (
-                <div key={empId} style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
+                <div key={empId} style={{ ...styles.card, padding: 0, overflow: 'hidden', marginBottom: '12px' }}>
                   {/* Employee Row */}
                   <div onClick={() => toggleEmployee(empId)} style={{ padding: '16px 20px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: isExpanded ? theme.primary : theme.card }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -1788,52 +1851,123 @@ export default function App() {
                               </div>
                             </div>
                             
-                            {/* Shifts */}
+                            {/* Shifts - Mobile Style */}
                             {isWeekExpanded && (
-                              <div style={{ background: theme.bg }}>
+                              <div style={{ background: theme.cardAlt }}>
                                 {shifts.sort((a, b) => (b.clockIn?.toDate?.()?.getTime() || 0) - (a.clockIn?.toDate?.()?.getTime() || 0)).map(sh => {
-                                  const h = getHours(sh.clockIn, sh.clockOut);
-                                  const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
-                                  const t = calcTravel(sh.travelSegments || []);
-                                  const worked = (h * 60) - b.unpaid;
-                                  const isOpen = selectedShift === sh.id;
+                                  const shiftHours = getHours(sh.clockIn, sh.clockOut);
+                                  const breakAllocation = calcBreaks(sh.breaks || [], shiftHours, companySettings.paidRestMinutes);
+                                  const travelMinutes = calcTravel(sh.travelSegments || []);
+                                  const workingMinutes = (shiftHours * 60) - breakAllocation.unpaid;
                                   const f1 = getJobLogField(sh.jobLog, 'field1');
+                                  const isTimesheetEditing = timesheetEditingShiftId === sh.id;
+                                  const locationCount = (sh.locationHistory?.length || 0) + (sh.clockInLocation ? 1 : 0) + (sh.clockOutLocation ? 1 : 0);
                                   
                                   return (
-                                    <div key={sh.id} style={{ padding: '12px 20px', paddingLeft: '72px', borderBottom: `1px solid ${theme.cardBorder}`, cursor: 'pointer' }} onClick={() => setSelectedShift(isOpen ? null : sh.id)}>
-                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <div key={sh.id} style={{ background: theme.card, padding: '14px 16px', marginLeft: '24px', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                                      {/* Shift Header */}
+                                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
                                         <div>
-                                          <p style={{ color: theme.text, fontWeight: '500', margin: 0 }}>
+                                          <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>
                                             {fmtDate(sh.clockIn)}
-                                            {sh.editedAt && <span style={{ marginLeft: '8px', fontSize: '10px', background: theme.warningBg, color: theme.warning, padding: '2px 6px', borderRadius: '4px' }}>Edited</span>}
+                                            {sh.manualEntry && <span style={{ marginLeft: '8px', fontSize: '10px', background: theme.cardAlt, color: theme.textMuted, padding: '2px 6px', borderRadius: '4px' }}>Manual</span>}
+                                            {sh.editedAt && <span style={{ marginLeft: '8px', fontSize: '10px', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px' }}>Edited</span>}
                                             {sh.finalized && <span style={{ marginLeft: '8px', fontSize: '10px', background: theme.successBg, color: theme.success, padding: '2px 6px', borderRadius: '4px' }}>✓</span>}
                                           </p>
-                                          <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>{fmtTime(sh.clockIn)} - {sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}</p>
+                                          <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0 0' }}>
+                                            {fmtTime(sh.clockIn)} - {sh.clockOut ? fmtTime(sh.clockOut) : 'Active'}
+                                          </p>
                                         </div>
                                         <div style={{ textAlign: 'right' }}>
-                                          <p style={{ color: theme.text, fontWeight: '600', margin: 0 }}>{fmtDur(worked)}</p>
-                                          <p style={{ color: theme.textMuted, fontSize: '11px', margin: 0 }}>{b.paid}m paid, {b.unpaid}m unpaid{t > 0 && `, ${t}m travel`}</p>
+                                          <p style={{ color: theme.text, fontWeight: '700', fontSize: '16px', margin: 0 }}>{fmtDur(workingMinutes)}</p>
+                                          <p style={{ color: theme.textLight, fontSize: '11px', margin: '2px 0 0 0' }}>worked</p>
                                         </div>
                                       </div>
-                                      
-                                      {/* Expanded shift details */}
-                                      {isOpen && (
-                                        <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.cardBorder}` }} onClick={e => e.stopPropagation()}>
-                                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px', marginBottom: '12px' }}>
-                                            <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.textMuted, fontSize: '11px', margin: 0 }}>Clock In</p><p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: '4px 0 0 0' }}>{fmtTime(sh.clockIn)}</p></div>
-                                            <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.textMuted, fontSize: '11px', margin: 0 }}>Clock Out</p><p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: '4px 0 0 0' }}>{sh.clockOut ? fmtTime(sh.clockOut) : '-'}</p></div>
-                                            <div style={{ background: theme.successBg, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.success, fontSize: '11px', margin: 0 }}>Paid Break</p><p style={{ color: theme.success, fontWeight: '600', fontSize: '14px', margin: '4px 0 0 0' }}>{b.paid}m</p></div>
-                                            <div style={{ background: theme.warningBg, padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.warning, fontSize: '11px', margin: 0 }}>Unpaid Break</p><p style={{ color: theme.warning, fontWeight: '600', fontSize: '14px', margin: '4px 0 0 0' }}>{b.unpaid}m</p></div>
-                                            {t > 0 && <div style={{ background: theme.travelBg || '#dbeafe', padding: '10px', borderRadius: '8px', textAlign: 'center' }}><p style={{ color: theme.travel || '#2563eb', fontSize: '11px', margin: 0 }}>Travel</p><p style={{ color: theme.travel || '#2563eb', fontWeight: '600', fontSize: '14px', margin: '4px 0 0 0' }}>{t}m</p></div>}
+
+                                      {/* Summary Box - Mobile Style */}
+                                      <div style={{ background: theme.cardAlt, borderRadius: '8px', padding: '8px 10px', marginTop: '8px' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                          <span style={{ color: theme.textMuted }}>Total shift:</span>
+                                          <span style={{ color: theme.text }}>{fmtDur(shiftHours * 60)}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                          <span style={{ color: theme.success }}>Paid breaks:</span>
+                                          <span style={{ color: theme.success }}>{breakAllocation.paid}m</span>
+                                        </div>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                          <span style={{ color: theme.warning }}>Unpaid breaks:</span>
+                                          <span style={{ color: theme.warning }}>{breakAllocation.unpaid}m</span>
+                                        </div>
+                                        {travelMinutes > 0 && (
+                                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                            <span style={{ color: '#2563eb' }}>Travel time:</span>
+                                            <span style={{ color: '#2563eb' }}>{travelMinutes}m</span>
                                           </div>
-                                          {(sh.breaks?.length > 0) && <div style={{ marginBottom: '12px' }}><p style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '6px' }}>BREAKS</p>{sh.breaks?.map((br: any, i: number) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: theme.cardAlt, borderRadius: '6px', marginBottom: '4px', fontSize: '12px' }}><span style={{ color: theme.textMuted }}>{br.manualEntry ? 'Added manually' : `${fmtTime(br.startTime)} - ${br.endTime ? fmtTime(br.endTime) : 'ongoing'}`}</span><span style={{ color: theme.text, fontWeight: '600' }}>{br.durationMinutes || 0}m</span></div>)}</div>}
-                                          {((sh.travelSegments?.length ?? 0) > 0) && <div style={{ marginBottom: '12px' }}><p style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '6px' }}>TRAVEL</p>{sh.travelSegments?.map((tr: any, i: number) => <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 10px', background: theme.travelBg || '#dbeafe', borderRadius: '6px', marginBottom: '4px', fontSize: '12px' }}><span style={{ color: theme.travel || '#2563eb' }}>🚗 {fmtTime(tr.startTime)} - {tr.endTime ? fmtTime(tr.endTime) : 'ongoing'}</span><span style={{ color: theme.travel || '#2563eb', fontWeight: '600' }}>{tr.durationMinutes || 0}m</span></div>)}</div>}
-                                          {f1 && <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', marginBottom: '12px' }}><p style={{ color: theme.textMuted, fontSize: '11px', margin: 0 }}>📝 {companySettings.field1Label}</p><p style={{ color: theme.text, fontSize: '13px', margin: '4px 0 0 0' }}>{f1}</p></div>}
-                                          {sh.clockInPhotoUrl && <div style={{ marginBottom: '12px' }}><p style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '6px' }}>CLOCK-IN PHOTO</p><img src={sh.clockInPhotoUrl} alt="Clock in" style={{ width: '60px', height: '60px', borderRadius: '50%', objectFit: 'cover', border: `3px solid ${theme.success}` }} /></div>}
-                                          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                                            {(sh.locationHistory?.length > 0 || sh.clockInLocation) && <button onClick={() => setMapModal({ locations: sh.locationHistory || [], title: `${name} - ${fmtDateShort(sh.clockIn)}`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontSize: '12px' }}>📍 Full Map</button>}
-                                            <button onClick={() => setEditShiftModal(sh)} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>✏️ Edit Shift</button>
+                                        )}
+                                      </div>
+
+                                      {/* Notes */}
+                                      {f1 && <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '8px', margin: '8px 0 0 0' }}>📝 {f1}</p>}
+
+                                      {/* Clock-in Photo */}
+                                      {sh.clockInPhotoUrl && (
+                                        <div style={{ marginTop: '8px' }}>
+                                          <img src={sh.clockInPhotoUrl} alt="Clock in" style={{ width: '50px', height: '50px', borderRadius: '50%', objectFit: 'cover', border: `2px solid ${theme.success}` }} />
+                                        </div>
+                                      )}
+
+                                      {/* Map Button */}
+                                      {locationCount > 0 && (
+                                        <button onClick={() => setMapModal({ locations: sh.locationHistory || [], title: `${name} - ${fmtDateShort(sh.clockIn)}`, clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '8px', padding: '8px 12px', background: theme.cardAlt, border: `1px solid ${theme.primary}`, borderRadius: '8px', color: theme.primary, fontSize: '12px', fontWeight: '500', cursor: 'pointer', width: '100%', justifyContent: 'center' }}>
+                                          📍 View {locationCount} location point{locationCount !== 1 ? 's' : ''} on map
+                                        </button>
+                                      )}
+
+                                      {/* Inline Action Buttons - Mobile Style */}
+                                      {!isTimesheetEditing && timesheetDeleteConfirmId !== sh.id && (
+                                        <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                                          <button onClick={() => setEditShiftModal(sh)} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: theme.primary, border: `1px dashed ${theme.primary}`, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Edit Shift</button>
+                                          <button onClick={() => { setTimesheetEditingShiftId(sh.id); setTimesheetEditMode('breaks'); }} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: '#f59e0b', border: '1px dashed #fcd34d', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>+ Break</button>
+                                          <button onClick={() => { setTimesheetEditingShiftId(sh.id); setTimesheetEditMode('travel'); }} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: '#2563eb', border: '1px dashed #bfdbfe', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>+ Travel</button>
+                                          <button onClick={() => setTimesheetDeleteConfirmId(sh.id)} style={{ padding: '8px 12px', borderRadius: '8px', background: 'transparent', color: '#dc2626', border: '1px dashed #fca5a5', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Delete</button>
+                                        </div>
+                                      )}
+
+                                      {/* Delete Confirmation */}
+                                      {timesheetDeleteConfirmId === sh.id && (
+                                        <div style={{ marginTop: '10px', background: '#fee2e2', borderRadius: '8px', padding: '12px' }}>
+                                          <p style={{ color: '#991b1b', fontSize: '13px', fontWeight: '600', margin: '0 0 10px 0' }}>Delete this shift?</p>
+                                          <p style={{ color: '#b91c1c', fontSize: '12px', margin: '0 0 12px 0' }}>This cannot be undone.</p>
+                                          <div style={{ display: 'flex', gap: '8px' }}>
+                                            <button onClick={() => handleTimesheetDeleteShift(sh.id)} disabled={deletingTimesheetShift} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#dc2626', color: 'white', border: 'none', cursor: deletingTimesheetShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: deletingTimesheetShift ? 0.7 : 1 }}>{deletingTimesheetShift ? 'Deleting...' : 'Yes, Delete'}</button>
+                                            <button onClick={() => setTimesheetDeleteConfirmId(null)} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
                                           </div>
+                                        </div>
+                                      )}
+
+                                      {/* Add Break Panel */}
+                                      {isTimesheetEditing && timesheetEditMode === 'breaks' && (
+                                        <div style={{ marginTop: '10px', background: '#fefce8', borderRadius: '8px', padding: '12px' }}>
+                                          <p style={{ color: '#854d0e', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Break</p>
+                                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                                            {[10, 15, 20, 30, 45, 60].map(mins => (
+                                              <button key={mins} onClick={() => handleTimesheetAddBreak(sh.id, mins)} disabled={addingBreakToShift} style={{ padding: '8px 14px', borderRadius: '6px', background: '#fef08a', color: '#854d0e', border: '1px solid #fde047', cursor: addingBreakToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingBreakToShift ? 0.7 : 1 }}>+{mins}m</button>
+                                            ))}
+                                          </div>
+                                          <button onClick={closeTimesheetEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #fde047', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Done</button>
+                                        </div>
+                                      )}
+
+                                      {/* Add Travel Panel */}
+                                      {isTimesheetEditing && timesheetEditMode === 'travel' && (
+                                        <div style={{ marginTop: '10px', background: '#eff6ff', borderRadius: '8px', padding: '12px' }}>
+                                          <p style={{ color: '#1e40af', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Travel Time</p>
+                                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                                            {[10, 15, 20, 30, 45, 60].map(mins => (
+                                              <button key={mins} onClick={() => handleTimesheetAddTravel(sh.id, mins)} disabled={addingTravelToShift} style={{ padding: '8px 14px', borderRadius: '6px', background: '#dbeafe', color: '#1e40af', border: '1px solid #bfdbfe', cursor: addingTravelToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingTravelToShift ? 0.7 : 1 }}>+{mins}m</button>
+                                            ))}
+                                          </div>
+                                          <button onClick={closeTimesheetEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Done</button>
                                         </div>
                                       )}
                                     </div>
