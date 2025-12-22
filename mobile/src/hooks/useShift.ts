@@ -57,10 +57,12 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
   
   // Use ref for lastRecordedLocation to avoid stale closures in interval callback
   const lastRecordedLocationRef = useRef<Location | null>(null);
+  const lastSaveTimestampRef = useRef<number>(0);
 
   // GPS filtering constants
   const GPS_MAX_ACCURACY = 50; // meters - ignore readings with worse accuracy
   const GPS_MIN_DISTANCE = 10; // meters - minimum movement to record new point
+  const GPS_MIN_SAVE_INTERVAL = 30000; // ms - minimum 30 seconds between saves to prevent duplicates
 
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const storage = getStorage();
@@ -234,11 +236,19 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
           }
         }
         
+        // GPS FILTERING: Prevent rapid duplicate saves (within 30 seconds)
+        const now = Date.now();
+        if (now - lastSaveTimestampRef.current < GPS_MIN_SAVE_INTERVAL) {
+          console.log(`GPS: Skipping - too soon since last save (${Math.round((now - lastSaveTimestampRef.current) / 1000)}s < 30s)`);
+          return;
+        }
+        
         try {
           await updateDoc(doc(db, 'shifts', currentShift.id), {
             locationHistory: arrayUnion(location)
           });
           lastRecordedLocationRef.current = location;
+          lastSaveTimestampRef.current = Date.now();
           console.log(`GPS: Recorded location (accuracy: ${Math.round(location.accuracy)}m)`);
           
           // Process auto-travel detection if enabled
@@ -313,6 +323,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
         setStationaryStartTime(null);
         setLastKnownLocation(null);
         lastRecordedLocationRef.current = null;
+        lastSaveTimestampRef.current = 0;
       }
     });
     return () => unsubscribe();
@@ -369,7 +380,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
         userEmail: user.email,
         clockIn: Timestamp.now(),
         clockInLocation: location,
-        locationHistory: location ? [location] : [],
+        locationHistory: [],  // Don't duplicate clock-in location - it's already in clockInLocation
         breaks: [],
         travelSegments: [],
         jobLog: { field1: '', field2: '', field3: '' },
@@ -396,6 +407,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
       // Set last recorded location even without auto-travel (for GPS filtering)
       if (location) {
         lastRecordedLocationRef.current = location;
+        lastSaveTimestampRef.current = Date.now(); // Prevent GPS from saving again immediately
       }
     } catch (err: any) {
       setError(err.message);
