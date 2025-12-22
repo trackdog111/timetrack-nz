@@ -67,6 +67,7 @@ export default function App() {
     error: shiftError,
     setError: setShiftError,
     clockIn,
+    clockingIn,
     clockOut,
     startBreak,
     endBreak,
@@ -311,6 +312,7 @@ export default function App() {
           paidRestMinutes={labels.paidRestMinutes}
           photoVerification={settings.photoVerification || false}
           onClockIn={clockIn}
+          clockingIn={clockingIn}
           onClockOut={handleClockOut}
           onStartBreak={startBreak}
           onEndBreak={endBreak}

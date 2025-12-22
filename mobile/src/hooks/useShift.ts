@@ -50,6 +50,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const [field2, setField2] = useState('');
   const [field3, setField3] = useState('');
   const [error, setError] = useState('');
+  const [clockingIn, setClockingIn] = useState(false);
   
   // Auto-travel detection state
   const [anchorLocation, setAnchorLocation] = useState<Location | null>(null);
@@ -373,7 +374,19 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   // Clock in - NOW WITH OPTIONAL PHOTO AND AUTO-TRAVEL ANCHOR
   // UPDATED: Include companyId for multi-tenant
   const clockIn = async (photoBase64?: string) => {
-    if (!user || !companyId) return;  // UPDATED: Require companyId
+    if (!user) {
+      setError('Not logged in');
+      return false;
+    }
+    if (!companyId) {
+      setError('Loading company data... please try again');
+      return false;
+    }
+    if (clockingIn) return false; // Prevent double-clicks
+    
+    setClockingIn(true);
+    setError('');
+    
     try {
       const location = await getCurrentLocation();
       
@@ -413,8 +426,13 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
         lastRecordedLocationRef.current = location;
         lastSaveTimestampRef.current = Date.now(); // Prevent GPS from saving again immediately
       }
+      
+      setClockingIn(false);
+      return true;
     } catch (err: any) {
       setError(err.message);
+      setClockingIn(false);
+      return false;
     }
   };
 
@@ -914,6 +932,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     error,
     setError,
     clockIn,
+    clockingIn,
     clockOut,
     startBreak,
     endBreak,
