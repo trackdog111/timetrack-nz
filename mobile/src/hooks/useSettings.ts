@@ -52,6 +52,13 @@ export function useSettings(user: User | null) {
             paidRestMinutes: companyData.paidRestMinutes || defaultLabels.paidRestMinutes,
             payWeekEndDay: companyData.payWeekEndDay ?? defaultLabels.payWeekEndDay
           });
+          setSettings(prev => ({
+            ...prev,
+            photoVerification: companyData.photoVerification || false,
+            field1Enabled: companyData.field1Enabled !== false,  // defaults to true
+            field2Enabled: companyData.field2Enabled === true,   // defaults to false
+            field3Enabled: companyData.field3Enabled === true    // defaults to false
+          }));
         }
       } catch (err) {
         console.error('Error loading settings:', err);
@@ -73,7 +80,13 @@ export function useSettings(user: User | null) {
           paidRestMinutes: data.paidRestMinutes || defaultLabels.paidRestMinutes,
           payWeekEndDay: data.payWeekEndDay ?? defaultLabels.payWeekEndDay
         });
-        setSettings(prev => ({ ...prev, photoVerification: data.photoVerification || false }));
+        setSettings(prev => ({ 
+          ...prev, 
+          photoVerification: data.photoVerification || false,
+          field1Enabled: data.field1Enabled !== false,  // defaults to true
+          field2Enabled: data.field2Enabled === true,   // defaults to false
+          field3Enabled: data.field3Enabled === true    // defaults to false
+        }));
       }
     });
 
