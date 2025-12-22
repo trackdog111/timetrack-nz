@@ -18,6 +18,7 @@ interface ClockViewProps {
   paidRestMinutes: number;
   photoVerification: boolean;
   autoTravelEnabled?: boolean;
+  autoTravelActive?: boolean;
   onClockIn: (photoBase64?: string) => void;
   onClockOut: () => void;
   onStartBreak: () => void;
