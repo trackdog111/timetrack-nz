@@ -16,7 +16,9 @@ interface ClockViewProps {
   currentTravelStart: Date | null;
   settings: EmployeeSettings;
   paidRestMinutes: number;
-  photoVerification: boolean;  onClockIn: (photoBase64?: string) => void;
+  photoVerification: boolean;
+  autoTravelEnabled?: boolean;
+  onClockIn: (photoBase64?: string) => void;
   onClockOut: () => void;
   onStartBreak: () => void;
   onEndBreak: () => void;
