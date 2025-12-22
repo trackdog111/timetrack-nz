@@ -10,6 +10,23 @@ interface MapModalProps {
   clockOutLocation?: Location;
 }
 
+// Helper to get lat/lng from location (handles both formats)
+const getLat = (loc: any): number | null => {
+  if (typeof loc?.lat === 'number') return loc.lat;
+  if (typeof loc?.latitude === 'number') return loc.latitude;
+  return null;
+};
+
+const getLng = (loc: any): number | null => {
+  if (typeof loc?.lng === 'number') return loc.lng;
+  if (typeof loc?.longitude === 'number') return loc.longitude;
+  return null;
+};
+
+const isValidLocation = (loc: any): boolean => {
+  return getLat(loc) !== null && getLng(loc) !== null;
+};
+
 export function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutLocation }: MapModalProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
@@ -36,23 +53,29 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     breakEnd: 'Break End'
   };
   
-  const allPoints: { loc: Location, type: string, displayLat: number, displayLng: number }[] = [];
+  const allPoints: { loc: Location, type: string, displayLat: number, displayLng: number, actualLat: number, actualLng: number }[] = [];
   
-  if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
-    allPoints.push({ loc: clockInLocation, type: 'clockIn', displayLat: clockInLocation.latitude, displayLng: clockInLocation.longitude });
+  if (clockInLocation && isValidLocation(clockInLocation)) {
+    const lat = getLat(clockInLocation)!;
+    const lng = getLng(clockInLocation)!;
+    allPoints.push({ loc: clockInLocation, type: 'clockIn', displayLat: lat, displayLng: lng, actualLat: lat, actualLng: lng });
   }
   
   (locations || []).forEach(loc => {
-    if (!loc || !loc.latitude || !loc.longitude) return;
+    if (!isValidLocation(loc)) return;
+    const lat = getLat(loc)!;
+    const lng = getLng(loc)!;
     const type = loc.source || 'tracking';
-    allPoints.push({ loc, type, displayLat: loc.latitude, displayLng: loc.longitude });
+    allPoints.push({ loc, type, displayLat: lat, displayLng: lng, actualLat: lat, actualLng: lng });
   });
   
-  if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
-    allPoints.push({ loc: clockOutLocation, type: 'clockOut', displayLat: clockOutLocation.latitude, displayLng: clockOutLocation.longitude });
+  if (clockOutLocation && isValidLocation(clockOutLocation)) {
+    const lat = getLat(clockOutLocation)!;
+    const lng = getLng(clockOutLocation)!;
+    allPoints.push({ loc: clockOutLocation, type: 'clockOut', displayLat: lat, displayLng: lng, actualLat: lat, actualLng: lng });
   }
   
-  allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
+  allPoints.sort((a, b) => (a.loc.timestamp || 0) - (b.loc.timestamp || 0));
   
   const offsetAmount = 0.00002;
   for (let i = 1; i < allPoints.length; i++) {
@@ -131,7 +154,7 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     }).addTo(map);
     
     if (allPoints.length > 1) {
-      const pathCoords = allPoints.map(p => [p.loc.latitude, p.loc.longitude]);
+      const pathCoords = allPoints.map(p => [p.actualLat, p.actualLng]);
       L.polyline(pathCoords, { 
         color: '#6366f1', 
         weight: 3, 
@@ -168,29 +191,23 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
   if (allPoints.length === 0) return null;
   
   const uniqueTypes = [...new Set(allPoints.map(p => p.type))];
+  const lastPoint = allPoints[allPoints.length - 1];
   
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: theme.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '16px 20px', borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.card }}>
-        <h2 style={{ color: theme.text, margin: 0, fontSize: '18px' }}>{title}</h2>
-        <button onClick={onClose} style={{ background: theme.cardAlt, border: 'none', fontSize: '16px', cursor: 'pointer', color: theme.text, padding: '8px 16px', borderRadius: '8px', fontWeight: '600' }}>Close</button>
-      </div>
-      
-      <div style={{ padding: '12px 20px', background: theme.card, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-          {uniqueTypes.map(type => (
-            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors[type] || markerColors.tracking }}></span>
-              <span style={{ color: theme.textMuted, fontSize: '12px' }}>{markerLabels[type] || 'Location'}</span>
-            </div>
-          ))}
+      {/* Header */}
+      <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.card }}>
+        <div>
+          <h2 style={{ color: theme.text, margin: 0, fontSize: '16px', fontWeight: '600' }}>GPS Track</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#16a34a' }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '13px' }}>{title || 'Clock In'}</span>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          {allPoints.length > 0 && (
-            <span style={{ color: theme.textMuted, fontSize: '12px' }}>
-              📍 {allPoints[allPoints.length - 1].loc.latitude.toFixed(5)}, {allPoints[allPoints.length - 1].loc.longitude.toFixed(5)}
-            </span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+            📍 {lastPoint.actualLat.toFixed(5)}, {lastPoint.actualLng.toFixed(5)}
+          </span>
           <button
             onClick={() => setShowList(!showList)}
             style={{
@@ -206,9 +223,11 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
           >
             {showList ? 'Hide List' : 'Show List'}
           </button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '14px', cursor: 'pointer', color: theme.primary, fontWeight: '600' }}>Close</button>
         </div>
       </div>
       
+      {/* Map */}
       <div 
         ref={mapRef} 
         style={{ flex: 1, minHeight: '300px', background: '#e5e7eb' }} 
@@ -220,8 +239,9 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         )}
       </div>
       
+      {/* Location List */}
       {showList && (
-        <div style={{ maxHeight: '200px', overflowY: 'auto', background: theme.card, borderTop: `1px solid ${theme.cardBorder}` }}>
+        <div style={{ maxHeight: '40vh', overflowY: 'auto', background: theme.card, borderTop: `1px solid ${theme.cardBorder}` }}>
           {allPoints.map((point, i) => (
             <div 
               key={i} 
@@ -276,8 +296,8 @@ export function LocationMap({ locations, height = '200px' }: LocationMapProps) {
     );
   }
   
-  // Find valid locations with lat/lng
-  const validLocations = locations.filter(loc => loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number');
+  // Find valid locations with lat/lng (handles both formats)
+  const validLocations = locations.filter(loc => isValidLocation(loc));
   if (validLocations.length === 0) {
     return (
       <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
@@ -287,11 +307,11 @@ export function LocationMap({ locations, height = '200px' }: LocationMapProps) {
   }
   
   const lastLoc = validLocations[validLocations.length - 1];
+  const lat = getLat(lastLoc)!;
+  const lng = getLng(lastLoc)!;
   
   // Use static map image from OpenStreetMap tile server
   const zoom = 15;
-  const lat = lastLoc.latitude;
-  const lng = lastLoc.longitude;
   
   // Calculate tile coordinates
   const n = Math.pow(2, zoom);
@@ -343,7 +363,7 @@ export function LocationMap({ locations, height = '200px' }: LocationMapProps) {
         fontSize: '11px',
         fontWeight: '500'
       }}>
-        {validLocations.length} pts
+        {validLocations.length} {validLocations.length === 1 ? 'pt' : 'pts'}
       </div>
     </div>
   );

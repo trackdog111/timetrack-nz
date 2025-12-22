@@ -16,6 +16,34 @@ export function LiveView({ theme, isMobile, activeShifts, companySettings, getEm
     return (shift.travelSegments || []).some(t => !t.endTime);
   };
 
+  // Get all locations for a shift (including clockInLocation if not in history)
+  const getShiftLocations = (shift: Shift): Location[] => {
+    const locations: Location[] = [];
+    
+    // Add clock-in location first if it exists and is valid
+    if (shift.clockInLocation && (shift.clockInLocation.latitude || (shift.clockInLocation as any).lat)) {
+      locations.push(shift.clockInLocation);
+    }
+    
+    // Add location history
+    if (shift.locationHistory?.length > 0) {
+      shift.locationHistory.forEach(loc => {
+        // Get coordinates (handle both formats)
+        const locLat = loc.latitude || (loc as any).lat;
+        const locLng = loc.longitude || (loc as any).lng;
+        const clockInLat = shift.clockInLocation?.latitude || (shift.clockInLocation as any)?.lat;
+        const clockInLng = shift.clockInLocation?.longitude || (shift.clockInLocation as any)?.lng;
+        
+        // Avoid duplicates with clockInLocation
+        if (!shift.clockInLocation || locLat !== clockInLat || locLng !== clockInLng) {
+          locations.push(loc);
+        }
+      });
+    }
+    
+    return locations;
+  };
+
   const styles = {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', border: `1px solid ${theme.cardBorder}` }
   };
@@ -37,6 +65,8 @@ export function LiveView({ theme, isMobile, activeShifts, companySettings, getEm
             const t = calcTravel(sh.travelSegments || []);
             const isTraveling = hasActiveTravel(sh);
             const name = getEmployeeName(sh.userId, sh.userEmail);
+            const shiftLocations = getShiftLocations(sh);
+            const hasLocation = shiftLocations.length > 0;
             
             return (
               <div key={sh.id} style={styles.card}>
@@ -73,14 +103,14 @@ export function LiveView({ theme, isMobile, activeShifts, companySettings, getEm
                   )}
                 </div>
                 
-                {sh.locationHistory?.length > 0 && (
+                {hasLocation && (
                   <div>
-                    <LocationMap locations={sh.locationHistory} height="150px" />
+                    <LocationMap locations={shiftLocations} height="150px" />
                     <button 
-                      onClick={() => setMapModal({ locations: sh.locationHistory, title: name, clockInLocation: sh.clockInLocation })} 
+                      onClick={() => setMapModal({ locations: shiftLocations, title: name, clockInLocation: sh.clockInLocation })} 
                       style={{ marginTop: '8px', padding: '8px', borderRadius: '6px', border: `1px solid ${theme.cardBorder}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', width: '100%' }}
                     >
-                      View Map ({sh.locationHistory.length} pts)
+                      View Map ({shiftLocations.length} {shiftLocations.length === 1 ? 'pt' : 'pts'})
                     </button>
                   </div>
                 )}
