@@ -26,6 +26,8 @@ interface MyTimesheetViewProps {
   employees: Employee[];
   myClockIn: () => void;
   myClockOut: () => void;
+  clockingIn: boolean;
+  clockingOut: boolean;
   myStartBreak: () => void;
   myEndBreak: () => void;
   myStartTravel: () => void;
@@ -131,7 +133,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
   const {
     theme, isMobile, user, myShift, myShiftHistory, onBreak, breakStart, myTraveling, myTravelStart,
     myField1, setMyField1, saveMyField1, myField2, setMyField2, saveMyField2, myField3, setMyField3, saveMyField3, myCurrentLocation, companySettings, employees,
-    myClockIn, myClockOut, myStartBreak, myEndBreak, myStartTravel, myEndTravel, myAddBreak,
+    myClockIn, myClockOut, clockingIn, clockingOut, myStartBreak, myEndBreak, myStartTravel, myEndTravel, myAddBreak,
     showAddManualShift, setShowAddManualShift, manualDate, setManualDate,
     manualStartHour, setManualStartHour, manualStartMinute, setManualStartMinute, manualStartAmPm, setManualStartAmPm,
     manualEndHour, setManualEndHour, manualEndMinute, setManualEndMinute, manualEndAmPm, setManualEndAmPm,
@@ -353,8 +355,8 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
                 <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px', textAlign: 'center' }}>
                   Ready to start?
                 </h2>
-                <button onClick={myClockIn} style={{ ...styles.btnLarge, width: '100%' }}>
-                  ⏱️ Clock In
+                <button onClick={myClockIn} disabled={clockingIn} style={{ ...styles.btnLarge, width: '100%', opacity: clockingIn ? 0.7 : 1, cursor: clockingIn ? 'not-allowed' : 'pointer' }}>
+                  {clockingIn ? '⏳ Clocking In...' : '⏱️ Clock In'}
                 </button>
                 <button
                   onClick={() => setShowAddManualShift(!showAddManualShift)}
@@ -414,8 +416,8 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
 
                 {/* Clock Out button */}
                 {!onBreak && !myTraveling && (
-                  <button onClick={myClockOut} style={{ ...styles.btnDanger, width: '100%', padding: '20px', fontSize: '18px' }}>
-                    Clock Out
+                  <button onClick={myClockOut} disabled={clockingOut} style={{ ...styles.btnDanger, width: '100%', padding: '20px', fontSize: '18px', opacity: clockingOut ? 0.7 : 1, cursor: clockingOut ? 'not-allowed' : 'pointer' }}>
+                    {clockingOut ? '⏳ Clocking Out...' : 'Clock Out'}
                   </button>
                 )}
               </>
