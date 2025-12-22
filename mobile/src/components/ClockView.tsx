@@ -16,8 +16,7 @@ interface ClockViewProps {
   currentTravelStart: Date | null;
   settings: EmployeeSettings;
   paidRestMinutes: number;
-  photoVerification: boolean;
-  onClockIn: (photoBase64?: string) => void;
+  photoVerification: boolean;  onClockIn: (photoBase64?: string) => void;
   onClockOut: () => void;
   onStartBreak: () => void;
   onEndBreak: () => void;
@@ -38,9 +37,6 @@ interface ClockViewProps {
     notes: string
   ) => Promise<boolean>;
   showToast: (message: string) => void;
-  // Auto-travel detection
-  autoTravelEnabled?: boolean;
-  autoTravelActive?: boolean;
 }
 
 export function ClockView({
@@ -63,9 +59,7 @@ export function ClockView({
   onAddPresetBreak,
   onDeleteBreak,
   onAddManualShift,
-  showToast,
-  autoTravelEnabled = false,
-  autoTravelActive = false
+  showToast
 }: ClockViewProps) {
   const styles = createStyles(theme);
   
@@ -416,63 +410,6 @@ export function ClockView({
 
   return (
     <div style={{ padding: '16px' }}>
-      {/* Auto-Travel Detection Indicator */}
-      {currentShift && autoTravelEnabled && (
-        <div style={{ 
-          background: autoTravelActive ? '#dbeafe' : 'linear-gradient(135deg, #dbeafe 0%, #e0e7ff 100%)',
-          border: `1px solid ${autoTravelActive ? '#3b82f6' : '#a5b4fc'}`,
-          borderRadius: '12px', 
-          padding: '12px 16px', 
-          marginBottom: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between'
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '18px' }}>{autoTravelActive ? '🚗' : '📍'}</span>
-            <div>
-              <p style={{ color: '#1e40af', fontWeight: '600', fontSize: '14px', margin: 0 }}>
-                {autoTravelActive ? 'Auto-travel active' : 'Auto-travel detection on'}
-              </p>
-              <p style={{ color: '#3b82f6', fontSize: '12px', margin: '2px 0 0 0' }}>
-                {autoTravelActive 
-                  ? 'Tracking your journey...' 
-                  : `Monitoring every ${settings.autoTravelInterval || 2}min · ${settings.detectionDistance || 200}m threshold`
-                }
-              </p>
-            </div>
-          </div>
-          <span style={{ 
-            background: autoTravelActive ? '#3b82f6' : '#6366f1',
-            color: 'white',
-            padding: '4px 8px',
-            borderRadius: '6px',
-            fontSize: '11px',
-            fontWeight: '600'
-          }}>
-            {autoTravelActive ? 'ACTIVE' : '⚡ GPS'}
-          </span>
-        </div>
-      )}
-      
-      {/* Battery warning for auto-travel */}
-      {currentShift && autoTravelEnabled && (
-        <div style={{ 
-          background: theme.warningBg,
-          borderRadius: '8px', 
-          padding: '8px 12px', 
-          marginBottom: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px'
-        }}>
-          <span style={{ fontSize: '14px' }}>🔋</span>
-          <p style={{ color: theme.warning, fontSize: '12px', margin: 0 }}>
-            Auto-travel uses more battery due to frequent GPS checks
-          </p>
-        </div>
-      )}
-
       {/* Clock In/Out Card */}
       <div style={styles.card}>
         {!currentShift ? (
@@ -541,14 +478,7 @@ export function ClockView({
 
             {traveling && currentTravelStart && (
               <div style={{ background: '#dbeafe', borderRadius: '12px', padding: '16px', marginBottom: '16px', textAlign: 'center' }}>
-                <p style={{ color: '#1d4ed8', fontWeight: '600', marginBottom: '4px' }}>
-                  🚗 {autoTravelActive ? 'Auto-Traveling' : 'Traveling'}
-                </p>
-                {autoTravelActive && (
-                  <p style={{ color: '#3b82f6', fontSize: '11px', marginBottom: '8px' }}>
-                    Will end when you stop for 5min or return
-                  </p>
-                )}
+                <p style={{ color: '#1d4ed8', fontWeight: '600', marginBottom: '4px' }}>🚗 Traveling</p>
                 <p style={{ color: '#2563eb', fontSize: '24px', fontWeight: '700' }}>
                   {fmtDur(Math.round((Date.now() - currentTravelStart.getTime()) / 60000))}
                 </p>
@@ -817,11 +747,11 @@ export function ClockView({
         </div>
       )}
 
-      {/* Quick Add Break */}
+      {/* Add Break */}
       {currentShift && !onBreak && !traveling && (
         <div style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-            <h3 style={{ color: theme.text, fontWeight: '600', margin: 0 }}>Quick Add Break</h3>
+            <h3 style={{ color: theme.text, fontWeight: '600', margin: 0 }}>Add Break</h3>
             {totalBreakMinutes > 0 && (
               <span style={{ background: theme.warningBg, color: theme.warningText, padding: '4px 10px', borderRadius: '12px', fontSize: '13px', fontWeight: '600' }}>
                 Total: {fmtDur(totalBreakMinutes)}
