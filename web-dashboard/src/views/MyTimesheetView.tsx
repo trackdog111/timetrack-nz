@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Shift, Theme, Employee, CompanySettings, Location, EmployeeSettings } from '../shared/types';
 import { getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, getJobLogField } from '../shared/utils';
 
@@ -79,6 +79,48 @@ interface MyTimesheetViewProps {
   setMapModal: (modal: { locations: Location[], title: string, clockInLocation?: Location, clockOutLocation?: Location } | null) => void;
 }
 
+// Helper: Get break entitlements based on shift hours
+function getBreakEntitlements(shiftHours: number, paidRestMinutes: number = 10) {
+  let paidBreaks = 0;
+  let unpaidBreaks = 0;
+  
+  if (shiftHours >= 2) paidBreaks = 1;
+  if (shiftHours >= 4) unpaidBreaks = 1;
+  if (shiftHours >= 6) paidBreaks = 2;
+  if (shiftHours >= 8) unpaidBreaks = 2;
+  
+  return {
+    paidBreaks,
+    unpaidBreaks,
+    paidMinutes: paidBreaks * paidRestMinutes,
+    unpaidMinutes: unpaidBreaks * 30
+  };
+}
+
+// Helper: Get week ending date based on pay week end day
+function getWeekEndingDate(shiftDate: Date, payWeekEndDay: number): Date {
+  const date = new Date(shiftDate);
+  const currentDay = date.getDay();
+  let daysUntilEnd = payWeekEndDay - currentDay;
+  if (daysUntilEnd < 0) daysUntilEnd += 7;
+  date.setDate(date.getDate() + daysUntilEnd);
+  date.setHours(23, 59, 59, 999);
+  return date;
+}
+
+// Helper: Get week key for grouping
+function getWeekEndingKey(shiftDate: Date, payWeekEndDay: number): string {
+  const weekEnd = getWeekEndingDate(shiftDate, payWeekEndDay);
+  return weekEnd.toISOString().split('T')[0];
+}
+
+// Format week ending for display
+function fmtWeekEnding(date: Date): string {
+  return date.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
 export function MyTimesheetView(props: MyTimesheetViewProps) {
   const {
     theme, isMobile, user, myShift, myShiftHistory, onBreak, breakStart, myTraveling, myTravelStart,
@@ -97,29 +139,167 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
     updateSettings, setMapModal
   } = props;
 
-  // Tab state - matches mobile navigation
+  // Tab state
   const [activeTab, setActiveTab] = useState<'clock' | 'history'>('clock');
+  
+  // Custom break input
+  const [showCustomBreak, setShowCustomBreak] = useState(false);
+  const [customBreakMinutes, setCustomBreakMinutes] = useState('');
+  
+  // Break rules expanded
+  const [showBreakRules, setShowBreakRules] = useState(false);
+  
+  // History date filters
+  const [filterStart, setFilterStart] = useState('');
+  const [filterEnd, setFilterEnd] = useState('');
+  const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
 
   const styles = {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
     input: { padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
-    // Primary button - filled
     btn: { padding: '12px 20px', borderRadius: '10px', border: 'none', background: theme.primary, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
-    // Secondary button - outline style (matching mobile btnSecondary)
     btnSecondary: { padding: '12px 20px', borderRadius: '10px', border: `2px solid ${theme.warning}`, background: theme.warningBg, color: theme.warning, cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
     btnDanger: { padding: '12px 20px', borderRadius: '10px', border: 'none', background: theme.danger, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
-    // Large button for main actions
     btnLarge: { padding: '20px', borderRadius: '12px', border: 'none', background: theme.success, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '18px' }
   };
 
   const myEmployee = employees.find(e => e.id === user?.uid);
+  const paidRestMinutes = companySettings.paidRestMinutes || 10;
+  const payWeekEndDay = companySettings.payWeekEndDay ?? 5; // Default Friday
+  
+  // Current shift calculations
+  const shiftHours = myShift ? getHours(myShift.clockIn) : 0;
   const totalBreakMinutes = myShift?.breaks?.reduce((s, b) => s + (b.durationMinutes || 0), 0) || 0;
+  const entitlements = getBreakEntitlements(shiftHours, paidRestMinutes);
+  const breakAllocation = myShift ? calcBreaks(myShift.breaks || [], shiftHours, paidRestMinutes) : null;
+
+  // Date filter helpers
+  const setThisWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - dayOfWeek);
+    setFilterStart(startOfWeek.toISOString().split('T')[0]);
+    setFilterEnd(now.toISOString().split('T')[0]);
+  };
+
+  const setLastWeek = () => {
+    const now = new Date();
+    const dayOfWeek = now.getDay();
+    const endOfLastWeek = new Date(now);
+    endOfLastWeek.setDate(now.getDate() - dayOfWeek - 1);
+    const startOfLastWeek = new Date(endOfLastWeek);
+    startOfLastWeek.setDate(endOfLastWeek.getDate() - 6);
+    setFilterStart(startOfLastWeek.toISOString().split('T')[0]);
+    setFilterEnd(endOfLastWeek.toISOString().split('T')[0]);
+  };
+
+  const setThisMonth = () => {
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    setFilterStart(startOfMonth.toISOString().split('T')[0]);
+    setFilterEnd(now.toISOString().split('T')[0]);
+  };
+
+  const setLastMonth = () => {
+    const now = new Date();
+    const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
+    setFilterStart(startOfLastMonth.toISOString().split('T')[0]);
+    setFilterEnd(endOfLastMonth.toISOString().split('T')[0]);
+  };
+
+  const clearFilter = () => {
+    setFilterStart('');
+    setFilterEnd('');
+  };
+
+  const toggleWeek = (weekKey: string) => {
+    const newExpanded = new Set(expandedWeeks);
+    if (newExpanded.has(weekKey)) {
+      newExpanded.delete(weekKey);
+    } else {
+      newExpanded.add(weekKey);
+    }
+    setExpandedWeeks(newExpanded);
+  };
+
+  // Filter and group shifts by week
+  const filteredGroupedShifts = useMemo(() => {
+    let filtered = myShiftHistory;
+    
+    if (filterStart) {
+      const start = new Date(filterStart);
+      start.setHours(0, 0, 0, 0);
+      filtered = filtered.filter(s => {
+        const shiftDate = s.clockIn?.toDate?.();
+        return shiftDate && shiftDate >= start;
+      });
+    }
+    
+    if (filterEnd) {
+      const end = new Date(filterEnd);
+      end.setHours(23, 59, 59, 999);
+      filtered = filtered.filter(s => {
+        const shiftDate = s.clockIn?.toDate?.();
+        return shiftDate && shiftDate <= end;
+      });
+    }
+
+    // Group by week
+    const grouped: Record<string, { weekEnd: Date, shifts: Shift[], totalMinutes: number }> = {};
+    
+    filtered.forEach(shift => {
+      const shiftDate = shift.clockIn?.toDate?.();
+      if (!shiftDate) return;
+      
+      const weekKey = getWeekEndingKey(shiftDate, payWeekEndDay);
+      
+      if (!grouped[weekKey]) {
+        grouped[weekKey] = {
+          weekEnd: getWeekEndingDate(shiftDate, payWeekEndDay),
+          shifts: [],
+          totalMinutes: 0
+        };
+      }
+      
+      grouped[weekKey].shifts.push(shift);
+      
+      const h = getHours(shift.clockIn, shift.clockOut);
+      const b = calcBreaks(shift.breaks || [], h, paidRestMinutes);
+      grouped[weekKey].totalMinutes += (h * 60) - b.unpaid;
+    });
+
+    // Sort weeks descending
+    const sortedKeys = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
+    const result: Record<string, { weekEnd: Date, shifts: Shift[], totalMinutes: number }> = {};
+    sortedKeys.forEach(key => {
+      result[key] = grouped[key];
+      // Sort shifts within week descending
+      result[key].shifts.sort((a, b) => {
+        const dateA = a.clockIn?.toDate?.()?.getTime() || 0;
+        const dateB = b.clockIn?.toDate?.()?.getTime() || 0;
+        return dateB - dateA;
+      });
+    });
+    
+    return result;
+  }, [myShiftHistory, filterStart, filterEnd, payWeekEndDay, paidRestMinutes]);
+
+  const handleAddCustomBreak = () => {
+    const mins = parseInt(customBreakMinutes);
+    if (!isNaN(mins) && mins > 0) {
+      myAddBreak(mins);
+      setCustomBreakMinutes('');
+      setShowCustomBreak(false);
+    }
+  };
 
   return (
     <div>
       <h1 style={{ color: theme.text, marginBottom: '16px', fontSize: isMobile ? '22px' : '28px' }}>My Timesheet</h1>
       
-      {/* Tab Navigation - matching mobile style */}
+      {/* Tab Navigation */}
       <div style={{ display: 'flex', marginBottom: '20px', background: theme.cardAlt, borderRadius: '12px', padding: '4px' }}>
         <button
           onClick={() => setActiveTab('clock')}
@@ -136,7 +316,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
             boxShadow: activeTab === 'clock' ? '0 2px 4px rgba(0,0,0,0.1)' : 'none'
           }}
         >
-          ⏱️ Clock In/Out
+          ⏱️ {myShift ? 'Live' : 'Clock In/Out'}
         </button>
         <button
           onClick={() => setActiveTab('history')}
@@ -184,11 +364,11 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
                   <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '4px' }}>Clocked in at</p>
                   <p style={{ color: theme.text, fontSize: '28px', fontWeight: '700' }}>{fmtTime(myShift.clockIn)}</p>
                   <p style={{ color: theme.success, fontSize: '16px', fontWeight: '600', marginTop: '8px' }}>
-                    {fmtDur(getHours(myShift.clockIn) * 60)} worked
+                    {fmtDur(shiftHours * 60)} worked
                   </p>
                 </div>
 
-                {/* Break/Travel buttons - matching mobile layout */}
+                {/* Break/Travel buttons - Orange Start Break */}
                 {!onBreak && !myTraveling && (
                   <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
                     <button onClick={myStartBreak} style={{ ...styles.btnSecondary, flex: 1 }}>
@@ -236,7 +416,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
             )}
           </div>
 
-          {/* Add Break Card - matching mobile grid layout */}
+          {/* Add Break Card - with Custom minutes */}
           {myShift && !onBreak && !myTraveling && (
             <div style={styles.card}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
@@ -248,7 +428,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
                 )}
               </div>
               <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Forgot to start timer? Add break time:</p>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px', marginBottom: '12px' }}>
                 {[10, 15, 20, 30].map(mins => (
                   <button
                     key={mins}
@@ -259,69 +439,165 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
                   </button>
                 ))}
               </div>
+              
+              {/* Custom minutes - matching mobile */}
+              {!showCustomBreak ? (
+                <button
+                  onClick={() => setShowCustomBreak(true)}
+                  style={{ width: '100%', padding: '12px', borderRadius: '10px', background: 'transparent', color: theme.textMuted, border: `1px dashed ${theme.cardBorder}`, cursor: 'pointer' }}
+                >
+                  + Custom minutes
+                </button>
+              ) : (
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <input
+                    type="number"
+                    placeholder="Minutes"
+                    value={customBreakMinutes}
+                    onChange={(e) => setCustomBreakMinutes(e.target.value)}
+                    style={{ ...styles.input, flex: 1 }}
+                    min="1"
+                    max="120"
+                  />
+                  <button onClick={handleAddCustomBreak} style={{ ...styles.btn, padding: '12px 20px' }}>Add</button>
+                  <button
+                    onClick={() => { setShowCustomBreak(false); setCustomBreakMinutes(''); }}
+                    style={{ padding: '12px', borderRadius: '10px', background: theme.cardAlt, color: theme.textMuted, border: 'none', cursor: 'pointer' }}
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
-          {/* Break & Travel Summary */}
-          {myShift && ((myShift.breaks || []).length > 0 || (myShift.travelSegments || []).length > 0) && (
+          {/* Break & Travel Summary - matching mobile */}
+          {myShift && breakAllocation && (
             <div style={styles.card}>
               <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '12px' }}>Break & Travel Summary</h3>
               
-              {/* Breaks list */}
-              {(myShift.breaks || []).length > 0 && (
-                <>
-                  <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>BREAKS</p>
-                  {myShift.breaks.map((b, i) => (
-                    <div key={`break-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
-                      <span style={{ color: theme.textMuted, fontSize: '14px' }}>
-                        {b.manualEntry ? `Break ${i + 1} (added)` : `Break ${i + 1}`}
-                      </span>
-                      <span style={{ color: theme.text, fontWeight: '600' }}>{b.durationMinutes || 0}m</span>
-                    </div>
-                  ))}
-                </>
-              )}
-
-              {/* Travel list */}
-              {(myShift.travelSegments || []).length > 0 && (
-                <>
-                  <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '16px', marginBottom: '8px', fontWeight: '600' }}>TRAVEL</p>
-                  {myShift.travelSegments!.map((t, i) => (
-                    <div key={`travel-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
-                      <span style={{ color: theme.textMuted, fontSize: '14px' }}>🚗 Travel {i + 1}</span>
-                      <span style={{ color: '#2563eb', fontWeight: '600' }}>{t.durationMinutes || 0}m</span>
-                    </div>
-                  ))}
-                </>
-              )}
-
-              {/* Totals */}
-              <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '12px', marginTop: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
-                  <span style={{ color: theme.warning }}>Total breaks:</span>
-                  <span style={{ color: theme.warning, fontWeight: '600' }}>{totalBreakMinutes}m</span>
-                </div>
-                {calcTravel(myShift.travelSegments || []) > 0 && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
-                    <span style={{ color: '#2563eb' }}>Total travel:</span>
-                    <span style={{ color: '#2563eb', fontWeight: '600' }}>{calcTravel(myShift.travelSegments || [])}m</span>
-                  </div>
+              {/* Entitlements info */}
+              <div style={{ background: theme.cardAlt, borderRadius: '10px', padding: '12px', marginBottom: '12px' }}>
+                <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '4px' }}>
+                  Your entitlement for {fmtDur(shiftHours * 60)} shift:
+                </p>
+                <p style={{ color: theme.text, fontSize: '14px' }}>
+                  {entitlements.paidBreaks}× paid rest ({entitlements.paidMinutes}m) + {entitlements.unpaidBreaks}× unpaid meal ({entitlements.unpaidMinutes}m)
+                </p>
+                {paidRestMinutes > 10 && (
+                  <p style={{ color: theme.success, fontSize: '12px', marginTop: '4px' }}>
+                    ✨ Enhanced: {paidRestMinutes}min paid rest breaks
+                  </p>
                 )}
               </div>
+
+              {(myShift.breaks || []).length === 0 && (myShift.travelSegments || []).length === 0 && (
+                <p style={{ color: theme.textLight, fontSize: '14px', marginBottom: '12px' }}>No breaks or travel recorded yet</p>
+              )}
+
+              {((myShift.breaks || []).length > 0 || (myShift.travelSegments || []).length > 0) && (
+                <>
+                  {/* Breaks list */}
+                  {(myShift.breaks || []).length > 0 && (
+                    <>
+                      <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>BREAKS</p>
+                      {myShift.breaks.map((b, i) => (
+                        <div key={`break-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                          <span style={{ color: theme.textMuted, fontSize: '14px' }}>
+                            {b.manualEntry ? `Break ${i + 1} (added)` : `Break ${i + 1}`}
+                          </span>
+                          <span style={{ color: theme.text, fontWeight: '600' }}>{b.durationMinutes || 0}m</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Travel list */}
+                  {(myShift.travelSegments || []).length > 0 && (
+                    <>
+                      <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '16px', marginBottom: '8px', fontWeight: '600' }}>TRAVEL</p>
+                      {myShift.travelSegments!.map((t, i) => (
+                        <div key={`travel-${i}`} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
+                          <span style={{ color: theme.textMuted, fontSize: '14px' }}>🚗 Travel {i + 1}</span>
+                          <span style={{ color: '#2563eb', fontWeight: '600' }}>{t.durationMinutes || 0}m</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+
+                  {/* Totals */}
+                  <div style={{ borderTop: `1px solid ${theme.cardBorder}`, paddingTop: '12px', marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
+                      <span style={{ color: theme.success }}>Paid breaks:</span>
+                      <span style={{ color: theme.success, fontWeight: '600' }}>{breakAllocation.paid}m</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px', marginBottom: '4px' }}>
+                      <span style={{ color: theme.warning }}>Unpaid breaks:</span>
+                      <span style={{ color: theme.warning, fontWeight: '600' }}>{breakAllocation.unpaid}m</span>
+                    </div>
+                    {calcTravel(myShift.travelSegments || []) > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '14px' }}>
+                        <span style={{ color: '#2563eb' }}>Travel time:</span>
+                        <span style={{ color: '#2563eb', fontWeight: '600' }}>{calcTravel(myShift.travelSegments || [])}m</span>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           )}
+
+          {/* NZ Break Rules - collapsible */}
+          <div style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
+            <button
+              onClick={() => setShowBreakRules(!showBreakRules)}
+              style={{
+                width: '100%',
+                padding: '16px 20px',
+                background: 'transparent',
+                border: 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                cursor: 'pointer'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: theme.primary }}>ℹ️</span>
+                <span style={{ color: theme.text, fontWeight: '600' }}>NZ Break Rules</span>
+                {paidRestMinutes > 10 && (
+                  <span style={{ background: theme.successBg, color: theme.success, padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>Enhanced</span>
+                )}
+              </div>
+              <span style={{ color: theme.textMuted }}>{showBreakRules ? '▲' : '▼'}</span>
+            </button>
+            
+            {showBreakRules && (
+              <div style={{ padding: '0 20px 20px', borderTop: `1px solid ${theme.cardBorder}` }}>
+                <div style={{ paddingTop: '16px' }}>
+                  <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Under NZ Employment Relations Act:</p>
+                  <div style={{ fontSize: '13px', color: theme.text }}>
+                    <p style={{ marginBottom: '8px' }}>• 2-4 hours: 1× {paidRestMinutes}min paid rest</p>
+                    <p style={{ marginBottom: '8px' }}>• 4-6 hours: + 1× 30min unpaid meal</p>
+                    <p style={{ marginBottom: '8px' }}>• 6-8 hours: + 2nd {paidRestMinutes}min paid rest</p>
+                    <p style={{ marginBottom: '0' }}>• 8+ hours: + 2nd 30min unpaid meal</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Notes */}
           {myShift && (
             <div style={styles.card}>
-              <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label}</label>
+              <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label || 'Notes'}</label>
               <textarea value={myField1} onChange={e => setMyField1(e.target.value)} onBlur={saveMyField1} style={{ ...styles.input, minHeight: '80px', resize: 'vertical' }} />
             </div>
           )}
 
           {/* Current Location */}
           {myShift && myCurrentLocation && (
-            <div style={{ ...styles.card, marginTop: '16px' }}>
+            <div style={styles.card}>
               <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '8px' }}>📍 Current Location</h3>
               <p style={{ color: theme.textMuted, fontSize: '14px' }}>
                 {myCurrentLocation.latitude.toFixed(6)}, {myCurrentLocation.longitude.toFixed(6)}
@@ -332,7 +608,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
             </div>
           )}
 
-          {/* Map button for current shift */}
+          {/* Map button */}
           {myShift && myShift.locationHistory && myShift.locationHistory.length > 0 && (
             <button 
               onClick={() => setMapModal({ locations: myShift.locationHistory, title: 'My Current Shift', clockInLocation: myShift.clockInLocation })} 
@@ -342,7 +618,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
             </button>
           )}
 
-          {/* Auto-Travel Settings */}
+          {/* Auto-Travel Settings - Dashboard only */}
           {myEmployee && (
             <div style={{ ...styles.card, marginTop: '16px' }}>
               <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>🚗 Auto-Travel Settings</h3>
@@ -374,11 +650,6 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
                   </>
                 )}
               </div>
-              {myEmployee.settings?.autoTravel && (
-                <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '12px' }}>
-                  ⚠️ Auto-travel uses more battery. Travel will start when you move {myEmployee.settings?.detectionDistance || 200}m from your clock-in location.
-                </p>
-              )}
             </div>
           )}
 
@@ -458,7 +729,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
 
               {/* Notes */}
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label}</label>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label || 'Notes'}</label>
                 <textarea value={manualNotes} onChange={e => setManualNotes(e.target.value)} style={{ ...styles.input, minHeight: '60px', resize: 'vertical' }} />
               </div>
 
@@ -473,165 +744,235 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
       {/* ============ HISTORY TAB ============ */}
       {activeTab === 'history' && (
         <>
-          <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>Shift History</h2>
+          <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '12px' }}>Shift History</h2>
           
-          {myShiftHistory.length === 0 ? (
+          {/* Date Filter Card - matching mobile */}
+          <div style={{ ...styles.card, marginBottom: '16px' }}>
+            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '12px' }}>
+              <button onClick={setThisWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardAlt}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>This Week</button>
+              <button onClick={setLastWeek} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardAlt}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Last Week</button>
+              <button onClick={setThisMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardAlt}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>This Month</button>
+              <button onClick={setLastMonth} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.cardAlt}`, background: theme.cardAlt, color: theme.text, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Last Month</button>
+            </div>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'end' }}>
+              <div style={{ flex: 1, minWidth: '120px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>From</label>
+                <input type="date" value={filterStart} onChange={e => setFilterStart(e.target.value)} style={{ ...styles.input }} />
+              </div>
+              <div style={{ flex: 1, minWidth: '120px' }}>
+                <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>To</label>
+                <input type="date" value={filterEnd} onChange={e => setFilterEnd(e.target.value)} style={{ ...styles.input }} />
+              </div>
+              {(filterStart || filterEnd) && (
+                <button onClick={clearFilter} style={{ padding: '10px 16px', borderRadius: '8px', border: `1px solid ${theme.danger}`, background: 'transparent', color: theme.danger, cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}>Clear</button>
+              )}
+            </div>
+          </div>
+
+          <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
+            Week ends on {weekDayNames[payWeekEndDay]}
+          </p>
+
+          {Object.keys(filteredGroupedShifts).length === 0 ? (
             <div style={{ ...styles.card, textAlign: 'center' }}>
               <p style={{ color: theme.textMuted }}>No completed shifts yet</p>
             </div>
           ) : (
-            myShiftHistory.map(sh => {
-              const h = getHours(sh.clockIn, sh.clockOut);
-              const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
-              const t = calcTravel(sh.travelSegments || []);
-              const isExpanded = expandedMyShifts.has(sh.id);
-              const isEditing = editingMyShift === sh.id;
-
+            Object.entries(filteredGroupedShifts).map(([weekKey, { weekEnd, shifts, totalMinutes }]) => {
+              const isWeekExpanded = expandedWeeks.has(weekKey);
+              
               return (
-                <div key={sh.id} style={{ ...styles.card, padding: '16px', marginBottom: '12px' }}>
-                  {/* Header */}
-                  <div onClick={() => toggleMyShift(sh.id)} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
-                    <div>
-                      <p style={{ color: theme.text, fontWeight: '600' }}>{fmtDate(sh.clockIn)}</p>
-                      <p style={{ color: theme.textMuted, fontSize: '13px' }}>{fmtTime(sh.clockIn)} - {fmtTime(sh.clockOut)}</p>
+                <div key={weekKey} style={{ marginBottom: '12px' }}>
+                  {/* Week Header */}
+                  <div
+                    onClick={() => toggleWeek(weekKey)}
+                    style={{
+                      background: isWeekExpanded ? theme.primary : theme.card,
+                      padding: '16px',
+                      borderRadius: isWeekExpanded ? '12px 12px 0 0' : '12px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      border: `1px solid ${isWeekExpanded ? theme.primary : theme.cardAlt}`,
+                      borderBottom: isWeekExpanded ? 'none' : undefined
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '16px', color: isWeekExpanded ? 'white' : theme.text }}>
+                        {isWeekExpanded ? '▼' : '▶'}
+                      </span>
+                      <div>
+                        <p style={{ color: isWeekExpanded ? 'white' : theme.text, fontWeight: '600', fontSize: '15px', margin: 0 }}>
+                          Week Ending: {fmtWeekEnding(weekEnd)}
+                        </p>
+                        <p style={{ color: isWeekExpanded ? 'rgba(255,255,255,0.7)' : theme.textMuted, fontSize: '12px', margin: '2px 0 0 0' }}>
+                          {shifts.length} shift{shifts.length !== 1 ? 's' : ''}
+                        </p>
+                      </div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <p style={{ color: theme.text, fontWeight: '600' }}>{fmtDur((h * 60) - b.unpaid)}</p>
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', fontSize: '12px' }}>
-                        {b.total > 0 && <span style={{ color: theme.warning }}>{b.total}m breaks</span>}
-                        {t > 0 && <span style={{ color: theme.travel }}>{t}m travel</span>}
-                      </div>
+                      <p style={{ color: isWeekExpanded ? 'white' : theme.primary, fontWeight: '700', fontSize: '16px', margin: 0 }}>
+                        {fmtDur(totalMinutes)}
+                      </p>
+                      <p style={{ color: isWeekExpanded ? 'rgba(255,255,255,0.7)' : theme.textMuted, fontSize: '11px', margin: '2px 0 0 0' }}>total</p>
                     </div>
                   </div>
 
-                  {/* Expanded */}
-                  {isExpanded && (
-                    <div style={{ marginTop: '16px', paddingTop: '16px', borderTop: `1px solid ${theme.cardBorder}` }}>
-                      {/* Stats */}
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '16px' }}>
-                        <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
-                          <p style={{ color: theme.success, fontSize: '11px' }}>Paid Breaks</p>
-                          <p style={{ color: theme.success, fontWeight: '600' }}>{b.paid}m</p>
-                        </div>
-                        <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
-                          <p style={{ color: theme.warning, fontSize: '11px' }}>Unpaid Breaks</p>
-                          <p style={{ color: theme.warning, fontWeight: '600' }}>{b.unpaid}m</p>
-                        </div>
-                        <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', textAlign: 'center' }}>
-                          <p style={{ color: theme.travel, fontSize: '11px' }}>Travel</p>
-                          <p style={{ color: theme.travel, fontWeight: '600' }}>{t}m</p>
-                        </div>
-                      </div>
+                  {/* Week Shifts */}
+                  {isWeekExpanded && (
+                    <div style={{ background: theme.card, border: `1px solid ${theme.cardAlt}`, borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '12px' }}>
+                      {shifts.map(sh => {
+                        const h = getHours(sh.clockIn, sh.clockOut);
+                        const b = calcBreaks(sh.breaks || [], h, paidRestMinutes);
+                        const t = calcTravel(sh.travelSegments || []);
+                        const isExpanded = expandedMyShifts.has(sh.id);
+                        const isEditing = editingMyShift === sh.id;
 
-                      {/* Breaks list */}
-                      {(sh.breaks || []).length > 0 && (
-                        <div style={{ marginBottom: '12px' }}>
-                          <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>BREAKS</p>
-                          {sh.breaks.map((brk, i) => (
-                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
-                              <span style={{ color: theme.textMuted, fontSize: '13px' }}>{brk.manualEntry ? `Break ${i + 1} (added)` : `Break ${i + 1}`}</span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ color: theme.text, fontWeight: '600' }}>{brk.durationMinutes || 0}m</span>
-                                <button onClick={() => myDeleteBreakFromShift(sh.id, i)} style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '14px', padding: '2px' }}>✕</button>
+                        return (
+                          <div key={sh.id} style={{ background: theme.cardAlt, borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
+                            {/* Shift Header */}
+                            <div onClick={() => toggleMyShift(sh.id)} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
+                              <div>
+                                <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>{fmtDate(sh.clockIn)}</p>
+                                <p style={{ color: theme.textMuted, fontSize: '12px', margin: '2px 0 0 0' }}>{fmtTime(sh.clockIn)} - {fmtTime(sh.clockOut)}</p>
+                              </div>
+                              <div style={{ textAlign: 'right' }}>
+                                <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>{fmtDur((h * 60) - b.unpaid)}</p>
+                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', fontSize: '11px', marginTop: '2px' }}>
+                                  {b.total > 0 && <span style={{ color: theme.warning }}>{b.total}m breaks</span>}
+                                  {t > 0 && <span style={{ color: theme.travel }}>{t}m travel</span>}
+                                </div>
                               </div>
                             </div>
-                          ))}
-                        </div>
-                      )}
 
-                      {/* Travel list */}
-                      {(sh.travelSegments || []).length > 0 && (
-                        <div style={{ marginBottom: '12px' }}>
-                          <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '8px', fontWeight: '600' }}>TRAVEL</p>
-                          {sh.travelSegments!.map((trv, i) => (
-                            <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: `1px solid ${theme.cardBorder}` }}>
-                              <span style={{ color: theme.textMuted, fontSize: '13px' }}>🚗 Travel {i + 1}</span>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ color: theme.travel, fontWeight: '600' }}>{trv.durationMinutes || 0}m</span>
-                                <button onClick={() => myDeleteTravelFromShift(sh.id, i)} style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '14px', padding: '2px' }}>✕</button>
+                            {/* Expanded Shift */}
+                            {isExpanded && (
+                              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.cardBorder}` }}>
+                                {/* Stats */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '12px' }}>
+                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                                    <p style={{ color: theme.success, fontSize: '10px', margin: 0 }}>Paid</p>
+                                    <p style={{ color: theme.success, fontWeight: '600', fontSize: '13px', margin: '2px 0 0 0' }}>{b.paid}m</p>
+                                  </div>
+                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                                    <p style={{ color: theme.warning, fontSize: '10px', margin: 0 }}>Unpaid</p>
+                                    <p style={{ color: theme.warning, fontWeight: '600', fontSize: '13px', margin: '2px 0 0 0' }}>{b.unpaid}m</p>
+                                  </div>
+                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
+                                    <p style={{ color: theme.travel, fontSize: '10px', margin: 0 }}>Travel</p>
+                                    <p style={{ color: theme.travel, fontWeight: '600', fontSize: '13px', margin: '2px 0 0 0' }}>{t}m</p>
+                                  </div>
+                                </div>
+
+                                {/* Notes */}
+                                {getJobLogField(sh.jobLog, 'field1') && (
+                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', marginBottom: '12px' }}>
+                                    <p style={{ color: theme.textMuted, fontSize: '10px', margin: 0 }}>{companySettings.field1Label || 'Notes'}</p>
+                                    <p style={{ color: theme.text, fontSize: '12px', margin: '4px 0 0 0' }}>{getJobLogField(sh.jobLog, 'field1')}</p>
+                                  </div>
+                                )}
+
+                                {/* Action buttons */}
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                                  <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('breaks'); }} style={{ padding: '6px 10px', borderRadius: '6px', background: theme.warningBg, color: theme.warning, border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>+ Break</button>
+                                  <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('travel'); }} style={{ padding: '6px 10px', borderRadius: '6px', background: theme.travelBg, color: theme.travel, border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>+ Travel</button>
+                                  {(sh.locationHistory?.length > 0 || sh.clockInLocation || sh.clockOutLocation) && (
+                                    <button onClick={() => setMapModal({ locations: sh.locationHistory || [], title: fmtDate(sh.clockIn), clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>🗺️ Map</button>
+                                  )}
+                                  <button onClick={() => { if (confirm('Delete this shift?')) myDeleteShift(sh.id); }} style={{ padding: '6px 10px', borderRadius: '6px', background: theme.dangerBg, color: theme.danger, border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>🗑️</button>
+                                </div>
+
+                                {/* Add Break Panel */}
+                                {isEditing && myEditMode === 'breaks' && (
+                                  <div style={{ background: theme.warningBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
+                                    <p style={{ color: theme.warning, fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Break</p>
+                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                                      {[10, 15, 20, 30, 45, 60].map(mins => (
+                                        <button key={mins} onClick={() => myAddBreakToShift(sh.id, mins)} disabled={addingBreakToShift} style={{ padding: '8px 14px', borderRadius: '6px', background: '#fef08a', color: '#854d0e', border: '1px solid #fde047', cursor: addingBreakToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingBreakToShift ? 0.7 : 1 }}>+{mins}m</button>
+                                      ))}
+                                    </div>
+                                    <button onClick={closeMyEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #fde047', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Done</button>
+                                  </div>
+                                )}
+
+                                {/* Add Travel Panel */}
+                                {isEditing && myEditMode === 'travel' && (
+                                  <div style={{ background: theme.travelBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
+                                    <p style={{ color: theme.travel, fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Travel Time</p>
+                                    <div style={{ marginBottom: '8px' }}>
+                                      <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>Start</label>
+                                      <div style={{ display: 'flex', gap: '4px' }}>
+                                        <select value={addTravelStartHour} onChange={e => setAddTravelStartHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                          {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                        <select value={addTravelStartMinute} onChange={e => setAddTravelStartMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                          {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                                        </select>
+                                        <select value={addTravelStartAmPm} onChange={e => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                          <option value="AM">AM</option>
+                                          <option value="PM">PM</option>
+                                        </select>
+                                      </div>
+                                    </div>
+                                    <div style={{ marginBottom: '10px' }}>
+                                      <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>End</label>
+                                      <div style={{ display: 'flex', gap: '4px' }}>
+                                        <select value={addTravelEndHour} onChange={e => setAddTravelEndHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                          {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                                        </select>
+                                        <select value={addTravelEndMinute} onChange={e => setAddTravelEndMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                          {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                                        </select>
+                                        <select value={addTravelEndAmPm} onChange={e => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                          <option value="AM">AM</option>
+                                          <option value="PM">PM</option>
+                                        </select>
+                                      </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px' }}>
+                                      <button onClick={() => myAddTravelToShift(sh.id, sh.clockIn?.toDate?.() || new Date())} disabled={addingTravelToShift} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: addingTravelToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingTravelToShift ? 0.7 : 1 }}>{addingTravelToShift ? 'Adding...' : 'Add Travel'}</button>
+                                      <button onClick={closeMyEditPanel} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Notes */}
-                      {getJobLogField(sh.jobLog, 'field1') && (
-                        <div style={{ background: theme.cardAlt, padding: '10px', borderRadius: '8px', marginBottom: '12px' }}>
-                          <p style={{ color: theme.textMuted, fontSize: '11px', marginBottom: '4px' }}>{companySettings.field1Label}</p>
-                          <p style={{ color: theme.text, fontSize: '13px' }}>{getJobLogField(sh.jobLog, 'field1')}</p>
-                        </div>
-                      )}
-
-                      {/* Action buttons */}
-                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                        <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('breaks'); }} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.warningBg, color: theme.warning, border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>+ Add Break</button>
-                        <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('travel'); }} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.travelBg, color: theme.travel, border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>+ Add Travel</button>
-                        {(sh.locationHistory?.length > 0 || sh.clockInLocation || sh.clockOutLocation) && (
-                          <button onClick={() => setMapModal({ locations: sh.locationHistory || [], title: fmtDate(sh.clockIn), clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '8px 12px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>🗺️ View Map</button>
-                        )}
-                        <button onClick={() => { if (confirm('Delete this shift?')) myDeleteShift(sh.id); }} style={{ padding: '8px 12px', borderRadius: '6px', background: theme.dangerBg, color: theme.danger, border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>🗑️ Delete</button>
-                      </div>
-
-                      {/* Add Break Panel */}
-                      {isEditing && myEditMode === 'breaks' && (
-                        <div style={{ background: theme.warningBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
-                          <p style={{ color: theme.warning, fontSize: '12px', fontWeight: '600', marginBottom: '10px' }}>Add Break</p>
-                          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                            {[10, 15, 20, 30, 45, 60].map(mins => (
-                              <button key={mins} onClick={() => myAddBreakToShift(sh.id, mins)} disabled={addingBreakToShift} style={{ padding: '8px 14px', borderRadius: '6px', background: '#fef08a', color: '#854d0e', border: '1px solid #fde047', cursor: addingBreakToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingBreakToShift ? 0.7 : 1 }}>+{mins}m</button>
-                            ))}
+                            )}
                           </div>
-                          <button onClick={closeMyEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #fde047', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Done</button>
-                        </div>
-                      )}
-
-                      {/* Add Travel Panel */}
-                      {isEditing && myEditMode === 'travel' && (
-                        <div style={{ background: theme.travelBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
-                          <p style={{ color: theme.travel, fontSize: '12px', fontWeight: '600', marginBottom: '10px' }}>Add Travel Time</p>
-                          <div style={{ marginBottom: '8px' }}>
-                            <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>Start</label>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <select value={addTravelStartHour} onChange={e => setAddTravelStartHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
-                              </select>
-                              <select value={addTravelStartMinute} onChange={e => setAddTravelStartMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                              <select value={addTravelStartAmPm} onChange={e => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                <option value="AM">AM</option>
-                                <option value="PM">PM</option>
-                              </select>
-                            </div>
-                          </div>
-                          <div style={{ marginBottom: '10px' }}>
-                            <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>End</label>
-                            <div style={{ display: 'flex', gap: '4px' }}>
-                              <select value={addTravelEndHour} onChange={e => setAddTravelEndHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
-                              </select>
-                              <select value={addTravelEndMinute} onChange={e => setAddTravelEndMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
-                              </select>
-                              <select value={addTravelEndAmPm} onChange={e => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                <option value="AM">AM</option>
-                                <option value="PM">PM</option>
-                              </select>
-                            </div>
-                          </div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button onClick={() => myAddTravelToShift(sh.id, sh.clockIn?.toDate?.() || new Date())} disabled={addingTravelToShift} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: addingTravelToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingTravelToShift ? 0.7 : 1 }}>{addingTravelToShift ? 'Adding...' : 'Add Travel'}</button>
-                            <button onClick={closeMyEditPanel} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
-                          </div>
-                        </div>
-                      )}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               );
             })
           )}
+
+          {/* NZ Break Rules at bottom of history */}
+          <div style={{ ...styles.card, padding: 0, overflow: 'hidden', marginTop: '20px' }}>
+            <button
+              onClick={() => setShowBreakRules(!showBreakRules)}
+              style={{
+                width: '100%',
+                padding: '16px 20px',
+                background: 'transparent',
+                border: 'none',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                cursor: 'pointer'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ color: theme.primary }}>ℹ️</span>
+                <span style={{ color: theme.text, fontWeight: '600' }}>NZ Break Rules</span>
+                {paidRestMinutes > 10 && (
+                  <span style={{ background: theme.successBg, color: theme.success, padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>Enhanced</span>
+                )}
+              </div>
+              <span style={{ color: theme.textMuted }}>{showBreakRules ? '▲' : '▼'}</span>
+            </button>
+          </div>
         </>
       )}
     </div>

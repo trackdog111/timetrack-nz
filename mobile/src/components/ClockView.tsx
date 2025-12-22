@@ -458,7 +458,7 @@ export function ClockView({
             {/* Break/Travel buttons */}
             {!onBreak && !traveling && (
               <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-                <button onClick={onStartBreak} style={{ ...styles.btnSecondary, flex: 1 }}>
+                <button onClick={onStartBreak} style={{ ...styles.btn, flex: 1, background: '#f59e0b', border: '2px solid #f59e0b' }}>
                   ☕ Start Break
                 </button>
                 <button onClick={onStartTravel} style={{ ...styles.btn, flex: 1, background: '#2563eb' }}>
