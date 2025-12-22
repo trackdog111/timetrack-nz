@@ -22,6 +22,7 @@ interface ClockViewProps {
   autoTravelEnabled?: boolean;
   autoTravelActive?: boolean;
   onClockIn: (photoBase64?: string) => void;
+  clockingIn?: boolean;
   onClockOut: () => void;
   onStartBreak: () => void;
   onEndBreak: () => void;
@@ -72,6 +73,7 @@ export function ClockView({
   paidRestMinutes,
   photoVerification,
   onClockIn,
+  clockingIn,
   onClockOut,
   onStartBreak,
   onEndBreak,
@@ -416,18 +418,20 @@ export function ClockView({
               </button>
               <button
                 onClick={confirmClockIn}
+                disabled={clockingIn}
                 style={{
-                  background: theme.success,
+                  background: clockingIn ? theme.textMuted : theme.success,
                   color: 'white',
                   padding: '16px 32px',
                   borderRadius: '12px',
                   border: 'none',
                   fontSize: '16px',
                   fontWeight: '600',
-                  cursor: 'pointer'
+                  cursor: clockingIn ? 'not-allowed' : 'pointer',
+                  opacity: clockingIn ? 0.7 : 1
                 }}
               >
-                ✓ Clock In
+                {clockingIn ? '⏳ Clocking In...' : '✓ Clock In'}
               </button>
             </>
           )}
@@ -447,8 +451,12 @@ export function ClockView({
             <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>
               Ready to start?
             </h2>
-            <button onClick={photoVerification ? startCamera : () => onClockIn()} style={{ ...styles.btn, width: '100%', padding: '20px', fontSize: '18px', background: theme.success }}>
-              {photoVerification ? '📸 Clock In' : '⏱️ Clock In'}
+            <button 
+              onClick={photoVerification ? startCamera : () => onClockIn()} 
+              disabled={clockingIn}
+              style={{ ...styles.btn, width: '100%', padding: '20px', fontSize: '18px', background: clockingIn ? theme.textMuted : theme.success, opacity: clockingIn ? 0.7 : 1, cursor: clockingIn ? 'not-allowed' : 'pointer' }}
+            >
+              {clockingIn ? '⏳ Clocking In...' : (photoVerification ? '📸 Clock In' : '⏱️ Clock In')}
             </button>
             <button
               onClick={() => setShowAddShift(!showAddShift)}
