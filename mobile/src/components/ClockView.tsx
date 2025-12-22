@@ -986,7 +986,7 @@ export function ClockView({
           )}
 
           {/* View Map Button - Full width like dashboard */}
-          {locationHistory.length > 0 && (
+          {(locationHistory.length > 0 || currentShift?.clockInLocation) && (
             <button
               onClick={() => setShowMapModal(true)}
               style={{
@@ -1006,7 +1006,7 @@ export function ClockView({
                 gap: '8px'
               }}
             >
-              🗺️ View Map ({locationHistory.length} points)
+              🗺️ View Map ({locationHistory.length + (currentShift?.clockInLocation ? 1 : 0)} points)
             </button>
           )}
         </>
