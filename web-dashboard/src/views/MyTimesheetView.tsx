@@ -15,6 +15,12 @@ interface MyTimesheetViewProps {
   myField1: string;
   setMyField1: (v: string) => void;
   saveMyField1: () => void;
+  myField2: string;
+  setMyField2: (v: string) => void;
+  saveMyField2: () => void;
+  myField3: string;
+  setMyField3: (v: string) => void;
+  saveMyField3: () => void;
   myCurrentLocation: Location | null;
   companySettings: CompanySettings;
   employees: Employee[];
@@ -124,7 +130,7 @@ const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'F
 export function MyTimesheetView(props: MyTimesheetViewProps) {
   const {
     theme, isMobile, user, myShift, myShiftHistory, onBreak, breakStart, myTraveling, myTravelStart,
-    myField1, setMyField1, saveMyField1, myCurrentLocation, companySettings, employees,
+    myField1, setMyField1, saveMyField1, myField2, setMyField2, saveMyField2, myField3, setMyField3, saveMyField3, myCurrentLocation, companySettings, employees,
     myClockIn, myClockOut, myStartBreak, myEndBreak, myStartTravel, myEndTravel, myAddBreak,
     showAddManualShift, setShowAddManualShift, manualDate, setManualDate,
     manualStartHour, setManualStartHour, manualStartMinute, setManualStartMinute, manualStartAmPm, setManualStartAmPm,
@@ -158,7 +164,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
     input: { padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
     btn: { padding: '12px 20px', borderRadius: '10px', border: 'none', background: theme.primary, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
-    btnSecondary: { padding: '12px 20px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
+    btnSecondary: { padding: '12px 20px', borderRadius: '10px', border: 'none', background: '#f59e0b', color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
     btnDanger: { padding: '12px 20px', borderRadius: '10px', border: 'none', background: theme.danger, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
     btnLarge: { padding: '20px', borderRadius: '12px', border: 'none', background: theme.success, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '18px' }
   };
@@ -588,10 +594,26 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
           </div>
 
           {/* Notes */}
-          {myShift && (
+          {myShift && companySettings.field1Enabled !== false && (
             <div style={styles.card}>
               <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>{companySettings.field1Label || 'Notes'}</label>
               <textarea value={myField1} onChange={e => setMyField1(e.target.value)} onBlur={saveMyField1} style={{ ...styles.input, minHeight: '80px', resize: 'vertical' }} />
+            </div>
+          )}
+
+          {/* Field 2 */}
+          {myShift && companySettings.field2Enabled === true && (
+            <div style={styles.card}>
+              <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>{companySettings.field2Label || 'Field 2'}</label>
+              <textarea value={myField2} onChange={e => setMyField2(e.target.value)} onBlur={saveMyField2} style={{ ...styles.input, minHeight: '80px', resize: 'vertical' }} />
+            </div>
+          )}
+
+          {/* Field 3 */}
+          {myShift && companySettings.field3Enabled === true && (
+            <div style={styles.card}>
+              <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>{companySettings.field3Label || 'Field 3'}</label>
+              <textarea value={myField3} onChange={e => setMyField3(e.target.value)} onBlur={saveMyField3} style={{ ...styles.input, minHeight: '80px', resize: 'vertical' }} />
             </div>
           )}
 
@@ -870,6 +892,22 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
                                   <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', marginBottom: '12px' }}>
                                     <p style={{ color: theme.textMuted, fontSize: '10px', margin: 0 }}>{companySettings.field1Label || 'Notes'}</p>
                                     <p style={{ color: theme.text, fontSize: '12px', margin: '4px 0 0 0' }}>{getJobLogField(sh.jobLog, 'field1')}</p>
+                                  </div>
+                                )}
+
+                                {/* Field 2 */}
+                                {getJobLogField(sh.jobLog, 'field2') && (
+                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', marginBottom: '12px' }}>
+                                    <p style={{ color: theme.textMuted, fontSize: '10px', margin: 0 }}>{companySettings.field2Label || 'Field 2'}</p>
+                                    <p style={{ color: theme.text, fontSize: '12px', margin: '4px 0 0 0' }}>{getJobLogField(sh.jobLog, 'field2')}</p>
+                                  </div>
+                                )}
+
+                                {/* Field 3 */}
+                                {getJobLogField(sh.jobLog, 'field3') && (
+                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', marginBottom: '12px' }}>
+                                    <p style={{ color: theme.textMuted, fontSize: '10px', margin: 0 }}>{companySettings.field3Label || 'Field 3'}</p>
+                                    <p style={{ color: theme.text, fontSize: '12px', margin: '4px 0 0 0' }}>{getJobLogField(sh.jobLog, 'field3')}</p>
                                   </div>
                                 )}
 
