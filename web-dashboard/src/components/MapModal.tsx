@@ -13,6 +13,7 @@ interface MapModalProps {
 export function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutLocation }: MapModalProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [leafletLoaded, setLeafletLoaded] = useState(false);
+  const [showList, setShowList] = useState(false);
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
   
@@ -175,13 +176,37 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         <button onClick={onClose} style={{ background: theme.cardAlt, border: 'none', fontSize: '16px', cursor: 'pointer', color: theme.text, padding: '8px 16px', borderRadius: '8px', fontWeight: '600' }}>Close</button>
       </div>
       
-      <div style={{ padding: '12px 20px', background: theme.card, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-        {uniqueTypes.map(type => (
-          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors[type] || markerColors.tracking }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '12px' }}>{markerLabels[type] || 'Location'}</span>
-          </div>
-        ))}
+      <div style={{ padding: '12px 20px', background: theme.card, borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+        <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {uniqueTypes.map(type => (
+            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ width: '12px', height: '12px', borderRadius: '50%', background: markerColors[type] || markerColors.tracking }}></span>
+              <span style={{ color: theme.textMuted, fontSize: '12px' }}>{markerLabels[type] || 'Location'}</span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {allPoints.length > 0 && (
+            <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+              📍 {allPoints[allPoints.length - 1].loc.latitude.toFixed(5)}, {allPoints[allPoints.length - 1].loc.longitude.toFixed(5)}
+            </span>
+          )}
+          <button
+            onClick={() => setShowList(!showList)}
+            style={{
+              background: showList ? theme.primary : theme.cardAlt,
+              color: showList ? 'white' : theme.text,
+              border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            {showList ? 'Hide List' : 'Show List'}
+          </button>
+        </div>
       </div>
       
       <div 
@@ -195,42 +220,44 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         )}
       </div>
       
-      <div style={{ maxHeight: '200px', overflowY: 'auto', background: theme.card, borderTop: `1px solid ${theme.cardBorder}` }}>
-        {allPoints.map((point, i) => (
-          <div 
-            key={i} 
-            onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
-            style={{ 
-              display: 'flex', 
-              justifyContent: 'space-between', 
-              alignItems: 'center',
-              padding: '12px 20px', 
-              background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
-              cursor: 'pointer',
-              borderBottom: `1px solid ${theme.cardBorder}`
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ 
-                width: '24px', 
-                height: '24px', 
-                borderRadius: '50%', 
-                background: markerColors[point.type] || markerColors.tracking, 
-                color: 'white', 
+      {showList && (
+        <div style={{ maxHeight: '200px', overflowY: 'auto', background: theme.card, borderTop: `1px solid ${theme.cardBorder}` }}>
+          {allPoints.map((point, i) => (
+            <div 
+              key={i} 
+              onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
+              style={{ 
                 display: 'flex', 
-                alignItems: 'center', 
-                justifyContent: 'center', 
-                fontSize: '11px',
-                fontWeight: '600'
-              }}>{i + 1}</span>
-              <span style={{ color: theme.text, fontSize: '14px', fontWeight: '500' }}>{markerLabels[point.type] || 'Location'}</span>
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: '12px 20px', 
+                background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
+                cursor: 'pointer',
+                borderBottom: `1px solid ${theme.cardBorder}`
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ 
+                  width: '24px', 
+                  height: '24px', 
+                  borderRadius: '50%', 
+                  background: markerColors[point.type] || markerColors.tracking, 
+                  color: 'white', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: '11px',
+                  fontWeight: '600'
+                }}>{i + 1}</span>
+                <span style={{ color: theme.text, fontSize: '14px', fontWeight: '500' }}>{markerLabels[point.type] || 'Location'}</span>
+              </div>
+              <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+                {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
             </div>
-            <span style={{ color: theme.textMuted, fontSize: '13px' }}>
-              {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-            </span>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

@@ -229,30 +229,38 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         background: theme.card, 
         borderBottom: `1px solid ${theme.cardBorder}`, 
         display: 'flex', 
-        gap: '12px', 
+        justifyContent: 'space-between',
+        alignItems: 'center',
         flexWrap: 'wrap',
-        alignItems: 'center'
+        gap: '10px'
       }}>
-        {uniqueTypes.map(type => (
-          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ 
-              width: '10px', 
-              height: '10px', 
-              borderRadius: '50%', 
-              background: markerColors[type] || markerColors.tracking 
-            }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '11px' }}>
-              {markerLabels[type] || 'Location'}
+        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {uniqueTypes.map(type => (
+            <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <span style={{ 
+                width: '10px', 
+                height: '10px', 
+                borderRadius: '50%', 
+                background: markerColors[type] || markerColors.tracking 
+              }}></span>
+              <span style={{ color: theme.textMuted, fontSize: '11px' }}>
+                {markerLabels[type] || 'Location'}
+              </span>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          {allPoints.length > 0 && (
+            <span style={{ color: theme.textMuted, fontSize: '10px' }}>
+              📍 {allPoints[allPoints.length - 1].loc.latitude.toFixed(5)}, {allPoints[allPoints.length - 1].loc.longitude.toFixed(5)}
             </span>
-          </div>
-        ))}
-        <div style={{ marginLeft: 'auto' }}>
+          )}
           <button
             onClick={() => setShowList(!showList)}
             style={{
               background: showList ? theme.primary : theme.cardAlt,
-              color: showList ? 'white' : theme.textMuted,
-              border: 'none',
+              color: showList ? 'white' : theme.text,
+              border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
               padding: '6px 10px',
               borderRadius: '6px',
               fontSize: '11px',

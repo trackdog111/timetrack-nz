@@ -617,26 +617,13 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
             </div>
           )}
 
-          {/* Current Location */}
-          {myShift && myCurrentLocation && (
-            <div style={styles.card}>
-              <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '8px' }}>📍 Current Location</h3>
-              <p style={{ color: theme.textMuted, fontSize: '14px' }}>
-                {myCurrentLocation.latitude.toFixed(6)}, {myCurrentLocation.longitude.toFixed(6)}
-              </p>
-              <p style={{ color: theme.textLight, fontSize: '12px' }}>
-                Accuracy: ±{Math.round(myCurrentLocation.accuracy)}m
-              </p>
-            </div>
-          )}
-
-          {/* Map button */}
-          {myShift && myShift.locationHistory && myShift.locationHistory.length > 0 && (
+          {/* Map button - show if any locations exist */}
+          {myShift && (myShift.locationHistory?.length > 0 || myShift.clockInLocation) && (
             <button 
-              onClick={() => setMapModal({ locations: myShift.locationHistory, title: 'My Current Shift', clockInLocation: myShift.clockInLocation })} 
-              style={{ ...styles.btn, width: '100%', marginTop: '16px', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}` }}
+              onClick={() => setMapModal({ locations: myShift.locationHistory || [], title: 'My Current Shift', clockInLocation: myShift.clockInLocation })} 
+              style={{ ...styles.btn, width: '100%', background: theme.cardAlt, color: theme.text, border: `1px solid ${theme.cardBorder}` }}
             >
-              🗺️ View Map ({myShift.locationHistory.length} points)
+              🗺️ View Map ({(myShift.locationHistory?.length || 0) + (myShift.clockInLocation ? 1 : 0)} points)
             </button>
           )}
 
