@@ -248,14 +248,76 @@ export function LocationMap({ locations, height = '200px' }: LocationMapProps) {
       </div>
     );
   }
-  const lastLoc = locations[locations.length - 1];
+  
+  // Find valid locations with lat/lng
+  const validLocations = locations.filter(loc => loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number');
+  if (validLocations.length === 0) {
+    return (
+      <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
+        No valid location data
+      </div>
+    );
+  }
+  
+  const lastLoc = validLocations[validLocations.length - 1];
+  
+  // Use static map image from OpenStreetMap tile server
+  const zoom = 15;
+  const lat = lastLoc.latitude;
+  const lng = lastLoc.longitude;
+  
+  // Calculate tile coordinates
+  const n = Math.pow(2, zoom);
+  const xtile = Math.floor((lng + 180) / 360 * n);
+  const ytile = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
+  
   return (
-    <div style={{ height, borderRadius: '8px', overflow: 'hidden' }}>
-      <iframe 
-        src={`https://www.openstreetmap.org/export/embed.html?bbox=${lastLoc.longitude - 0.01},${lastLoc.latitude - 0.01},${lastLoc.longitude + 0.01},${lastLoc.latitude + 0.01}&layer=mapnik&marker=${lastLoc.latitude},${lastLoc.longitude}`} 
-        style={{ width: '100%', height: '100%', border: 'none' }} 
-        title="Map" 
+    <div style={{ height, borderRadius: '8px', overflow: 'hidden', position: 'relative', background: '#e5e7eb' }}>
+      <img 
+        src={`https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`}
+        alt="Map"
+        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        onError={(e) => {
+          // Fallback to embed if tile fails
+          const target = e.target as HTMLImageElement;
+          target.style.display = 'none';
+          const parent = target.parentElement;
+          if (parent) {
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005},${lat - 0.005},${lng + 0.005},${lat + 0.005}&layer=mapnik&marker=${lat},${lng}`;
+            iframe.style.cssText = 'width:100%;height:100%;border:none;position:absolute;top:0;left:0;';
+            iframe.title = 'Map';
+            parent.appendChild(iframe);
+          }
+        }}
       />
+      {/* Location marker overlay */}
+      <div style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '20px',
+        height: '20px',
+        background: '#2563eb',
+        border: '3px solid white',
+        borderRadius: '50%',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.3)'
+      }} />
+      {/* Point count badge */}
+      <div style={{
+        position: 'absolute',
+        bottom: '8px',
+        right: '8px',
+        background: 'rgba(0,0,0,0.6)',
+        color: 'white',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '11px',
+        fontWeight: '500'
+      }}>
+        {validLocations.length} pts
+      </div>
     </div>
   );
 }

@@ -54,6 +54,13 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
   const [autoTravelActive, setAutoTravelActive] = useState(false);
   const [stationaryStartTime, setStationaryStartTime] = useState<Date | null>(null);
   const [lastKnownLocation, setLastKnownLocation] = useState<Location | null>(null);
+  
+  // Use ref for lastRecordedLocation to avoid stale closures in interval callback
+  const lastRecordedLocationRef = useRef<Location | null>(null);
+
+  // GPS filtering constants
+  const GPS_MAX_ACCURACY = 50; // meters - ignore readings with worse accuracy
+  const GPS_MIN_DISTANCE = 10; // meters - minimum movement to record new point
 
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const storage = getStorage();
@@ -204,10 +211,35 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
     const trackLocation = async () => {
       const location = await getCurrentLocation();
       if (location && currentShift) {
+        // GPS FILTERING: Skip low-accuracy readings
+        if (location.accuracy > GPS_MAX_ACCURACY) {
+          console.log(`GPS: Skipping low accuracy reading (${Math.round(location.accuracy)}m > ${GPS_MAX_ACCURACY}m)`);
+          // Still process auto-travel with whatever location we have
+          if (settings.autoTravel) {
+            await processAutoTravelDetection(location);
+          }
+          return;
+        }
+        
+        // GPS FILTERING: Skip if haven't moved enough
+        if (lastRecordedLocationRef.current) {
+          const distanceMoved = calculateDistance(location, lastRecordedLocationRef.current);
+          if (distanceMoved < GPS_MIN_DISTANCE) {
+            console.log(`GPS: Skipping - only moved ${Math.round(distanceMoved)}m (min: ${GPS_MIN_DISTANCE}m)`);
+            // Still process auto-travel detection
+            if (settings.autoTravel) {
+              await processAutoTravelDetection(location);
+            }
+            return;
+          }
+        }
+        
         try {
           await updateDoc(doc(db, 'shifts', currentShift.id), {
             locationHistory: arrayUnion(location)
           });
+          lastRecordedLocationRef.current = location;
+          console.log(`GPS: Recorded location (accuracy: ${Math.round(location.accuracy)}m)`);
           
           // Process auto-travel detection if enabled
           if (settings.autoTravel) {
@@ -280,6 +312,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
         setAutoTravelActive(false);
         setStationaryStartTime(null);
         setLastKnownLocation(null);
+        lastRecordedLocationRef.current = null;
       }
     });
     return () => unsubscribe();
@@ -355,8 +388,14 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
       if (location && settings.autoTravel) {
         setAnchorLocation(location);
         setLastKnownLocation(location);
+        lastRecordedLocationRef.current = location;
         setAutoTravelActive(false);
         setStationaryStartTime(null);
+      }
+      
+      // Set last recorded location even without auto-travel (for GPS filtering)
+      if (location) {
+        lastRecordedLocationRef.current = location;
       }
     } catch (err: any) {
       setError(err.message);

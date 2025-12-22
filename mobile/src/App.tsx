@@ -277,6 +277,14 @@ export default function App() {
           showToast={showToast}
           autoTravelEnabled={settings.autoTravel || false}
           autoTravelActive={autoTravelActive}
+          field1={field1}
+          field2={field2}
+          field3={field3}
+          setField1={setField1}
+          setField2={setField2}
+          setField3={setField3}
+          onSaveFields={saveFields}
+          labels={labels}
         />
       )}
 
@@ -342,7 +350,6 @@ export default function App() {
         <div style={{ display: 'flex' }}>
           {[
             { id: 'clock', label: 'Clock', icon: '⏱️' },
-            { id: 'joblog', label: 'Notes', icon: '📝' },
             ...(settings.chatEnabled ? [{ id: 'chat', label: 'Chat', icon: '💬' }] : []),
             { id: 'history', label: 'History', icon: '📋' }
           ].map(item => (

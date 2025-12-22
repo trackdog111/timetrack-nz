@@ -83,6 +83,10 @@ export interface EmployeeSettings {
   autoTravel?: boolean;
   autoTravelInterval?: number; // 1, 2, or 5 minutes
   detectionDistance?: number;  // 100, 200, or 500 meters
+  // Field toggles
+  field1Enabled?: boolean;  // defaults to true
+  field2Enabled?: boolean;  // defaults to false
+  field3Enabled?: boolean;  // defaults to false
 }
 
 export interface ChatMessage {

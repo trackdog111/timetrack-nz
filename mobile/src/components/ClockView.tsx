@@ -40,6 +40,21 @@ interface ClockViewProps {
     notes: string
   ) => Promise<boolean>;
   showToast: (message: string) => void;
+  // Job log fields
+  field1: string;
+  field2: string;
+  field3: string;
+  setField1: (v: string) => void;
+  setField2: (v: string) => void;
+  setField3: (v: string) => void;
+  onSaveFields: () => void;
+  labels: {
+    field1Label: string;
+    field2Label: string;
+    field3Label: string;
+    paidRestMinutes: number;
+    payWeekEndDay: number;
+  };
 }
 
 export function ClockView({
@@ -62,7 +77,15 @@ export function ClockView({
   onAddPresetBreak,
   onDeleteBreak,
   onAddManualShift,
-  showToast
+  showToast,
+  field1,
+  field2,
+  field3,
+  setField1,
+  setField2,
+  setField3,
+  onSaveFields,
+  labels
 }: ClockViewProps) {
   const styles = createStyles(theme);
   
@@ -890,6 +913,74 @@ export function ClockView({
             </>
           )}
         </div>
+      )}
+
+      {/* Job Log Fields */}
+      {currentShift && (
+        <>
+          {/* Field 1 (Notes) */}
+          {settings.field1Enabled !== false && (
+            <div style={styles.card}>
+              <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>
+                {labels.field1Label || 'Notes'}
+              </label>
+              <textarea
+                value={field1}
+                onChange={e => setField1(e.target.value)}
+                onBlur={onSaveFields}
+                placeholder={`Enter ${labels.field1Label || 'notes'}...`}
+                style={{ 
+                  ...styles.input, 
+                  minHeight: '80px', 
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+              />
+            </div>
+          )}
+
+          {/* Field 2 */}
+          {settings.field2Enabled === true && (
+            <div style={styles.card}>
+              <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>
+                {labels.field2Label || 'Field 2'}
+              </label>
+              <textarea
+                value={field2}
+                onChange={e => setField2(e.target.value)}
+                onBlur={onSaveFields}
+                placeholder={`Enter ${labels.field2Label || 'field 2'}...`}
+                style={{ 
+                  ...styles.input, 
+                  minHeight: '80px', 
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+              />
+            </div>
+          )}
+
+          {/* Field 3 */}
+          {settings.field3Enabled === true && (
+            <div style={styles.card}>
+              <label style={{ color: theme.textMuted, fontSize: '13px', display: 'block', marginBottom: '6px' }}>
+                {labels.field3Label || 'Field 3'}
+              </label>
+              <textarea
+                value={field3}
+                onChange={e => setField3(e.target.value)}
+                onBlur={onSaveFields}
+                placeholder={`Enter ${labels.field3Label || 'field 3'}...`}
+                style={{ 
+                  ...styles.input, 
+                  minHeight: '80px', 
+                  resize: 'vertical',
+                  fontFamily: 'inherit'
+                }}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {/* Break Rules Info */}
