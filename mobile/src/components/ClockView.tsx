@@ -5,11 +5,13 @@ import { Theme, createStyles } from '../theme';
 import { Shift, Location, EmployeeSettings } from '../types';
 import { fmtDur, fmtTime, getHours, calcBreaks, calcTravel, getBreakEntitlements } from '../utils';
 import { BreakRulesInfo } from './BreakRulesInfo';
+import { MapModal } from './MapModal';
 
 interface ClockViewProps {
   theme: Theme;
   currentShift: Shift | null;
   currentLocation: Location | null;
+  locationHistory: Location[];
   onBreak: boolean;
   currentBreakStart: Date | null;
   traveling: boolean;
@@ -61,6 +63,7 @@ export function ClockView({
   theme,
   currentShift,
   currentLocation,
+  locationHistory,
   onBreak,
   currentBreakStart,
   traveling,
@@ -91,6 +94,7 @@ export function ClockView({
   
   const [showBreakRules, setShowBreakRules] = useState(false);
   const [showManualEntry, setShowManualEntry] = useState(false);
+  const [showMapModal, setShowMapModal] = useState(false);
   const [manualMinutes, setManualMinutes] = useState('');
   
   // Camera state
@@ -994,7 +998,29 @@ export function ClockView({
       {/* Current Location */}
       {currentLocation && (
         <div style={{ ...styles.card, marginTop: '16px' }}>
-          <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '8px' }}>Current Location</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+            <h3 style={{ color: theme.text, fontWeight: '600', margin: 0 }}>Current Location</h3>
+            {locationHistory.length > 0 && (
+              <button
+                onClick={() => setShowMapModal(true)}
+                style={{
+                  background: theme.primary,
+                  color: 'white',
+                  border: 'none',
+                  padding: '6px 12px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '4px'
+                }}
+              >
+                🗺️ View Map ({locationHistory.length})
+              </button>
+            )}
+          </div>
           <p style={{ color: theme.textMuted, fontSize: '14px' }}>
             {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
           </p>
@@ -1002,6 +1028,17 @@ export function ClockView({
             Accuracy: ±{Math.round(currentLocation.accuracy)}m
           </p>
         </div>
+      )}
+
+      {/* Map Modal */}
+      {showMapModal && (
+        <MapModal
+          locations={locationHistory}
+          onClose={() => setShowMapModal(false)}
+          title="GPS Track"
+          theme={theme}
+          clockInLocation={currentShift?.clockInLocation}
+        />
       )}
     </div>
   );

@@ -258,6 +258,7 @@ export default function App() {
           theme={theme}
           currentShift={currentShift}
           currentLocation={currentLocation}
+          locationHistory={currentShift?.locationHistory || []}
           onBreak={onBreak}
           currentBreakStart={currentBreakStart}
           traveling={traveling}

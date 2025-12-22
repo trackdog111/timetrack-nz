@@ -5,6 +5,7 @@ export interface Location {
   longitude: number;
   accuracy: number;
   timestamp: number;
+  source?: 'tracking' | 'clockIn' | 'clockOut' | 'travelStart' | 'travelEnd' | 'breakStart' | 'breakEnd';
 }
 
 export interface Break {
