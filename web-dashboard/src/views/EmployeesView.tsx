@@ -172,9 +172,16 @@ export function EmployeesView({
                 onChange={e => updateSettings(emp.id, { gpsInterval: parseInt(e.target.value) })} 
                 style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}
               >
-                <option value={5}>5 min</option>
+                <option value={2}>2 min</option>
+                <option value={4}>4 min</option>
+                <option value={6}>6 min</option>
+                <option value={8}>8 min</option>
                 <option value={10}>10 min</option>
-                <option value={15}>15 min</option>
+                <option value={12}>12 min</option>
+                <option value={14}>14 min</option>
+                <option value={16}>16 min</option>
+                <option value={18}>18 min</option>
+                <option value={20}>20 min</option>
               </select>
             </div>
             
