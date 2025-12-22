@@ -54,25 +54,107 @@ export function SettingsView({
     return d >= st && d <= en && s.status === 'completed';
   }).length;
 
+  // Toggle component for cleaner code
+  const Toggle = ({ checked, onChange }: { checked: boolean, onChange: (v: boolean) => void }) => (
+    <button 
+      onClick={() => onChange(!checked)} 
+      style={{ 
+        width: '44px', 
+        height: '24px', 
+        borderRadius: '12px', 
+        border: 'none', 
+        cursor: 'pointer', 
+        background: checked ? theme.success : '#cbd5e1', 
+        position: 'relative',
+        flexShrink: 0
+      }}
+    >
+      <span style={{ 
+        position: 'absolute', 
+        top: '2px', 
+        width: '20px', 
+        height: '20px', 
+        borderRadius: '50%', 
+        background: 'white', 
+        left: checked ? '22px' : '2px', 
+        transition: 'left 0.2s',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+      }} />
+    </button>
+  );
+
   return (
     <div>
       <h1 style={{ color: theme.text, marginBottom: '24px', fontSize: isMobile ? '22px' : '28px' }}>Settings</h1>
       
       <div style={styles.card}>
         <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>🏢 Company Settings</h3>
+        
+        {/* Job Log Fields */}
+        <div style={{ marginBottom: '20px' }}>
+          <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '12px', fontWeight: '600' }}>Job Log Fields</label>
+          
+          {/* Field 1 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', padding: '12px', background: theme.cardAlt, borderRadius: '8px' }}>
+            <Toggle 
+              checked={editingCompanySettings.field1Enabled !== false} 
+              onChange={(v) => setEditingCompanySettings({ ...editingCompanySettings, field1Enabled: v })} 
+            />
+            <input 
+              value={editingCompanySettings.field1Label || 'Notes'} 
+              onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field1Label: e.target.value })} 
+              placeholder="Field 1 label"
+              disabled={editingCompanySettings.field1Enabled === false}
+              style={{ 
+                ...styles.input, 
+                flex: 1,
+                opacity: editingCompanySettings.field1Enabled === false ? 0.5 : 1 
+              }} 
+            />
+          </div>
+          
+          {/* Field 2 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px', padding: '12px', background: theme.cardAlt, borderRadius: '8px' }}>
+            <Toggle 
+              checked={editingCompanySettings.field2Enabled === true} 
+              onChange={(v) => setEditingCompanySettings({ ...editingCompanySettings, field2Enabled: v })} 
+            />
+            <input 
+              value={editingCompanySettings.field2Label || 'Lists'} 
+              onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field2Label: e.target.value })} 
+              placeholder="Field 2 label"
+              disabled={editingCompanySettings.field2Enabled !== true}
+              style={{ 
+                ...styles.input, 
+                flex: 1,
+                opacity: editingCompanySettings.field2Enabled !== true ? 0.5 : 1 
+              }} 
+            />
+          </div>
+          
+          {/* Field 3 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: theme.cardAlt, borderRadius: '8px' }}>
+            <Toggle 
+              checked={editingCompanySettings.field3Enabled === true} 
+              onChange={(v) => setEditingCompanySettings({ ...editingCompanySettings, field3Enabled: v })} 
+            />
+            <input 
+              value={editingCompanySettings.field3Label || 'Other'} 
+              onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field3Label: e.target.value })} 
+              placeholder="Field 3 label"
+              disabled={editingCompanySettings.field3Enabled !== true}
+              style={{ 
+                ...styles.input, 
+                flex: 1,
+                opacity: editingCompanySettings.field3Enabled !== true ? 0.5 : 1 
+              }} 
+            />
+          </div>
+          
+          <p style={{ color: theme.textMuted, fontSize: '11px', marginTop: '8px' }}>Toggle fields on/off. Enabled fields appear in employee timesheets.</p>
+        </div>
+        
         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '16px', marginBottom: '16px' }}>
-          <div>
-            <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 1 Label</label>
-            <input value={editingCompanySettings.field1Label} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field1Label: e.target.value })} style={styles.input} />
-          </div>
-          <div>
-            <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 2 Label</label>
-            <input value={editingCompanySettings.field2Label} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field2Label: e.target.value })} style={styles.input} />
-          </div>
-          <div>
-            <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Field 3 Label</label>
-            <input value={editingCompanySettings.field3Label} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, field3Label: e.target.value })} style={styles.input} />
-          </div>
           <div>
             <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Manager Display Name</label>
             <input value={editingCompanySettings.managerDisplayName} onChange={e => setEditingCompanySettings({ ...editingCompanySettings, managerDisplayName: e.target.value })} style={styles.input} />

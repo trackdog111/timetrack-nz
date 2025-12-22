@@ -158,7 +158,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
     input: { padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
     btn: { padding: '12px 20px', borderRadius: '10px', border: 'none', background: theme.primary, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
-    btnSecondary: { padding: '12px 20px', borderRadius: '10px', border: `2px solid ${theme.warning}`, background: theme.warningBg, color: theme.warning, cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
+    btnSecondary: { padding: '12px 20px', borderRadius: '10px', border: `1px solid ${theme.cardBorder}`, background: theme.card, color: theme.text, cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
     btnDanger: { padding: '12px 20px', borderRadius: '10px', border: 'none', background: theme.danger, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
     btnLarge: { padding: '20px', borderRadius: '12px', border: 'none', background: theme.success, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '18px' }
   };

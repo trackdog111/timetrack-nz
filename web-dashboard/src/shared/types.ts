@@ -87,6 +87,9 @@ export interface CompanySettings {
   field1Label: string;
   field2Label: string;
   field3Label: string;
+  field1Enabled?: boolean;
+  field2Enabled?: boolean;
+  field3Enabled?: boolean;
   managerDisplayName: string;
   paidRestMinutes: number;
   payWeekEndDay: number;
