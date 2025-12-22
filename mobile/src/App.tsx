@@ -1,5 +1,6 @@
 // TimeTrack NZ - Main App Component
 // Refactored from monolithic 800-line file into clean modular structure
+// UPDATED: Added companyId support for multi-tenant
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
@@ -10,20 +11,22 @@ import { useAuth, useShift, useChat, useSettings } from './hooks';
 import { LoginScreen, ClockView, JobLogView, ChatView, HistoryView } from './components';
 
 export default function App() {
-  // Auth hook
+  // Auth hook - NOW PROVIDES companyId
   const {
     user,
     loading,
     error: authError,
     setError: setAuthError,
+    companyId,        // NEW: Get companyId from auth
+    loadingCompany,   // NEW: Loading state for company
     signIn,
     resetPassword,
     checkInvite,
     acceptInvite
   } = useAuth();
 
-  // Settings hook
-  const { settings, labels } = useSettings(user);
+  // Settings hook - NOW RECEIVES companyId
+  const { settings, labels } = useSettings(user, companyId);
 
   // UI state
   const [dark, setDark] = useState(false);
@@ -46,7 +49,7 @@ export default function App() {
     showToastRef.current(message);
   }, []);
 
-  // Shift hook - now with toast callback for auto-travel notifications
+  // Shift hook - NOW RECEIVES companyId (note: parameter order changed)
   const {
     currentShift,
     shiftHistory,
@@ -81,9 +84,9 @@ export default function App() {
     deleteShift,
     autoTravelActive,
     anchorLocation
-  } = useShift(user, settings, showToast);
+  } = useShift(user, settings, companyId, showToast);  // UPDATED: Pass companyId
 
-  // Chat hook
+  // Chat hook - NOW RECEIVES companyId
   const {
     messages,
     newMessage,
@@ -92,7 +95,7 @@ export default function App() {
     setChatTab,
     sendMessage,
     sendJobUpdate
-  } = useChat(user, settings.chatEnabled);
+  } = useChat(user, settings.chatEnabled, companyId);  // UPDATED: Pass companyId
 
   // Invite URL handling
   const [initialEmail, setInitialEmail] = useState('');
@@ -127,8 +130,8 @@ export default function App() {
     }
   };
 
-  // Loading state
-  if (loading) {
+  // Loading state - UPDATED: Include loadingCompany
+  if (loading || loadingCompany) {
     return (
       <main style={{ 
         minHeight: '100vh', 
@@ -157,6 +160,47 @@ export default function App() {
           initialEmail={initialEmail}
           initialAuthMode={initialAuthMode}
         />
+      </main>
+    );
+  }
+
+  // NEW: Show error if user has no company (shouldn't happen for invited employees)
+  if (!companyId) {
+    return (
+      <main style={{ 
+        minHeight: '100vh', 
+        background: theme.bg, 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'center',
+        padding: '20px'
+      }}>
+        <div style={{
+          background: theme.card,
+          padding: '24px',
+          borderRadius: '12px',
+          textAlign: 'center',
+          maxWidth: '400px'
+        }}>
+          <h2 style={{ color: theme.danger, marginBottom: '16px' }}>Account Error</h2>
+          <p style={{ color: theme.text, marginBottom: '24px' }}>
+            Your account is not linked to a company. Please contact your employer or sign up through an invite link.
+          </p>
+          <button
+            onClick={() => signOut(auth)}
+            style={{
+              background: theme.primary,
+              color: 'white',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            Sign Out
+          </button>
+        </div>
       </main>
     );
   }

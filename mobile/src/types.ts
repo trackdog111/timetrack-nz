@@ -1,4 +1,5 @@
 // TimeTrack NZ - Type Definitions
+// UPDATED: Added companyId to all relevant interfaces for multi-tenant support
 
 export interface Location {
   latitude: number;
@@ -31,6 +32,7 @@ export interface JobLog {
 
 export interface Shift {
   id: string;
+  companyId: string;  // NEW: Required for multi-tenant
   userId: string;
   userEmail?: string;
   clockIn: any;
@@ -90,8 +92,20 @@ export interface EmployeeSettings {
   field3Enabled?: boolean;  // defaults to false
 }
 
+// NEW: Employee interface with companyId
+export interface Employee {
+  id: string;
+  companyId: string;  // NEW: Required for multi-tenant
+  email: string;
+  name: string;
+  role: 'manager' | 'employee';
+  settings: EmployeeSettings;
+  createdAt: any;
+}
+
 export interface ChatMessage {
   id: string;
+  companyId: string;  // NEW: Required for multi-tenant
   type: 'team' | 'dm';
   senderId: string;
   senderEmail: string;
@@ -102,6 +116,7 @@ export interface ChatMessage {
 
 export interface Invite {
   id: string;
+  companyId: string;  // NEW: Required for multi-tenant
   email: string;
   name: string;
   status: 'pending' | 'accepted' | 'cancelled';

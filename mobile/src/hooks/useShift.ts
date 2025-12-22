@@ -1,4 +1,5 @@
 // TimeTrack NZ - Shift Management Hook
+// UPDATED: Added companyId support for multi-tenant
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { User } from 'firebase/auth';
@@ -36,7 +37,8 @@ function calculateDistance(loc1: Location, loc2: Location): number {
   return R * c;
 }
 
-export function useShift(user: User | null, settings: EmployeeSettings, onToast?: (message: string) => void) {
+// UPDATED: Added companyId parameter for multi-tenant support
+export function useShift(user: User | null, settings: EmployeeSettings, companyId: string | null, onToast?: (message: string) => void) {
   const [currentShift, setCurrentShift] = useState<Shift | null>(null);
   const [shiftHistory, setShiftHistory] = useState<Shift[]>([]);
   const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
@@ -369,13 +371,15 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
   };
 
   // Clock in - NOW WITH OPTIONAL PHOTO AND AUTO-TRAVEL ANCHOR
+  // UPDATED: Include companyId for multi-tenant
   const clockIn = async (photoBase64?: string) => {
-    if (!user) return;
+    if (!user || !companyId) return;  // UPDATED: Require companyId
     try {
       const location = await getCurrentLocation();
       
       // Create shift first
       const shiftRef = await addDoc(collection(db, 'shifts'), {
+        companyId,  // NEW: Include companyId
         userId: user.uid,
         userEmail: user.email,
         clockIn: Timestamp.now(),
@@ -818,6 +822,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
   };
 
   // Add manual shift
+  // UPDATED: Include companyId for multi-tenant
   const addManualShift = async (
     date: string,
     startHour: string,
@@ -830,7 +835,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
     travel: number[],
     notes: string
   ) => {
-    if (!user) return false;
+    if (!user || !companyId) return false;  // UPDATED: Require companyId
 
     try {
       let sHour = parseInt(startHour);
@@ -861,6 +866,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, onToast?
       });
 
       await addDoc(collection(db, 'shifts'), {
+        companyId,  // NEW: Include companyId
         userId: user.uid,
         userEmail: user.email,
         clockIn: Timestamp.fromDate(clockIn),

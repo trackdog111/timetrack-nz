@@ -1,4 +1,5 @@
 // TimeTrack NZ - Settings Hook
+// UPDATED: Changed to read from companies/{companyId} instead of company/settings
 
 import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
@@ -7,7 +8,8 @@ import { db } from '../firebase';
 import { EmployeeSettings, CompanyLabels, defaultLabels } from '../types';
 import { defaultSettings } from '../utils';
 
-export function useSettings(user: User | null) {
+// UPDATED: Now accepts companyId parameter
+export function useSettings(user: User | null, companyId: string | null) {
   const [settings, setSettings] = useState<EmployeeSettings>(defaultSettings);
   const [labels, setLabels] = useState<CompanyLabels>(defaultLabels);
 
@@ -39,26 +41,29 @@ export function useSettings(user: User | null) {
           }, { merge: true });
         }
 
-        // Try to load company-wide settings (for labels)
-        const companyRef = doc(db, 'company', 'settings');
-        const companySnap = await getDoc(companyRef);
-        if (companySnap.exists()) {
-          const companyData = companySnap.data();
-          setLabels({
-            field1Label: companyData.field1Label || defaultLabels.field1Label,
-            field2Label: companyData.field2Label || defaultLabels.field2Label,
-            field3Label: companyData.field3Label || defaultLabels.field3Label,
-            managerDisplayName: companyData.managerDisplayName || defaultLabels.managerDisplayName,
-            paidRestMinutes: companyData.paidRestMinutes || defaultLabels.paidRestMinutes,
-            payWeekEndDay: companyData.payWeekEndDay ?? defaultLabels.payWeekEndDay
-          });
-          setSettings(prev => ({
-            ...prev,
-            photoVerification: companyData.photoVerification || false,
-            field1Enabled: companyData.field1Enabled !== false,  // defaults to true
-            field2Enabled: companyData.field2Enabled === true,   // defaults to false
-            field3Enabled: companyData.field3Enabled === true    // defaults to false
-          }));
+        // UPDATED: Load company settings from companies/{companyId} if available
+        if (companyId) {
+          const companyRef = doc(db, 'companies', companyId);
+          const companySnap = await getDoc(companyRef);
+          if (companySnap.exists()) {
+            const companyData = companySnap.data();
+            const companySettings = companyData.settings || {};
+            setLabels({
+              field1Label: companySettings.field1Label || defaultLabels.field1Label,
+              field2Label: companySettings.field2Label || defaultLabels.field2Label,
+              field3Label: companySettings.field3Label || defaultLabels.field3Label,
+              managerDisplayName: companySettings.managerDisplayName || defaultLabels.managerDisplayName,
+              paidRestMinutes: companySettings.paidRestMinutes || defaultLabels.paidRestMinutes,
+              payWeekEndDay: companySettings.payWeekEndDay ?? defaultLabels.payWeekEndDay
+            });
+            setSettings(prev => ({
+              ...prev,
+              photoVerification: companySettings.photoVerification || false,
+              field1Enabled: companySettings.field1Enabled !== false,  // defaults to true
+              field2Enabled: companySettings.field2Enabled === true,   // defaults to false
+              field3Enabled: companySettings.field3Enabled === true    // defaults to false
+            }));
+          }
         }
       } catch (err) {
         console.error('Error loading settings:', err);
@@ -67,31 +72,34 @@ export function useSettings(user: User | null) {
 
     loadSettings();
 
-    // Also subscribe to company settings changes
-    const companyRef = doc(db, 'company', 'settings');
+    // UPDATED: Subscribe to company settings at companies/{companyId}
+    if (!companyId) return;
+    
+    const companyRef = doc(db, 'companies', companyId);
     const unsubscribe = onSnapshot(companyRef, (snap) => {
       if (snap.exists()) {
         const data = snap.data();
+        const companySettings = data.settings || {};
         setLabels({
-          field1Label: data.field1Label || defaultLabels.field1Label,
-          field2Label: data.field2Label || defaultLabels.field2Label,
-          field3Label: data.field3Label || defaultLabels.field3Label,
-          managerDisplayName: data.managerDisplayName || defaultLabels.managerDisplayName,
-          paidRestMinutes: data.paidRestMinutes || defaultLabels.paidRestMinutes,
-          payWeekEndDay: data.payWeekEndDay ?? defaultLabels.payWeekEndDay
+          field1Label: companySettings.field1Label || defaultLabels.field1Label,
+          field2Label: companySettings.field2Label || defaultLabels.field2Label,
+          field3Label: companySettings.field3Label || defaultLabels.field3Label,
+          managerDisplayName: companySettings.managerDisplayName || defaultLabels.managerDisplayName,
+          paidRestMinutes: companySettings.paidRestMinutes || defaultLabels.paidRestMinutes,
+          payWeekEndDay: companySettings.payWeekEndDay ?? defaultLabels.payWeekEndDay
         });
         setSettings(prev => ({ 
           ...prev, 
-          photoVerification: data.photoVerification || false,
-          field1Enabled: data.field1Enabled !== false,  // defaults to true
-          field2Enabled: data.field2Enabled === true,   // defaults to false
-          field3Enabled: data.field3Enabled === true    // defaults to false
+          photoVerification: companySettings.photoVerification || false,
+          field1Enabled: companySettings.field1Enabled !== false,  // defaults to true
+          field2Enabled: companySettings.field2Enabled === true,   // defaults to false
+          field3Enabled: companySettings.field3Enabled === true    // defaults to false
         }));
       }
     });
 
     return () => unsubscribe();
-  }, [user]);
+  }, [user, companyId]);
 
   return { settings, labels };
 }

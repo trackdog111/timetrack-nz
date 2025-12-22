@@ -1,4 +1,5 @@
 // TimeTrack NZ - Chat Hook
+// UPDATED: Added companyId support for multi-tenant
 
 import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
@@ -6,6 +7,7 @@ import {
   collection,
   addDoc,
   query,
+  where,
   orderBy,
   limit,
   onSnapshot,
@@ -14,17 +16,19 @@ import {
 import { db } from '../firebase';
 import { ChatMessage, ChatTabType } from '../types';
 
-export function useChat(user: User | null, chatEnabled: boolean) {
+// UPDATED: Now accepts companyId parameter
+export function useChat(user: User | null, chatEnabled: boolean, companyId: string | null) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [chatTab, setChatTab] = useState<ChatTabType>('team');
 
-  // Subscribe to messages
+  // Subscribe to messages - UPDATED: Filter by companyId
   useEffect(() => {
-    if (!user || !chatEnabled) return;
+    if (!user || !chatEnabled || !companyId) return;
 
     const q = query(
       collection(db, 'messages'),
+      where('companyId', '==', companyId),  // NEW: Filter by company
       orderBy('timestamp', 'desc'),
       limit(50)
     );
@@ -38,14 +42,15 @@ export function useChat(user: User | null, chatEnabled: boolean) {
     });
 
     return () => unsubscribe();
-  }, [user, chatEnabled]);
+  }, [user, chatEnabled, companyId]);
 
-  // Send message
+  // Send message - UPDATED: Include companyId
   const sendMessage = async () => {
-    if (!user || !newMessage.trim()) return;
+    if (!user || !newMessage.trim() || !companyId) return;
 
     try {
       const msgData: any = {
+        companyId,  // NEW: Include companyId
         type: chatTab === 'team' ? 'team' : 'dm',
         senderId: user.uid,
         senderEmail: user.email,
@@ -64,15 +69,16 @@ export function useChat(user: User | null, chatEnabled: boolean) {
     }
   };
 
-  // Send job update to chat (for share feature)
+  // Send job update to chat (for share feature) - UPDATED: Include companyId
   const sendJobUpdate = async (
     text: string,
     destination: 'team' | 'manager'
   ) => {
-    if (!user) return false;
+    if (!user || !companyId) return false;
 
     try {
       const msgData: any = {
+        companyId,  // NEW: Include companyId
         type: destination === 'team' ? 'team' : 'dm',
         senderId: user.uid,
         senderEmail: user.email,

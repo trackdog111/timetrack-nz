@@ -1,4 +1,5 @@
 // TimeTrack NZ - Authentication Hook
+// UPDATED: Added companyId support for multi-tenant
 
 import { useState, useEffect } from 'react';
 import { 
@@ -28,6 +29,8 @@ export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [companyId, setCompanyId] = useState<string | null>(null);  // NEW
+  const [loadingCompany, setLoadingCompany] = useState(false);  // NEW
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -36,6 +39,32 @@ export function useAuth() {
     });
     return () => unsubscribe();
   }, []);
+
+  // NEW: Load companyId when user changes
+  useEffect(() => {
+    if (!user) {
+      setCompanyId(null);
+      return;
+    }
+    
+    setLoadingCompany(true);
+    const loadCompanyId = async () => {
+      try {
+        const empDoc = await getDoc(doc(db, 'employees', user.uid));
+        if (empDoc.exists()) {
+          setCompanyId(empDoc.data().companyId || null);
+        } else {
+          setCompanyId(null);
+        }
+      } catch (err) {
+        console.error('Error loading companyId:', err);
+        setCompanyId(null);
+      } finally {
+        setLoadingCompany(false);
+      }
+    };
+    loadCompanyId();
+  }, [user]);
 
   const signIn = async (email: string, password: string) => {
     setError('');
@@ -48,6 +77,7 @@ export function useAuth() {
   };
 
   const signOut = async () => {
+    setCompanyId(null);  // Clear companyId on logout
     await firebaseSignOut(auth);
   };
 
@@ -87,6 +117,7 @@ export function useAuth() {
     }
   };
 
+  // UPDATED: Include companyId from invite when creating employee
   const acceptInvite = async (
     email: string, 
     password: string, 
@@ -95,18 +126,25 @@ export function useAuth() {
     setError('');
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
+      
+      // Create employee with companyId from invite
       await setDoc(doc(db, 'employees', cred.user.uid), {
+        companyId: invite.companyId,  // NEW: Get companyId from invite
         email: email.toLowerCase(),
         name: invite.name || email.split('@')[0],
         role: 'employee',
         settings: defaultSettings,
         createdAt: Timestamp.now()
       });
+      
       await updateDoc(doc(db, 'invites', invite.id), {
         status: 'accepted',
         acceptedAt: Timestamp.now(),
         userId: cred.user.uid
       });
+
+      // Set companyId state immediately
+      setCompanyId(invite.companyId);
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
       throw err;
@@ -118,6 +156,8 @@ export function useAuth() {
     loading,
     error,
     setError,
+    companyId,        // NEW: Export companyId
+    loadingCompany,   // NEW: Export loading state
     signIn,
     signOut,
     resetPassword,
