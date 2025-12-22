@@ -984,6 +984,31 @@ export function ClockView({
               />
             </div>
           )}
+
+          {/* View Map Button - Full width like dashboard */}
+          {locationHistory.length > 0 && (
+            <button
+              onClick={() => setShowMapModal(true)}
+              style={{
+                width: 'calc(100% - 32px)',
+                margin: '0 16px 16px 16px',
+                padding: '14px 20px',
+                background: theme.cardAlt,
+                border: `1px solid ${theme.cardBorder}`,
+                borderRadius: '10px',
+                color: theme.text,
+                fontSize: '15px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px'
+              }}
+            >
+              🗺️ View Map ({locationHistory.length} points)
+            </button>
+          )}
         </>
       )}
 
@@ -998,29 +1023,7 @@ export function ClockView({
       {/* Current Location */}
       {currentLocation && (
         <div style={{ ...styles.card, marginTop: '16px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-            <h3 style={{ color: theme.text, fontWeight: '600', margin: 0 }}>Current Location</h3>
-            {locationHistory.length > 0 && (
-              <button
-                onClick={() => setShowMapModal(true)}
-                style={{
-                  background: theme.primary,
-                  color: 'white',
-                  border: 'none',
-                  padding: '6px 12px',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '4px'
-                }}
-              >
-                🗺️ View Map ({locationHistory.length})
-              </button>
-            )}
-          </div>
+          <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '8px' }}>Current Location</h3>
           <p style={{ color: theme.textMuted, fontSize: '14px' }}>
             {currentLocation.latitude.toFixed(6)}, {currentLocation.longitude.toFixed(6)}
           </p>
