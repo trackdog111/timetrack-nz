@@ -17,8 +17,8 @@ export default function App() {
     loading,
     error: authError,
     setError: setAuthError,
-    companyId,        // NEW: Get companyId from auth
-    loadingCompany,   // NEW: Loading state for company
+    companyId,        // NEW
+    loadingCompany,   // NEW
     signIn,
     resetPassword,
     checkInvite,
@@ -49,7 +49,7 @@ export default function App() {
     showToastRef.current(message);
   }, []);
 
-  // Shift hook - NOW RECEIVES companyId (note: parameter order changed)
+  // Shift hook - NOW RECEIVES companyId
   const {
     currentShift,
     shiftHistory,
@@ -84,7 +84,7 @@ export default function App() {
     deleteShift,
     autoTravelActive,
     anchorLocation
-  } = useShift(user, settings, companyId, showToast);  // UPDATED: Pass companyId
+  } = useShift(user, settings, companyId, showToast);  // UPDATED: Added companyId
 
   // Chat hook - NOW RECEIVES companyId
   const {
@@ -95,7 +95,7 @@ export default function App() {
     setChatTab,
     sendMessage,
     sendJobUpdate
-  } = useChat(user, settings.chatEnabled, companyId);  // UPDATED: Pass companyId
+  } = useChat(user, settings.chatEnabled, companyId);  // UPDATED: Added companyId
 
   // Invite URL handling
   const [initialEmail, setInitialEmail] = useState('');
@@ -164,7 +164,7 @@ export default function App() {
     );
   }
 
-  // NEW: Show error if user has no company (shouldn't happen for invited employees)
+  // NEW: Show error if user has no company
   if (!companyId) {
     return (
       <main style={{ 
