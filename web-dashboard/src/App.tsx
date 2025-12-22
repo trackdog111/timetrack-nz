@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail } from 'firebase/auth';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch, arrayUnion } from 'firebase/firestore';
 import { auth, db, MOBILE_APP_URL } from './shared/firebase';
-import { Location, Break, TravelSegment, Shift, Employee, EmployeeSettings, ChatMessage, CompanySettings, Invite, Theme } from './shared/types';
+import { Location, Break, TravelSegment, Shift, Employee, EmployeeSettings, ChatMessage, CompanySettings, Invite, Theme, Company } from './shared/types';
 import { lightTheme, darkTheme } from './shared/theme';
 import { defaultSettings, defaultCompanySettings, getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, fmtDateShort, getWeekEndingDate, getWeekEndingKey } from './shared/utils';
 import { MapModal, LocationMap } from './components/MapModal';
@@ -26,6 +26,7 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [signupName, setSignupName] = useState('');
+  const [companyName, setCompanyName] = useState('');  // NEW: For signup
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [view, setView] = useState('live');
@@ -99,17 +100,98 @@ export default function App() {
   const [timesheetDeleteConfirmId, setTimesheetDeleteConfirmId] = useState<string | null>(null);
   const [deletingTimesheetShift, setDeletingTimesheetShift] = useState(false);
 
+  // NEW: Multi-tenant state
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [loadingCompany, setLoadingCompany] = useState(false);
+
   const theme = dark ? darkTheme : lightTheme;
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
 
   useEffect(() => { const handleResize = () => setIsMobile(window.innerWidth < 768); window.addEventListener('resize', handleResize); return () => window.removeEventListener('resize', handleResize); }, []);
+  
+  // Auth state listener
   useEffect(() => { return onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); }); }, []);
-  useEffect(() => { if (!user) return; return onSnapshot(collection(db, 'employees'), (snap) => { setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() } as Employee))); }); }, [user]);
-  useEffect(() => { if (!user) return; return onSnapshot(collection(db, 'invites'), (snap) => { setInvites(snap.docs.map(d => ({ id: d.id, ...d.data() } as Invite))); }); }, [user]);
-  useEffect(() => { if (!user) return; return onSnapshot(query(collection(db, 'shifts'), where('status', '==', 'active')), (snap) => { setActiveShifts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift))); }); }, [user]);
-  useEffect(() => { if (!user) return; return onSnapshot(query(collection(db, 'shifts'), orderBy('clockIn', 'desc')), (snap) => { setAllShifts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift))); }); }, [user]);
-  useEffect(() => { if (!user) return; return onSnapshot(query(collection(db, 'messages'), orderBy('timestamp', 'desc')), (snap) => { setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)).reverse()); }); }, [user]);
-  useEffect(() => { if (!user) return; return onSnapshot(doc(db, 'company', 'settings'), (snap) => { if (snap.exists()) { const data = snap.data() as CompanySettings; setCompanySettings({ ...defaultCompanySettings, ...data }); setEditingCompanySettings({ ...defaultCompanySettings, ...data }); } }); }, [user]);
+
+  // NEW: Load companyId from user's employee doc after auth
+  useEffect(() => {
+    if (!user) {
+      setCompanyId(null);
+      return;
+    }
+    setLoadingCompany(true);
+    const loadCompanyId = async () => {
+      try {
+        const empDoc = await getDoc(doc(db, 'employees', user.uid));
+        if (empDoc.exists()) {
+          const empData = empDoc.data();
+          setCompanyId(empData.companyId || null);
+        } else {
+          setCompanyId(null);
+        }
+      } catch (err) {
+        console.error('Error loading company:', err);
+        setCompanyId(null);
+      } finally {
+        setLoadingCompany(false);
+      }
+    };
+    loadCompanyId();
+  }, [user]);
+
+  // UPDATED: All Firestore listeners now filter by companyId
+  useEffect(() => { 
+    if (!user || !companyId) return; 
+    return onSnapshot(
+      query(collection(db, 'employees'), where('companyId', '==', companyId)), 
+      (snap) => { setEmployees(snap.docs.map(d => ({ id: d.id, ...d.data() } as Employee))); }
+    ); 
+  }, [user, companyId]);
+
+  useEffect(() => { 
+    if (!user || !companyId) return; 
+    return onSnapshot(
+      query(collection(db, 'invites'), where('companyId', '==', companyId)), 
+      (snap) => { setInvites(snap.docs.map(d => ({ id: d.id, ...d.data() } as Invite))); }
+    ); 
+  }, [user, companyId]);
+
+  useEffect(() => { 
+    if (!user || !companyId) return; 
+    return onSnapshot(
+      query(collection(db, 'shifts'), where('companyId', '==', companyId), where('status', '==', 'active')), 
+      (snap) => { setActiveShifts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift))); }
+    ); 
+  }, [user, companyId]);
+
+  useEffect(() => { 
+    if (!user || !companyId) return; 
+    return onSnapshot(
+      query(collection(db, 'shifts'), where('companyId', '==', companyId), orderBy('clockIn', 'desc')), 
+      (snap) => { setAllShifts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift))); }
+    ); 
+  }, [user, companyId]);
+
+  useEffect(() => { 
+    if (!user || !companyId) return; 
+    return onSnapshot(
+      query(collection(db, 'messages'), where('companyId', '==', companyId), orderBy('timestamp', 'desc')), 
+      (snap) => { setMessages(snap.docs.map(d => ({ id: d.id, ...d.data() } as ChatMessage)).reverse()); }
+    ); 
+  }, [user, companyId]);
+
+  // UPDATED: Company settings now stored in companies/{companyId}
+  useEffect(() => { 
+    if (!user || !companyId) return; 
+    return onSnapshot(doc(db, 'companies', companyId), (snap) => { 
+      if (snap.exists()) { 
+        const data = snap.data();
+        const settings = data.settings as CompanySettings || defaultCompanySettings;
+        setCompanySettings({ ...defaultCompanySettings, ...settings }); 
+        setEditingCompanySettings({ ...defaultCompanySettings, ...settings }); 
+      } 
+    }); 
+  }, [user, companyId]);
+
   useEffect(() => { if (!user) return; const myActive = activeShifts.find(s => s.userId === user.uid); setMyShift(myActive || null); if (myActive) { const ab = myActive.breaks?.find(b => !b.endTime && !b.manualEntry); setOnBreak(!!ab); setBreakStart(ab ? ab.startTime.toDate() : null); setMyField1(myActive.jobLog?.field1 || ''); setMyField2(myActive.jobLog?.field2 || ''); setMyField3(myActive.jobLog?.field3 || ''); } else { setOnBreak(false); setBreakStart(null); } }, [user, activeShifts]);
   useEffect(() => { if (!user) return; const hist = allShifts.filter(s => s.userId === user.uid && s.status === 'completed').slice(0, 20); setMyShiftHistory(hist); }, [user, allShifts]);
   useEffect(() => { if (myShift) { const activeTravel = myShift.travelSegments?.find(t => !t.endTime); setMyTraveling(!!activeTravel); setMyTravelStart(activeTravel ? activeTravel.startTime.toDate() : null); } else { setMyTraveling(false); setMyTravelStart(null); } }, [myShift]);
@@ -142,14 +224,75 @@ export default function App() {
   const getEmployeeName = (userId?: string, userEmail?: string): string => getEmployeeInfo(userId, userEmail).name;
 
   const handleLogin = async (e: React.FormEvent) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch (err: any) { setError(err.message); } };
-  const handleSignUp = async (e: React.FormEvent) => { e.preventDefault(); try { const cred = await createUserWithEmailAndPassword(auth, email, password); await setDoc(doc(db, 'employees', cred.user.uid), { email, name: signupName, role: 'manager', settings: defaultSettings, createdAt: Timestamp.now() }); } catch (err: any) { setError(err.message); } };
+  
+  // UPDATED: Signup now creates a company first, then employee with companyId
+  const handleSignUp = async (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    if (!companyName.trim()) {
+      setError('Please enter your company/business name');
+      return;
+    }
+    try { 
+      const cred = await createUserWithEmailAndPassword(auth, email, password); 
+      
+      // Create company document first
+      const companyRef = await addDoc(collection(db, 'companies'), {
+        name: companyName.trim(),
+        ownerId: cred.user.uid,
+        ownerEmail: email,
+        createdAt: Timestamp.now(),
+        plan: 'free',
+        settings: defaultCompanySettings
+      });
+      
+      // Create employee with companyId
+      await setDoc(doc(db, 'employees', cred.user.uid), { 
+        companyId: companyRef.id,  // NEW: Link to company
+        email, 
+        name: signupName, 
+        role: 'manager', 
+        settings: defaultSettings, 
+        createdAt: Timestamp.now() 
+      }); 
+
+      // Set local state
+      setCompanyId(companyRef.id);
+    } catch (err: any) { setError(err.message); } 
+  };
+
   const handleResetPassword = async (e: React.FormEvent) => { e.preventDefault(); try { await sendPasswordResetEmail(auth, email); setSuccess('Password reset email sent!'); setAuthMode('signin'); } catch (err: any) { setError(err.message); } };
   const navigateTo = (v: string) => { setView(v); setSidebarOpen(false); };
 
   const updateSettings = async (empId: string, updates: Partial<EmployeeSettings>) => { const ref = doc(db, 'employees', empId); const snap = await getDoc(ref); await updateDoc(ref, { settings: { ...(snap.data()?.settings || defaultSettings), ...updates } }); setSuccess('Updated!'); setTimeout(() => setSuccess(''), 2000); };
-  const saveCompanySettings = async () => { setSavingCompanySettings(true); try { await setDoc(doc(db, 'company', 'settings'), editingCompanySettings); setSuccess('Saved!'); setTimeout(() => setSuccess(''), 2000); } catch (err: any) { setError(err.message); } finally { setSavingCompanySettings(false); } };
+  
+  // UPDATED: Save to companies/{companyId} instead of company/settings
+  const saveCompanySettings = async () => { 
+    if (!companyId) return;
+    setSavingCompanySettings(true); 
+    try { 
+      await updateDoc(doc(db, 'companies', companyId), { settings: editingCompanySettings }); 
+      setSuccess('Saved!'); 
+      setTimeout(() => setSuccess(''), 2000); 
+    } catch (err: any) { setError(err.message); } 
+    finally { setSavingCompanySettings(false); } 
+  };
 
-  const inviteEmployee = async (e: React.FormEvent) => { e.preventDefault(); if (!newEmpEmail) return; await addDoc(collection(db, 'invites'), { email: newEmpEmail.toLowerCase(), name: newEmpName, status: 'pending', createdAt: Timestamp.now() }); setNewEmpEmail(''); setNewEmpName(''); setSuccess('Invite created!'); };
+  // UPDATED: Include companyId in invite
+  const inviteEmployee = async (e: React.FormEvent) => { 
+    e.preventDefault(); 
+    if (!newEmpEmail || !companyId) return; 
+    await addDoc(collection(db, 'invites'), { 
+      companyId,  // NEW
+      email: newEmpEmail.toLowerCase(), 
+      name: newEmpName, 
+      status: 'pending', 
+      createdAt: Timestamp.now() 
+    }); 
+    setNewEmpEmail(''); 
+    setNewEmpName(''); 
+    setSuccess('Invite created!'); 
+  };
+
   const cancelInvite = async (id: string) => { await deleteDoc(doc(db, 'invites', id)); };
   const sendInviteEmail = async (inv: Invite) => { setSendingEmail(inv.id); try { const res = await fetch(`${MOBILE_APP_URL}/api/send-invite`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: inv.email, inviteId: inv.id, name: inv.name }) }); if (res.ok) { await updateDoc(doc(db, 'invites', inv.id), { emailSent: true }); setSuccess('Email sent!'); } else { setError('Failed to send'); } } catch (err) { setError('Failed to send'); } setSendingEmail(null); };
   const copyInviteLink = (inv: Invite) => { navigator.clipboard.writeText(`${MOBILE_APP_URL}/join?invite=${inv.id}`); setSuccess('Link copied!'); };
@@ -166,11 +309,46 @@ export default function App() {
   const exportCSV = () => { if (!reportData.length) return; const rows = [['Date','Employee','In','Out','Worked','Paid','Unpaid','Travel']]; reportData.forEach(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const t = calcTravel(sh.travelSegments || []); rows.push([fmtDateShort(sh.clockIn), getEmployeeName(sh.userId, sh.userEmail), fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : '-', fmtDur((h*60)-b.unpaid), b.paid+'m', b.unpaid+'m', t+'m']); }); const csv = rows.map(r => r.join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `timetrack-${reportStart}-${reportEnd}.csv`; a.click(); };
   const exportPDF = () => { if (!reportData.length) return; let total = 0, tPaid = 0, tUnpaid = 0; const rows = reportData.map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const worked = (h*60) - b.unpaid; total += worked; tPaid += b.paid; tUnpaid += b.unpaid; return `<tr><td>${fmtDateShort(sh.clockIn)}</td><td>${getEmployeeName(sh.userId, sh.userEmail)}</td><td>${fmtTime(sh.clockIn)}</td><td>${sh.clockOut ? fmtTime(sh.clockOut) : '-'}</td><td>${fmtDur(worked)}</td><td>${b.paid}m</td><td>${b.unpaid}m</td></tr>`; }).join(''); const html = `<!DOCTYPE html><html><head><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px}th{background:#1e40af;color:white}</style></head><body><h1>TimeTrack Report</h1><p>${reportStart} to ${reportEnd}</p><table><tr><th>Date</th><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Paid</th><th>Unpaid</th></tr>${rows}</table><h3>Total: ${fmtDur(total)}, ${tPaid}m paid, ${tUnpaid}m unpaid</h3></body></html>`; const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); } };
 
-  const sendMsg = async () => { if (!newMsg.trim()) return; await addDoc(collection(db, 'messages'), { type: chatTab, senderId: 'employer', senderEmail: 'Employer', text: newMsg.trim(), timestamp: Timestamp.now(), participants: [] }); setNewMsg(''); };
+  // UPDATED: Include companyId in messages
+  const sendMsg = async () => { 
+    if (!newMsg.trim() || !companyId) return; 
+    await addDoc(collection(db, 'messages'), { 
+      companyId,  // NEW
+      type: chatTab, 
+      senderId: 'employer', 
+      senderEmail: 'Employer', 
+      text: newMsg.trim(), 
+      timestamp: Timestamp.now(), 
+      participants: [] 
+    }); 
+    setNewMsg(''); 
+  };
+
   const cleanup = async () => { if (!cleanupStart || !cleanupEnd || !cleanupConfirm) { setError('Select dates and confirm'); return; } const s = new Date(cleanupStart); const e = new Date(cleanupEnd); e.setHours(23,59,59); const toDelete = allShifts.filter(sh => { if (!sh.clockIn?.toDate) return false; const d = sh.clockIn.toDate(); return d >= s && d <= e && sh.status === 'completed'; }); const batch = writeBatch(db); toDelete.forEach(sh => batch.delete(doc(db, 'shifts', sh.id))); await batch.commit(); setSuccess(`Deleted ${toDelete.length} shifts`); setCleanupConfirm(false); setCleanupStart(''); setCleanupEnd(''); };
 
-  // My Timesheet handlers
-  const myClockIn = async () => { if (!user || clockingIn) return; setClockingIn(true); try { const location = await getMyCurrentLocation(); await addDoc(collection(db, 'shifts'), { userId: user.uid, userEmail: user.email, clockIn: Timestamp.now(), clockInLocation: location, locationHistory: [], breaks: [], travelSegments: [], jobLog: { field1: '', field2: '', field3: '' }, status: 'active' }); setSuccess('Clocked in!'); } catch (err: any) { setError(err.message || 'Failed to clock in'); } finally { setClockingIn(false); } };
+  // UPDATED: Include companyId in clock in
+  const myClockIn = async () => { 
+    if (!user || !companyId || clockingIn) return; 
+    setClockingIn(true); 
+    try { 
+      const location = await getMyCurrentLocation(); 
+      await addDoc(collection(db, 'shifts'), { 
+        companyId,  // NEW
+        userId: user.uid, 
+        userEmail: user.email, 
+        clockIn: Timestamp.now(), 
+        clockInLocation: location, 
+        locationHistory: [], 
+        breaks: [], 
+        travelSegments: [], 
+        jobLog: { field1: '', field2: '', field3: '' }, 
+        status: 'active' 
+      }); 
+      setSuccess('Clocked in!'); 
+    } catch (err: any) { setError(err.message || 'Failed to clock in'); } 
+    finally { setClockingIn(false); } 
+  };
+
   const myClockOut = async () => { if (!myShift || clockingOut) return; setClockingOut(true); try { const location = await getMyCurrentLocation(); let ub = [...(myShift.breaks || [])]; const ai = ub.findIndex(b => !b.endTime && !b.manualEntry); if (ai !== -1 && breakStart) { ub[ai] = { ...ub[ai], endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) }; } let ut = [...(myShift.travelSegments || [])]; const ti = ut.findIndex(t => !t.endTime); if (ti !== -1 && myTravelStart) { ut[ti] = { ...ut[ti], endTime: Timestamp.now(), endLocation: location || undefined, durationMinutes: Math.round((Date.now() - myTravelStart.getTime()) / 60000) }; } await updateDoc(doc(db, 'shifts', myShift.id), { clockOut: Timestamp.now(), clockOutLocation: location, breaks: ub, travelSegments: ut, 'jobLog.field1': myField1, 'jobLog.field2': myField2, 'jobLog.field3': myField3, status: 'completed' }); setSuccess('Clocked out!'); } catch (err: any) { setError(err.message || 'Failed to clock out'); } finally { setClockingOut(false); } };
   const myStartBreak = async () => { if (!myShift) return; const location = await getMyCurrentLocation(); const updateData: any = { breaks: [...(myShift.breaks || []), { startTime: Timestamp.now(), manualEntry: false }] }; if (location) updateData.locationHistory = arrayUnion(location); await updateDoc(doc(db, 'shifts', myShift.id), updateData); setOnBreak(true); setBreakStart(new Date()); };
   const myEndBreak = async () => { if (!myShift || !breakStart) return; const location = await getMyCurrentLocation(); const ub = myShift.breaks.map((b, i) => i === myShift.breaks.length - 1 && !b.endTime && !b.manualEntry ? { ...b, endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) } : b); const updateData: any = { breaks: ub }; if (location) updateData.locationHistory = arrayUnion(location); await updateDoc(doc(db, 'shifts', myShift.id), updateData); setOnBreak(false); setBreakStart(null); };
@@ -181,7 +359,45 @@ export default function App() {
   const myStartTravel = async () => { if (!myShift) return; const location = await getMyCurrentLocation(); const updateData: any = { travelSegments: [...(myShift.travelSegments || []), { startTime: Timestamp.now(), startLocation: location || undefined }] }; if (location) updateData.locationHistory = arrayUnion(location); await updateDoc(doc(db, 'shifts', myShift.id), updateData); setMyTraveling(true); setMyTravelStart(new Date()); };
   const myEndTravel = async () => { if (!myShift || !myTravelStart) return; const location = await getMyCurrentLocation(); const durationMinutes = Math.round((Date.now() - myTravelStart.getTime()) / 60000); const updatedTravel = (myShift.travelSegments || []).map((t, i, arr) => i === arr.length - 1 && !t.endTime ? { ...t, endTime: Timestamp.now(), endLocation: location || undefined, durationMinutes } : t); const updateData: any = { travelSegments: updatedTravel }; if (location) updateData.locationHistory = arrayUnion(location); await updateDoc(doc(db, 'shifts', myShift.id), updateData); setMyTraveling(false); setMyTravelStart(null); };
 
-  const myAddManualShift = async () => { if (!user) return; setAddingManualShift(true); try { let sHour = parseInt(manualStartHour); if (manualStartAmPm === 'PM' && sHour !== 12) sHour += 12; if (manualStartAmPm === 'AM' && sHour === 12) sHour = 0; let eHour = parseInt(manualEndHour); if (manualEndAmPm === 'PM' && eHour !== 12) eHour += 12; if (manualEndAmPm === 'AM' && eHour === 12) eHour = 0; const clockIn = new Date(manualDate); clockIn.setHours(sHour, parseInt(manualStartMinute), 0, 0); const clockOut = new Date(manualDate); clockOut.setHours(eHour, parseInt(manualEndMinute), 0, 0); if (clockOut <= clockIn) clockOut.setDate(clockOut.getDate() + 1); const shiftBreaks = manualBreaks.map(mins => { const now = Timestamp.fromDate(clockIn); return { startTime: now, endTime: now, durationMinutes: mins, manualEntry: true }; }); const shiftTravel = manualTravel.map(mins => { const now = Timestamp.fromDate(clockIn); return { startTime: now, endTime: now, durationMinutes: mins }; }); await addDoc(collection(db, 'shifts'), { userId: user.uid, userEmail: user.email, clockIn: Timestamp.fromDate(clockIn), clockOut: Timestamp.fromDate(clockOut), breaks: shiftBreaks, travelSegments: shiftTravel, jobLog: { field1: manualNotes, field2: '', field3: '' }, status: 'completed', manualEntry: true, locationHistory: [] }); setShowAddManualShift(false); setManualBreaks([]); setManualTravel([]); setManualNotes(''); setSuccess('Shift added!'); } catch (err: any) { setError(err.message); } setAddingManualShift(false); };
+  // UPDATED: Include companyId in manual shift
+  const myAddManualShift = async () => { 
+    if (!user || !companyId) return; 
+    setAddingManualShift(true); 
+    try { 
+      let sHour = parseInt(manualStartHour); 
+      if (manualStartAmPm === 'PM' && sHour !== 12) sHour += 12; 
+      if (manualStartAmPm === 'AM' && sHour === 12) sHour = 0; 
+      let eHour = parseInt(manualEndHour); 
+      if (manualEndAmPm === 'PM' && eHour !== 12) eHour += 12; 
+      if (manualEndAmPm === 'AM' && eHour === 12) eHour = 0; 
+      const clockIn = new Date(manualDate); 
+      clockIn.setHours(sHour, parseInt(manualStartMinute), 0, 0); 
+      const clockOut = new Date(manualDate); 
+      clockOut.setHours(eHour, parseInt(manualEndMinute), 0, 0); 
+      if (clockOut <= clockIn) clockOut.setDate(clockOut.getDate() + 1); 
+      const shiftBreaks = manualBreaks.map(mins => { const now = Timestamp.fromDate(clockIn); return { startTime: now, endTime: now, durationMinutes: mins, manualEntry: true }; }); 
+      const shiftTravel = manualTravel.map(mins => { const now = Timestamp.fromDate(clockIn); return { startTime: now, endTime: now, durationMinutes: mins }; }); 
+      await addDoc(collection(db, 'shifts'), { 
+        companyId,  // NEW
+        userId: user.uid, 
+        userEmail: user.email, 
+        clockIn: Timestamp.fromDate(clockIn), 
+        clockOut: Timestamp.fromDate(clockOut), 
+        breaks: shiftBreaks, 
+        travelSegments: shiftTravel, 
+        jobLog: { field1: manualNotes, field2: '', field3: '' }, 
+        status: 'completed', 
+        manualEntry: true, 
+        locationHistory: [] 
+      }); 
+      setShowAddManualShift(false); 
+      setManualBreaks([]); 
+      setManualTravel([]); 
+      setManualNotes(''); 
+      setSuccess('Shift added!'); 
+    } catch (err: any) { setError(err.message); } 
+    setAddingManualShift(false); 
+  };
 
   const myAddBreakToShift = async (shiftId: string, minutes: number) => { setAddingBreakToShift(true); try { const shiftRef = doc(db, 'shifts', shiftId); const shiftSnap = await getDoc(shiftRef); if (shiftSnap.exists()) { const now = Timestamp.now(); await updateDoc(shiftRef, { breaks: [...(shiftSnap.data().breaks || []), { startTime: now, endTime: now, durationMinutes: minutes, manualEntry: true }], editedAt: now, editedBy: user?.uid, editedByEmail: user?.email }); setSuccess(`${minutes}m break added ✓`); setTimeout(() => setSuccess(''), 2000); } } catch (err: any) { setError(err.message); } setAddingBreakToShift(false); };
   const myAddTravelToShift = async (shiftId: string, shiftDate: Date) => { setAddingTravelToShift(true); try { let sHour = parseInt(addTravelStartHour); if (addTravelStartAmPm === 'PM' && sHour !== 12) sHour += 12; if (addTravelStartAmPm === 'AM' && sHour === 12) sHour = 0; let eHour = parseInt(addTravelEndHour); if (addTravelEndAmPm === 'PM' && eHour !== 12) eHour += 12; if (addTravelEndAmPm === 'AM' && eHour === 12) eHour = 0; const travelStart = new Date(shiftDate); travelStart.setHours(sHour, parseInt(addTravelStartMinute), 0, 0); const travelEnd = new Date(shiftDate); travelEnd.setHours(eHour, parseInt(addTravelEndMinute), 0, 0); if (travelEnd <= travelStart) travelEnd.setDate(travelEnd.getDate() + 1); const durationMinutes = Math.round((travelEnd.getTime() - travelStart.getTime()) / 60000); if (durationMinutes <= 0 || durationMinutes > 480) { setError('Invalid travel duration'); setAddingTravelToShift(false); return; } const shiftRef = doc(db, 'shifts', shiftId); const shiftSnap = await getDoc(shiftRef); if (shiftSnap.exists()) { await updateDoc(shiftRef, { travelSegments: [...(shiftSnap.data().travelSegments || []), { startTime: Timestamp.fromDate(travelStart), endTime: Timestamp.fromDate(travelEnd), durationMinutes }], editedAt: Timestamp.now(), editedBy: user?.uid, editedByEmail: user?.email }); } setSuccess('Travel added ✓'); setTimeout(() => setSuccess(''), 2000); setMyEditMode(null); setEditingMyShift(null); } catch (err: any) { setError(err.message); } setAddingTravelToShift(false); };
@@ -230,8 +446,10 @@ export default function App() {
     card: { background: theme.card, padding: '20px', borderRadius: '12px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
   };
 
-  if (loading) return <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ color: theme.text }}>Loading...</p></main>;
+  // UPDATED: Show loading while getting companyId
+  if (loading || loadingCompany) return <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ color: theme.text }}>Loading...</p></main>;
 
+  // UPDATED: Login screen with company name field for signup
   if (!user) return (
     <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div style={{ ...styles.card, width: '100%', maxWidth: '400px' }}>
@@ -241,6 +459,7 @@ export default function App() {
         {error && <p style={{ color: theme.danger, marginBottom: '16px', fontSize: '14px' }}>{error}</p>}
         {success && <p style={{ color: theme.success, marginBottom: '16px', fontSize: '14px' }}>{success}</p>}
         <form onSubmit={authMode === 'signin' ? handleLogin : authMode === 'signup' ? handleSignUp : handleResetPassword}>
+          {authMode === 'signup' && <input placeholder="Company / Business Name" value={companyName} onChange={e => setCompanyName(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />}
           {authMode === 'signup' && <input placeholder="Your Name" value={signupName} onChange={e => setSignupName(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />}
           <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />
           {authMode !== 'reset' && <input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...styles.input, marginBottom: '16px' }} />}
@@ -248,6 +467,17 @@ export default function App() {
         </form>
         {authMode === 'signin' && <button onClick={() => setAuthMode('reset')} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', marginTop: '16px', display: 'block', width: '100%', textAlign: 'center' }}>Forgot password?</button>}
         {authMode === 'reset' && <button onClick={() => setAuthMode('signin')} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', marginTop: '16px', display: 'block', width: '100%', textAlign: 'center' }}>← Back</button>}
+      </div>
+    </main>
+  );
+
+  // NEW: Show error if user has no company (edge case - shouldn't happen)
+  if (!companyId) return (
+    <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div style={{ ...styles.card, width: '100%', maxWidth: '400px', textAlign: 'center' }}>
+        <h2 style={{ color: theme.danger, marginBottom: '16px' }}>Account Error</h2>
+        <p style={{ color: theme.text, marginBottom: '24px' }}>Your account is not linked to a company. Please contact support or sign up again.</p>
+        <button onClick={() => signOut(auth)} style={{ ...styles.btn }}>Sign Out</button>
       </div>
     </main>
   );

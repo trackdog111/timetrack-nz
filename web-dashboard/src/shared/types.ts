@@ -1,5 +1,15 @@
 import { Timestamp } from 'firebase/firestore';
 
+// NEW: Company interface for multi-tenant support
+export interface Company {
+  id: string;
+  name: string;
+  ownerId: string;  // userId of the manager who created the company
+  ownerEmail: string;
+  createdAt: Timestamp;
+  plan?: 'free' | 'pro';
+}
+
 export interface Location {
   latitude: number;
   longitude: number;
@@ -32,6 +42,7 @@ export interface JobLog {
 
 export interface Shift {
   id: string;
+  companyId: string;  // NEW: Required for multi-tenant
   userId: string;
   userEmail: string;
   clockIn: Timestamp;
@@ -66,15 +77,17 @@ export interface EmployeeSettings {
 
 export interface Employee {
   id: string;
+  companyId: string;  // NEW: Required for multi-tenant
   email: string;
   name: string;
-  role: string;
+  role: 'manager' | 'employee';  // NEW: Explicit role types
   settings: EmployeeSettings;
   createdAt: Timestamp;
 }
 
 export interface ChatMessage {
   id: string;
+  companyId: string;  // NEW: Required for multi-tenant
   type: string;
   senderId: string;
   senderEmail: string;
@@ -98,6 +111,7 @@ export interface CompanySettings {
 
 export interface Invite {
   id: string;
+  companyId: string;  // NEW: Required for multi-tenant
   email: string;
   name: string;
   status: 'pending' | 'accepted' | 'cancelled';
