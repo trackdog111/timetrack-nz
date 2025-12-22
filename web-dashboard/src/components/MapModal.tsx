@@ -188,23 +188,39 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     };
   }, [leafletLoaded, allPoints.length]);
   
+  // Invalidate map size when list toggles
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 100);
+    }
+  }, [showList]);
+  
   if (allPoints.length === 0) return null;
   
-  const uniqueTypes = [...new Set(allPoints.map(p => p.type))];
   const lastPoint = allPoints[allPoints.length - 1];
   
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: theme.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
-      {/* Header */}
-      <div style={{ padding: '12px 20px', borderBottom: `1px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.card }}>
+      {/* Header - matches mobile */}
+      <div style={{ 
+        padding: '12px 20px', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        background: theme.card,
+        borderBottom: `1px solid ${theme.cardBorder}`,
+        flexShrink: 0
+      }}>
         <div>
           <h2 style={{ color: theme.text, margin: 0, fontSize: '16px', fontWeight: '600' }}>GPS Track</h2>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
             <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#16a34a' }}></span>
             <span style={{ color: theme.textMuted, fontSize: '13px' }}>{title || 'Clock In'}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span style={{ color: theme.textMuted, fontSize: '12px' }}>
             📍 {lastPoint.actualLat.toFixed(5)}, {lastPoint.actualLng.toFixed(5)}
           </span>
@@ -223,14 +239,30 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
           >
             {showList ? 'Hide List' : 'Show List'}
           </button>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '14px', cursor: 'pointer', color: theme.primary, fontWeight: '600' }}>Close</button>
+          <button 
+            onClick={onClose} 
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              fontSize: '14px', 
+              cursor: 'pointer', 
+              color: theme.primary, 
+              fontWeight: '600' 
+            }}
+          >
+            Close
+          </button>
         </div>
       </div>
       
-      {/* Map */}
+      {/* Map - takes remaining space, or half when list visible */}
       <div 
         ref={mapRef} 
-        style={{ flex: 1, minHeight: '300px', background: '#e5e7eb' }} 
+        style={{ 
+          flex: showList ? '0 0 50%' : '1 1 auto',
+          minHeight: '200px', 
+          background: '#e5e7eb' 
+        }} 
       >
         {!leafletLoaded && (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}>
@@ -239,9 +271,14 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         )}
       </div>
       
-      {/* Location List */}
+      {/* Location List - half screen when visible */}
       {showList && (
-        <div style={{ maxHeight: '40vh', overflowY: 'auto', background: theme.card, borderTop: `1px solid ${theme.cardBorder}` }}>
+        <div style={{ 
+          flex: '0 0 50%',
+          overflowY: 'auto', 
+          background: theme.card, 
+          borderTop: `1px solid ${theme.cardBorder}` 
+        }}>
           {allPoints.map((point, i) => (
             <div 
               key={i} 
