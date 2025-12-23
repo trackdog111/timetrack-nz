@@ -1,4 +1,4 @@
-// TimeTrack NZ - Components Index
+// Trackable NZ - Components Index
 
 export { LoginScreen } from './LoginScreen';
 export { BreakRulesInfo } from './BreakRulesInfo';

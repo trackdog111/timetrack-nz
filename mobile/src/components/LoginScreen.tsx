@@ -1,4 +1,4 @@
-// TimeTrack NZ - Login Screen Component
+// Trackable NZ - Login Screen Component
 
 import { useState } from 'react';
 import { Theme, createStyles } from '../theme';
@@ -136,7 +136,7 @@ export function LoginScreen({
   return (
     <div style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div style={{ background: theme.card, borderRadius: '24px', padding: '32px', width: '100%', maxWidth: '400px', border: `1px solid ${theme.cardBorder}` }}>
-        <h1 style={{ color: theme.text, fontSize: '24px', fontWeight: '700', marginBottom: '8px', textAlign: 'center' }}>TimeTrack NZ</h1>
+        <h1 style={{ color: theme.text, fontSize: '24px', fontWeight: '700', marginBottom: '8px', textAlign: 'center' }}>Trackable NZ</h1>
         <p style={{ color: theme.textMuted, textAlign: 'center', marginBottom: '24px' }}>Employee Time Tracking</p>
 
         {/* Auth Mode Toggle */}

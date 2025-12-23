@@ -1,4 +1,4 @@
-// TimeTrack NZ - Main App Component
+// Trackable NZ - Main App Component
 // Refactored from monolithic 800-line file into clean modular structure
 // UPDATED: Added companyId support for multi-tenant
 
@@ -239,7 +239,7 @@ export default function App() {
         borderBottom: `1px solid ${theme.navBorder}`
       }}>
         <h1 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>
-          TimeTrack NZ
+          Trackable NZ
         </h1>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button

@@ -1,6 +1,6 @@
-# TimeTrack NZ - Automated E2E Tests
+# Trackable NZ - Automated E2E Tests
 
-Playwright-based end-to-end tests for TimeTrack NZ mobile app and dashboard.
+Playwright-based end-to-end tests for Trackable NZ mobile app and dashboard.
 
 ---
 

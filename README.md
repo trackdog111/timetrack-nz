@@ -1,4 +1,4 @@
-# TimeTrack NZ - Employee Time Tracking System
+# Trackable NZ - Employee Time Tracking System
 
 NZ Employment Relations Act 2000 Compliant Time Tracking
 
@@ -193,4 +193,4 @@ For issues or questions, check the documentation or contact support.
 
 ---
 
-**© 2024 TimeTrack NZ - All Rights Reserved**
+**© 2024 Trackable NZ - All Rights Reserved**

@@ -1,4 +1,4 @@
-// TimeTrack NZ - Firebase Configuration
+// Trackable NZ - Firebase Configuration
 
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';

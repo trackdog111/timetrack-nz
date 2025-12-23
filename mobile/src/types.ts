@@ -1,4 +1,4 @@
-// TimeTrack NZ - Type Definitions
+// Trackable NZ - Type Definitions
 // UPDATED: Added companyId to all relevant interfaces for multi-tenant support
 
 export interface Location {

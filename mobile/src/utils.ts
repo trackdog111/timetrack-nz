@@ -1,4 +1,4 @@
-// TimeTrack NZ - Utility Functions
+// Trackable NZ - Utility Functions
 
 import { Break, TravelSegment, EmployeeSettings } from './types';
 

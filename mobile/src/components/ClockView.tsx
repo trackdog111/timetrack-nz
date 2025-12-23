@@ -1,4 +1,4 @@
-// TimeTrack NZ - Clock View Component
+// Trackable NZ - Clock View Component
 
 import { useState, useRef, useCallback } from 'react';
 import { Theme, createStyles } from '../theme';

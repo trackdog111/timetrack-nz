@@ -1,4 +1,4 @@
-// TimeTrack NZ - Authentication Hook
+// Trackable NZ - Authentication Hook
 // UPDATED: Added companyId support for multi-tenant
 
 import { useState, useEffect } from 'react';

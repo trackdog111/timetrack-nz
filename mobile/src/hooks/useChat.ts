@@ -1,4 +1,4 @@
-// TimeTrack NZ - Chat Hook
+// Trackable NZ - Chat Hook
 // UPDATED: Added companyId support for multi-tenant
 
 import { useState, useEffect } from 'react';

@@ -1,7 +1,7 @@
 {
   "name": "timetrack-mobile",
   "version": "1.0.0",
-  "description": "TimeTrack NZ Mobile App - Employee Time Tracking",
+  "description": "Trackable NZ Mobile App - Employee Time Tracking",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,4 +1,4 @@
-# Windows Setup Guide for TimeTrack NZ
+# Windows Setup Guide for Trackable NZ
 
 ## Step-by-Step Setup on Windows
 

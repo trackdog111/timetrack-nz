@@ -1,4 +1,4 @@
-// TimeTrack NZ - Hooks Index
+// Trackable NZ - Hooks Index
 
 export { useAuth } from './useAuth';
 export { useShift } from './useShift';

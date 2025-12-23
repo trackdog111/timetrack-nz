@@ -1,4 +1,4 @@
-// TimeTrack NZ - Mobile Map Modal Component
+// Trackable NZ - Mobile Map Modal Component
 
 import { useState, useEffect, useRef } from 'react';
 import { Theme } from '../theme';

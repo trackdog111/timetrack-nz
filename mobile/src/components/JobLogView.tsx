@@ -1,4 +1,4 @@
-// TimeTrack NZ - Job Log View Component
+// Trackable NZ - Job Log View Component
 // Features: 3 customizable text fields with speech-to-text and share
 
 import { useState, useRef, useEffect } from 'react';

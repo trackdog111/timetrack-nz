@@ -1,4 +1,4 @@
-// TimeTrack NZ - Theme Definitions
+// Trackable NZ - Theme Definitions
 
 export const lightTheme = {
   bg: '#f8fafc',

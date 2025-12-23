@@ -226,7 +226,7 @@ export default function EmployeeTracker() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
               </div>
-              <h1 className="text-3xl font-bold text-white mb-2">TimeTrack NZ</h1>
+              <h1 className="text-3xl font-bold text-white mb-2">Trackable NZ</h1>
               <p className="text-slate-400">Employee Time & Attendance</p>
             </div>
             
@@ -274,7 +274,7 @@ export default function EmployeeTracker() {
                 </svg>
               </div>
               <div>
-                <h1 className="text-lg font-bold text-white">TimeTrack NZ</h1>
+                <h1 className="text-lg font-bold text-white">Trackable NZ</h1>
                 <p className="text-xs text-slate-400">{employeeName}</p>
               </div>
             </div>

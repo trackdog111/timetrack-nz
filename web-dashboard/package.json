@@ -1,7 +1,7 @@
 {
   "name": "timetrack-web-dashboard",
   "version": "1.0.0",
-  "description": "TimeTrack NZ Web Dashboard - Manager Interface",
+  "description": "Trackable NZ Web Dashboard - Manager Interface",
   "private": true,
   "type": "module",
   "scripts": {

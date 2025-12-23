@@ -2,7 +2,7 @@
 SETLOCAL EnableDelayedExpansion
 
 echo ====================================
-echo   TimeTrack NZ - Automatic Setup
+echo   Trackable NZ - Automatic Setup
 echo ====================================
 echo.
 

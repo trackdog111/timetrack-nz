@@ -1,4 +1,4 @@
-// TimeTrack NZ - History View Component
+// Trackable NZ - History View Component
 
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Theme, createStyles } from '../theme';

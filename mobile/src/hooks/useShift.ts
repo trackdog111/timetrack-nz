@@ -1,4 +1,4 @@
-// TimeTrack NZ - Shift Management Hook
+// Trackable NZ - Shift Management Hook
 // UPDATED: Added companyId support for multi-tenant
 
 import { useState, useEffect, useRef, useCallback } from 'react';

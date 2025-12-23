@@ -1,4 +1,4 @@
-// TimeTrack NZ - Chat View Component
+// Trackable NZ - Chat View Component
 
 import { Theme, createStyles } from '../theme';
 import { ChatMessage, ChatTabType, CompanyLabels } from '../types';

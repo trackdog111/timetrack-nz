@@ -1,4 +1,4 @@
-// TimeTrack NZ - Settings Hook
+// Trackable NZ - Settings Hook
 // UPDATED: Changed to read from companies/{companyId} instead of company/settings
 
 import { useState, useEffect } from 'react';

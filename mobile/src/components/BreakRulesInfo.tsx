@@ -1,4 +1,4 @@
-// TimeTrack NZ - Break Rules Info Component
+// Trackable NZ - Break Rules Info Component
 
 import { Theme } from '../theme';
 
