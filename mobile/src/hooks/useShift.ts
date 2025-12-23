@@ -62,9 +62,9 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const lastRecordedLocationRef = useRef<Location | null>(null);
   const lastSaveTimestampRef = useRef<number>(0);
 
-  // GPS filtering constants
-  const GPS_MAX_ACCURACY = 50; // meters - ignore readings with worse accuracy
-  const GPS_MIN_DISTANCE = 10; // meters - minimum movement to record new point
+  // GPS filtering constants - TIGHT settings to prevent drift
+  const GPS_MAX_ACCURACY = 20; // meters - reject readings with worse accuracy (was 50)
+  const GPS_MIN_DISTANCE = 15; // meters - must move at least this far to record (was 10)
   const GPS_MIN_SAVE_INTERVAL = 30000; // ms - minimum 30 seconds between saves to prevent duplicates
 
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
