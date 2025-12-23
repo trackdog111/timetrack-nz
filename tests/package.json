@@ -1,0 +1,23 @@
+{
+  "name": "timetrack-tests",
+  "version": "1.0.0",
+  "description": "Playwright E2E tests for TimeTrack NZ",
+  "scripts": {
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:auth": "playwright test tests/auth.spec.ts",
+    "test:clock": "playwright test tests/clock.spec.ts",
+    "test:dashboard": "playwright test tests/dashboard.spec.ts",
+    "test:tenant": "playwright test tests/multi-tenant.spec.ts",
+    "test:prod": "TEST_URL=https://timetrack-mobile-v2.vercel.app playwright test",
+    "test:local": "TEST_URL=http://localhost:5173 playwright test",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
