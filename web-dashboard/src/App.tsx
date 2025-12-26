@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail } from 'firebase/auth';
-import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch, arrayUnion } from 'firebase/firestore';
+import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch, arrayUnion } from 'firebase/firestore';
 import { auth, db, MOBILE_APP_URL } from './shared/firebase';
 import { Location, Break, TravelSegment, Shift, Employee, EmployeeSettings, ChatMessage, CompanySettings, Invite, Theme, Company } from './shared/types';
 import { lightTheme, darkTheme } from './shared/theme';
@@ -112,7 +112,7 @@ export default function App() {
   // Auth state listener
   useEffect(() => { return onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); }); }, []);
 
-  // NEW: Load companyId from user's employee doc after auth
+  // NEW: Load companyId - check both companies (owner) and employees
   useEffect(() => {
     if (!user) {
       setCompanyId(null);
@@ -121,10 +121,19 @@ export default function App() {
     setLoadingCompany(true);
     const loadCompanyId = async () => {
       try {
+        // First: check if user owns a company
+        const companiesQuery = query(collection(db, 'companies'), where('ownerId', '==', user.uid));
+        const companiesSnap = await getDocs(companiesQuery);
+        if (!companiesSnap.empty) {
+          setCompanyId(companiesSnap.docs[0].id);
+          setLoadingCompany(false);
+          return;
+        }
+        
+        // Fallback: check employees collection
         const empDoc = await getDoc(doc(db, 'employees', user.uid));
         if (empDoc.exists()) {
-          const empData = empDoc.data();
-          setCompanyId(empData.companyId || null);
+          setCompanyId(empDoc.data().companyId || null);
         } else {
           setCompanyId(null);
         }
