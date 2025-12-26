@@ -14,6 +14,7 @@ interface LoginScreenProps {
   setError: (error: string) => void;
   initialEmail?: string;
   initialAuthMode?: AuthMode;
+  pendingInvite?: Invite | null;
 }
 
 export function LoginScreen({
@@ -25,14 +26,15 @@ export function LoginScreen({
   error,
   setError,
   initialEmail = '',
-  initialAuthMode = 'signin'
+  initialAuthMode = 'signin',
+  pendingInvite = null
 }: LoginScreenProps) {
   const [email, setEmail] = useState(initialEmail);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [authMode, setAuthMode] = useState<AuthMode>(initialAuthMode);
-  const [inviteStep, setInviteStep] = useState<InviteStep>('email');
-  const [foundInvite, setFoundInvite] = useState<Invite | null>(null);
+  const [inviteStep, setInviteStep] = useState<InviteStep>(pendingInvite ? 'password' : 'email');
+  const [foundInvite, setFoundInvite] = useState<Invite | null>(pendingInvite);
   const [checkingInvite, setCheckingInvite] = useState(false);
   const [creatingAccount, setCreatingAccount] = useState(false);
   const [showForgotPassword, setShowForgotPassword] = useState(false);

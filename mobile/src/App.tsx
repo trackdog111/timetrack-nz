@@ -6,7 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import { lightTheme, darkTheme } from './theme';
-import { ViewType } from './types';
+import { ViewType, Invite } from './types';
 import { useAuth, useShift, useChat, useSettings } from './hooks';
 import { LoginScreen, ClockView, JobLogView, ChatView, HistoryView } from './components';
 
@@ -101,16 +101,36 @@ export default function App() {
   // Invite URL handling
   const [initialEmail, setInitialEmail] = useState('');
   const [initialAuthMode, setInitialAuthMode] = useState<'signin' | 'invite'>('signin');
+  const [pendingInvite, setPendingInvite] = useState<Invite | null>(null);
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const isInvite = urlParams.get('invite');
-    const inviteEmail = urlParams.get('email');
-    if (isInvite === 'true' && inviteEmail) {
-      setInitialEmail(decodeURIComponent(inviteEmail));
-      setInitialAuthMode('invite');
-      window.history.replaceState({}, document.title, window.location.pathname);
-    }
+    const checkInviteUrl = async () => {
+      const urlParams = new URLSearchParams(window.location.search);
+      const inviteId = urlParams.get('invite');
+      
+      // Also check for /join path
+      const isJoinPath = window.location.pathname === '/join';
+      
+      if (inviteId && (isJoinPath || inviteId !== 'true')) {
+        try {
+          // Fetch invite from Firestore
+          const { getDoc, doc } = await import('firebase/firestore');
+          const { db } = await import('./firebase');
+          const inviteDoc = await getDoc(doc(db, 'invites', inviteId));
+          
+          if (inviteDoc.exists()) {
+            const inviteData = { id: inviteDoc.id, ...inviteDoc.data() } as Invite;
+            setPendingInvite(inviteData);
+            setInitialEmail(inviteData.email || '');
+            setInitialAuthMode('invite');
+          }
+        } catch (err) {
+          console.error('Error fetching invite:', err);
+        }
+        window.history.replaceState({}, document.title, '/');
+      }
+    };
+    checkInviteUrl();
   }, []);
 
   // Theme
@@ -160,6 +180,7 @@ export default function App() {
           setError={setAuthError}
           initialEmail={initialEmail}
           initialAuthMode={initialAuthMode}
+          pendingInvite={pendingInvite}
         />
       </main>
     );
