@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Shift, Theme, Employee, CompanySettings, Location, EmployeeSettings } from '../shared/types';
 import { getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, getJobLogField } from '../shared/utils';
-
+import { BreakRulesInfo } from '../components/BreakRulesInfo';
 interface MyTimesheetViewProps {
   theme: Theme;
   isMobile: boolean;
@@ -554,46 +554,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
               )}
             </div>
           )}
-
-          {/* NZ Break Rules - collapsible */}
-          <div style={{ ...styles.card, padding: 0, overflow: 'hidden' }}>
-            <button
-              onClick={() => setShowBreakRules(!showBreakRules)}
-              style={{
-                width: '100%',
-                padding: '16px 20px',
-                background: 'transparent',
-                border: 'none',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                cursor: 'pointer'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: theme.primary }}>ℹ️</span>
-                <span style={{ color: theme.text, fontWeight: '600' }}>NZ Break Rules</span>
-                {paidRestMinutes > 10 && (
-                  <span style={{ background: theme.successBg, color: theme.success, padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>Enhanced</span>
-                )}
-              </div>
-              <span style={{ color: theme.textMuted }}>{showBreakRules ? '▲' : '▼'}</span>
-            </button>
-            
-            {showBreakRules && (
-              <div style={{ padding: '0 20px 20px', borderTop: `1px solid ${theme.cardBorder}` }}>
-                <div style={{ paddingTop: '16px' }}>
-                  <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '12px' }}>Under NZ Employment Relations Act:</p>
-                  <div style={{ fontSize: '13px', color: theme.text }}>
-                    <p style={{ marginBottom: '8px' }}>• 2-4 hours: 1× {paidRestMinutes}min paid rest</p>
-                    <p style={{ marginBottom: '8px' }}>• 4-6 hours: + 1× 30min unpaid meal</p>
-                    <p style={{ marginBottom: '8px' }}>• 6-8 hours: + 2nd {paidRestMinutes}min paid rest</p>
-                    <p style={{ marginBottom: '0' }}>• 8+ hours: + 2nd 30min unpaid meal</p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
+<BreakRulesInfo isOpen={showBreakRules} onToggle={() => setShowBreakRules(!showBreakRules)} theme={theme} paidRestMinutes={paidRestMinutes} />
 
           {/* Notes */}
           {myShift && companySettings.field1Enabled !== false && (
@@ -975,31 +936,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
             })
           )}
 
-          {/* NZ Break Rules at bottom of history */}
-          <div style={{ ...styles.card, padding: 0, overflow: 'hidden', marginTop: '20px' }}>
-            <button
-              onClick={() => setShowBreakRules(!showBreakRules)}
-              style={{
-                width: '100%',
-                padding: '16px 20px',
-                background: 'transparent',
-                border: 'none',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                cursor: 'pointer'
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ color: theme.primary }}>ℹ️</span>
-                <span style={{ color: theme.text, fontWeight: '600' }}>NZ Break Rules</span>
-                {paidRestMinutes > 10 && (
-                  <span style={{ background: theme.successBg, color: theme.success, padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: '600' }}>Enhanced</span>
-                )}
-              </div>
-              <span style={{ color: theme.textMuted }}>{showBreakRules ? '▲' : '▼'}</span>
-            </button>
-          </div>
+          <BreakRulesInfo isOpen={showBreakRules} onToggle={() => setShowBreakRules(!showBreakRules)} theme={theme} paidRestMinutes={paidRestMinutes} />
         </>
       )}
     </div>
