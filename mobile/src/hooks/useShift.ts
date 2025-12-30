@@ -20,7 +20,8 @@ import { getStorage, ref, uploadString, getDownloadURL } from 'firebase/storage'
 import { db } from '../firebase';
 import { Shift, Location } from '../types';
 import { EmployeeSettings } from '../types';
-
+import { Geolocation } from '@capacitor/geolocation';
+import { Capacitor } from '@capacitor/core';
 // Haversine formula to calculate distance between two GPS points in meters
 function calculateDistance(loc1: Location, loc2: Location): number {
   const R = 6371000; // Earth's radius in meters
@@ -70,25 +71,54 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const storage = getStorage();
 
-  // Get current GPS location
-  const getCurrentLocation = (): Promise<Location | null> => {
-    return new Promise((resolve) => {
-      if (!navigator.geolocation) { resolve(null); return; }
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const loc: Location = {
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            accuracy: position.coords.accuracy,
-            timestamp: Date.now()
-          };
-          setCurrentLocation(loc);
-          resolve(loc);
-        },
-        () => resolve(null),
-        { enableHighAccuracy: true, timeout: 10000 }
-      );
-    });
+  // Get current GPS location - uses Capacitor on native, browser API on web
+  const getCurrentLocation = async (): Promise<Location | null> => {
+    try {
+      if (Capacitor.isNativePlatform()) {
+        // Use Capacitor on native (Android/iOS)
+        const permission = await Geolocation.checkPermissions();
+        if (permission.location !== 'granted') {
+          const request = await Geolocation.requestPermissions();
+          if (request.location !== 'granted') {
+            return null;
+          }
+        }
+        const position = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: true,
+          timeout: 10000
+        });
+        const loc: Location = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          accuracy: position.coords.accuracy,
+          timestamp: Date.now()
+        };
+        setCurrentLocation(loc);
+        return loc;
+      } else {
+        // Use browser API on web
+        return new Promise((resolve) => {
+          if (!navigator.geolocation) { resolve(null); return; }
+          navigator.geolocation.getCurrentPosition(
+            (position) => {
+              const loc: Location = {
+                latitude: position.coords.latitude,
+                longitude: position.coords.longitude,
+                accuracy: position.coords.accuracy,
+                timestamp: Date.now()
+              };
+              setCurrentLocation(loc);
+              resolve(loc);
+            },
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 10000 }
+          );
+        });
+      }
+    } catch (error) {
+      console.error('Geolocation error:', error);
+      return null;
+    }
   };
 
   // NOTE: Removed initial location fetch to avoid geolocation prompt on page load
@@ -468,12 +498,15 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
         const durationMinutes = Math.round(
           (new Date().getTime() - updatedTravel[activeTravelIndex].startTime.toDate().getTime()) / 60000
         );
-        updatedTravel[activeTravelIndex] = {
+        const travelUpdate: any = {
           ...updatedTravel[activeTravelIndex],
           endTime: Timestamp.now(),
-          endLocation: location || undefined,
           durationMinutes
         };
+        if (location) {
+          travelUpdate.endLocation = location;
+        }
+        updatedTravel[activeTravelIndex] = travelUpdate;
       }
 
       const updateData: any = {
@@ -510,12 +543,15 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     if (!currentShift) return;
     try {
       const location = await getCurrentLocation();
+      const newBreak: any = { 
+        startTime: Timestamp.now(), 
+        manualEntry: false
+      };
+      if (location) {
+        newBreak.startLocation = location;
+      }
       const updateData: any = {
-        breaks: [...(currentShift.breaks || []), { 
-          startTime: Timestamp.now(), 
-          manualEntry: false,
-          startLocation: location || undefined
-        }]
+        breaks: [...(currentShift.breaks || []), newBreak]
       };
       // Add GPS to locationHistory for map tracking with source label
       if (location) {
@@ -535,11 +571,16 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     try {
       const location = await getCurrentLocation();
       const durationMinutes = Math.round((new Date().getTime() - currentBreakStart.getTime()) / 60000);
-      const updatedBreaks = currentShift.breaks.map((b, i) =>
-        i === currentShift.breaks.length - 1 && !b.endTime && !b.manualEntry
-          ? { ...b, endTime: Timestamp.now(), durationMinutes, endLocation: location || undefined }
-          : b
-      );
+      const updatedBreaks = currentShift.breaks.map((b, i) => {
+        if (i === currentShift.breaks.length - 1 && !b.endTime && !b.manualEntry) {
+          const updated: any = { ...b, endTime: Timestamp.now(), durationMinutes };
+          if (location) {
+            updated.endLocation = location;
+          }
+          return updated;
+        }
+        return b;
+      });
       const updateData: any = { breaks: updatedBreaks };
       // Add GPS to locationHistory for map tracking with source label
       if (location) {
@@ -651,11 +692,14 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     if (!currentShift) return;
     try {
       const location = await getCurrentLocation();
+      const newTravelSegment: any = {
+        startTime: Timestamp.now()
+      };
+      if (location) {
+        newTravelSegment.startLocation = location;
+      }
       const updateData: any = {
-        travelSegments: [...(currentShift.travelSegments || []), {
-          startTime: Timestamp.now(),
-          startLocation: location || undefined
-        }]
+        travelSegments: [...(currentShift.travelSegments || []), newTravelSegment]
       };
       // Add GPS to locationHistory for map tracking with source label
       if (location) {
@@ -675,11 +719,16 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     try {
       const location = await getCurrentLocation();
       const durationMinutes = Math.round((new Date().getTime() - currentTravelStart.getTime()) / 60000);
-      const updatedTravel = (currentShift.travelSegments || []).map((t, i) =>
-        i === (currentShift.travelSegments || []).length - 1 && !t.endTime
-          ? { ...t, endTime: Timestamp.now(), endLocation: location || undefined, durationMinutes }
-          : t
-      );
+      const updatedTravel = (currentShift.travelSegments || []).map((t, i) => {
+        if (i === (currentShift.travelSegments || []).length - 1 && !t.endTime) {
+          const updated: any = { ...t, endTime: Timestamp.now(), durationMinutes };
+          if (location) {
+            updated.endLocation = location;
+          }
+          return updated;
+        }
+        return t;
+      });
       const updateData: any = { travelSegments: updatedTravel };
       // Add GPS to locationHistory for map tracking with source label
       if (location) {

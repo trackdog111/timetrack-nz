@@ -254,6 +254,7 @@ export default function App() {
       <div style={{
         background: theme.nav,
         padding: '16px 20px',
+paddingTop: 'max(40px, env(safe-area-inset-top))',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -413,7 +414,7 @@ export default function App() {
         right: 0,
         background: theme.nav,
         borderTop: `1px solid ${theme.navBorder}`,
-        paddingBottom: 'env(safe-area-inset-bottom)'
+        paddingBottom: 'max(20px, env(safe-area-inset-bottom))'
       }}>
         <div style={{ display: 'flex' }}>
           {[

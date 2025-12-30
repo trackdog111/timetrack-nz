@@ -304,7 +304,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
   };
 
   return (
-    <div>
+    <div style={{ paddingBottom: isMobile ? '300px' : '0' }}>
       <h1 style={{ color: theme.text, marginBottom: '16px', fontSize: isMobile ? '22px' : '28px' }}>My Timesheet</h1>
       
       {/* Tab Navigation */}

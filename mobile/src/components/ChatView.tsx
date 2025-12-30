@@ -47,12 +47,6 @@ export function ChatView({
       : (m.type === 'dm' && m.participants?.includes(userId))
   );
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') {
-      onSendMessage();
-    }
-  };
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)' }}>
       {/* Tab switcher */}
@@ -151,13 +145,30 @@ export function ChatView({
         background: theme.nav,
         borderTop: `1px solid ${theme.navBorder}`
       }}>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {newMessage.trim() && (
+            <button
+              onClick={() => setNewMessage('')}
+              style={{
+                background: theme.cardAlt,
+                border: `1px solid ${theme.cardBorder}`,
+                color: theme.textMuted,
+                fontSize: '14px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                padding: '12px 16px',
+                borderRadius: '24px'
+              }}
+            >
+              Clear
+            </button>
+          )}
           <input
             type="text"
             placeholder="Type a message..."
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
+            onKeyPress={(e) => { if (e.key === 'Enter') onSendMessage(); }}
             style={{
               ...styles.input,
               flex: 1,

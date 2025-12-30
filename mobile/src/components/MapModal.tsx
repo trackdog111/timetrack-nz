@@ -196,34 +196,17 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       display: 'flex', 
       flexDirection: 'column' 
     }}>
-      {/* Header */}
+      {/* Header - Title only, with safe area padding */}
       <div style={{ 
         padding: '12px 16px', 
+        paddingTop: 'max(12px, env(safe-area-inset-top))',
         borderBottom: `1px solid ${theme.cardBorder}`, 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
         background: theme.card 
       }}>
         <h2 style={{ color: theme.text, margin: 0, fontSize: '17px', fontWeight: '600' }}>{title}</h2>
-        <button 
-          onClick={onClose} 
-          style={{ 
-            background: theme.cardAlt, 
-            border: 'none', 
-            fontSize: '15px', 
-            cursor: 'pointer', 
-            color: theme.text, 
-            padding: '8px 14px', 
-            borderRadius: '8px', 
-            fontWeight: '600' 
-          }}
-        >
-          Close
-        </button>
       </div>
       
-      {/* Legend */}
+      {/* Legend + Buttons Row */}
       <div style={{ 
         padding: '10px 16px', 
         background: theme.card, 
@@ -249,26 +232,36 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
             </div>
           ))}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {allPoints.length > 0 && (
-            <span style={{ color: theme.textMuted, fontSize: '10px' }}>
-              📍 {allPoints[allPoints.length - 1].loc.latitude.toFixed(5)}, {allPoints[allPoints.length - 1].loc.longitude.toFixed(5)}
-            </span>
-          )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button
             onClick={() => setShowList(!showList)}
             style={{
               background: showList ? theme.primary : theme.cardAlt,
               color: showList ? 'white' : theme.text,
               border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
-              padding: '6px 10px',
+              padding: '8px 12px',
               borderRadius: '6px',
-              fontSize: '11px',
+              fontSize: '13px',
               fontWeight: '600',
               cursor: 'pointer'
             }}
           >
             {showList ? 'Hide List' : 'Show List'}
+          </button>
+          <button 
+            onClick={onClose} 
+            style={{ 
+              background: theme.primary, 
+              border: 'none', 
+              fontSize: '13px', 
+              cursor: 'pointer', 
+              color: 'white', 
+              padding: '8px 16px', 
+              borderRadius: '6px', 
+              fontWeight: '600' 
+            }}
+          >
+            Close
           </button>
         </div>
       </div>

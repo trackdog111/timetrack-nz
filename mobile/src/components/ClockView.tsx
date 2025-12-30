@@ -443,7 +443,7 @@ export function ClockView({
   }
 
   return (
-    <div style={{ padding: '16px' }}>
+    <div style={{ padding: '16px', paddingBottom: 'max(80px, env(safe-area-inset-bottom, 80px))' }}>
       {/* Clock In/Out Card */}
       <div style={styles.card}>
         {!currentShift ? (
