@@ -10,7 +10,7 @@ workflows:
         distribution_type: app_store
         bundle_identifier: nz.trackable.app
       vars:
-        XCODE_PROJECT: "mobile/ios/App/App.xcodeproj"
+        XCODE_WORKSPACE: "mobile/ios/App/App.xcworkspace"
         XCODE_SCHEME: "App"
       node: 22
       xcode: latest
@@ -32,9 +32,9 @@ workflows:
           xcode-project use-profiles
       - name: Build IPA
         script: |
-          cd mobile/ios/App
           xcode-project build-ipa \
-            --project App.xcodeproj \
+            --workspace mobile/ios/App/App.xcworkspace \
             --scheme App
     artifacts:
       - mobile/ios/App/build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
