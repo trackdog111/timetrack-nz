@@ -50,8 +50,12 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Trackable NZ needs your location to record where you clock in and out for accurate timesheets.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-	<string>Trackable NZ needs your location to track travel time and record work locations for accurate timesheets.</string>
+	<string>Trackable NZ needs background location access to track your work locations even when the app is closed. This ensures accurate GPS timesheets.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
-	<string>Trackable NZ needs background location access to track travel time during your shift.</string>
+	<string>Trackable NZ needs background location access to track travel time during your shift, even when the app is in the background.</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
+	</array>
 </dict>
 </plist>
