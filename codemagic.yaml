@@ -24,13 +24,17 @@ workflows:
         script: |
           cd mobile
           npx cap sync ios
+      - name: Resolve SPM dependencies
+        script: |
+          cd mobile/ios/App
+          xcodebuild -resolvePackageDependencies -project App.xcodeproj -scheme App
       - name: Set up code signing
         script: |
           xcode-project use-profiles
       - name: Build IPA
         script: |
           cd mobile/ios/App
-          xcode-project build-ipa --scheme App
+          xcode-project build-ipa --project App.xcodeproj --scheme App
     artifacts:
       - mobile/ios/App/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
