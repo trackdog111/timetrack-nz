@@ -195,7 +195,7 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       zIndex: 1000, 
       display: 'flex', 
       flexDirection: 'column',
-      paddingTop: 'max(50px, env(safe-area-inset-top))'
+      paddingTop: '59px'
     }}>
       {/* Header */}
       <div style={{ 

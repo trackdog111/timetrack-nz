@@ -272,69 +272,78 @@ function MapModal({
         background: theme.bg, 
         display: 'flex', 
         flexDirection: 'column',
-        zIndex: 1000
+        zIndex: 1000,
+        paddingTop: '59px'
       }}
     >
-      {/* Header - Title only with safe area padding */}
+      {/* Header */}
       <div style={{ 
-        padding: '12px 16px',
-        paddingTop: 'max(12px, env(safe-area-inset-top))',
-        borderBottom: '1px solid ' + theme.cardBorder,
-        background: theme.card
-      }}>
-        <h2 style={{ color: theme.text, margin: 0, fontSize: '17px', fontWeight: '600' }}>{title}</h2>
-      </div>
-      
-      {/* Legend + Buttons Row */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: '10px 16px', 
-        flexWrap: 'wrap',
-        gap: '10px',
         background: theme.card,
-        borderBottom: '1px solid ' + theme.cardBorder
+        borderBottom: `1px solid ${theme.cardBorder}`
       }}>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+        {/* Title + Buttons Row */}
+        <div style={{ 
+          padding: '12px 16px',
+          display: 'flex', 
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}>
+          <h2 style={{ color: theme.text, margin: 0, fontSize: '17px', fontWeight: '600' }}>{title}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              onClick={() => setShowList(!showList)}
+              style={{
+                background: showList ? theme.primary : theme.cardAlt,
+                color: showList ? 'white' : theme.text,
+                border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '13px',
+                fontWeight: '600',
+                cursor: 'pointer'
+              }}
+            >
+              {showList ? 'Hide List' : 'Show List'}
+            </button>
+            <button 
+              onClick={onClose} 
+              style={{ 
+                background: theme.primary, 
+                border: 'none', 
+                fontSize: '13px', 
+                cursor: 'pointer', 
+                color: 'white', 
+                padding: '8px 16px', 
+                borderRadius: '6px', 
+                fontWeight: '600' 
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        
+        {/* Legend Row */}
+        <div style={{ 
+          padding: '8px 16px 12px 16px', 
+          display: 'flex', 
+          gap: '12px', 
+          flexWrap: 'wrap', 
+          alignItems: 'center'
+        }}>
           {uniqueTypes.map(type => (
             <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: markerColors[type] || markerColors.tracking }}></span>
-              <span style={{ color: theme.textMuted, fontSize: '11px' }}>{markerLabels[type] || 'Location'}</span>
+              <span style={{ 
+                width: '10px', 
+                height: '10px', 
+                borderRadius: '50%', 
+                background: markerColors[type] || markerColors.tracking 
+              }}></span>
+              <span style={{ color: theme.textMuted, fontSize: '11px' }}>
+                {markerLabels[type] || 'Location'}
+              </span>
             </div>
           ))}
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => setShowList(!showList)}
-            style={{
-              background: showList ? theme.primary : theme.cardAlt,
-              color: showList ? 'white' : theme.text,
-              border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
-              padding: '8px 12px',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
-          >
-            {showList ? 'Hide List' : 'Show List'}
-          </button>
-          <button 
-            onClick={onClose} 
-            style={{ 
-              background: theme.primary, 
-              border: 'none', 
-              fontSize: '13px', 
-              cursor: 'pointer', 
-              color: 'white',
-              padding: '8px 16px',
-              borderRadius: '6px',
-              fontWeight: '600'
-            }}
-          >
-            Close
-          </button>
         </div>
       </div>
       
