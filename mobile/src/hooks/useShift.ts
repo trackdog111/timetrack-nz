@@ -72,53 +72,60 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const storage = getStorage();
 
   // Get current GPS location - uses Capacitor on native, browser API on web
+  // Added timeout to prevent hanging on iOS
   const getCurrentLocation = async (): Promise<Location | null> => {
-    try {
-      if (Capacitor.isNativePlatform()) {
-        // Use Capacitor on native (Android/iOS)
-        const permission = await Geolocation.checkPermissions();
-        if (permission.location !== 'granted') {
-          const request = await Geolocation.requestPermissions();
-          if (request.location !== 'granted') {
-            return null;
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), 5000);
+    });
+
+    const locationPromise = (async (): Promise<Location | null> => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          const permission = await Geolocation.checkPermissions();
+          if (permission.location !== 'granted') {
+            const request = await Geolocation.requestPermissions();
+            if (request.location !== 'granted') {
+              return null;
+            }
           }
+          const position = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 4000
+          });
+          const loc: Location = {
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy,
+            timestamp: Date.now()
+          };
+          setCurrentLocation(loc);
+          return loc;
+        } else {
+          return new Promise((resolve) => {
+            if (!navigator.geolocation) { resolve(null); return; }
+            navigator.geolocation.getCurrentPosition(
+              (position) => {
+                const loc: Location = {
+                  latitude: position.coords.latitude,
+                  longitude: position.coords.longitude,
+                  accuracy: position.coords.accuracy,
+                  timestamp: Date.now()
+                };
+                setCurrentLocation(loc);
+                resolve(loc);
+              },
+              () => resolve(null),
+              { enableHighAccuracy: true, timeout: 4000 }
+            );
+          });
         }
-        const position = await Geolocation.getCurrentPosition({
-          enableHighAccuracy: true,
-          timeout: 10000
-        });
-        const loc: Location = {
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-          accuracy: position.coords.accuracy,
-          timestamp: Date.now()
-        };
-        setCurrentLocation(loc);
-        return loc;
-      } else {
-        // Use browser API on web
-        return new Promise((resolve) => {
-          if (!navigator.geolocation) { resolve(null); return; }
-          navigator.geolocation.getCurrentPosition(
-            (position) => {
-              const loc: Location = {
-                latitude: position.coords.latitude,
-                longitude: position.coords.longitude,
-                accuracy: position.coords.accuracy,
-                timestamp: Date.now()
-              };
-              setCurrentLocation(loc);
-              resolve(loc);
-            },
-            () => resolve(null),
-            { enableHighAccuracy: true, timeout: 10000 }
-          );
-        });
+      } catch (error) {
+        console.error('Geolocation error:', error);
+        return null;
       }
-    } catch (error) {
-      console.error('Geolocation error:', error);
-      return null;
-    }
+    })();
+
+    return Promise.race([locationPromise, timeoutPromise]);
   };
 
   // NOTE: Removed initial location fetch to avoid geolocation prompt on page load
