@@ -10,9 +10,10 @@ workflows:
         distribution_type: app_store
         bundle_identifier: nz.trackable.app
       vars:
-        XCODE_WORKSPACE: "mobile/ios/App/App.xcworkspace"
+        XCODE_PROJECT: "mobile/ios/App/App.xcodeproj"
         XCODE_SCHEME: "App"
       node: 18
+      xcode: latest
     scripts:
       - name: Install dependencies
         script: |
@@ -29,13 +30,11 @@ workflows:
       - name: Set up code signing
         script: |
           xcode-project use-profiles
-      - name: Build iOS app
+      - name: Build IPA
         script: |
           cd mobile/ios/App
-          xcodebuild -workspace App.xcworkspace \
-            -scheme App \
-            -configuration Release \
-            -archivePath build/App.xcarchive \
-            archive CODE_SIGN_IDENTITY="" CODE_SIGNING_REQUIRED=NO CODE_SIGNING_ALLOWED=NO
+          xcode-project build-ipa \
+            --project App.xcodeproj \
+            --scheme App
     artifacts:
-      - mobile/ios/App/build/**/*.xcarchive
+      - mobile/ios/App/build/ios/ipa/*.ipa
