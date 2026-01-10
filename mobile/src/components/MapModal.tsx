@@ -194,9 +194,15 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       background: theme.bg, 
       zIndex: 1000, 
       display: 'flex', 
-      flexDirection: 'column',
-      paddingTop: '59px'
+      flexDirection: 'column'
     }}>
+      {/* Safe area spacer */}
+      <div style={{ 
+        height: '59px', 
+        minHeight: '59px', 
+        background: theme.card,
+        flexShrink: 0
+      }} />
       {/* Header */}
       <div style={{ 
         background: theme.card,

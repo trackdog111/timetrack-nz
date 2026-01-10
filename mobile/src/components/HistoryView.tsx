@@ -272,10 +272,16 @@ function MapModal({
         background: theme.bg, 
         display: 'flex', 
         flexDirection: 'column',
-        zIndex: 1000,
-        paddingTop: '59px'
+        zIndex: 1000
       }}
     >
+      {/* Safe area spacer */}
+      <div style={{ 
+        height: '59px', 
+        minHeight: '59px', 
+        background: theme.card,
+        flexShrink: 0
+      }} />
       {/* Header */}
       <div style={{ 
         background: theme.card,
