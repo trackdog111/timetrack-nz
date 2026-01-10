@@ -194,12 +194,12 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       background: theme.bg, 
       zIndex: 1000, 
       display: 'flex', 
-      flexDirection: 'column' 
+      flexDirection: 'column',
+      paddingTop: 'max(50px, env(safe-area-inset-top))'
     }}>
-      {/* Header with safe area */}
+      {/* Header */}
       <div style={{ 
         background: theme.card,
-        paddingTop: 'max(50px, env(safe-area-inset-top))',
         borderBottom: `1px solid ${theme.cardBorder}`
       }}>
         {/* Title + Buttons Row */}
