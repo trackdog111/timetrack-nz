@@ -9,9 +9,6 @@ workflows:
       ios_signing:
         distribution_type: app_store
         bundle_identifier: nz.trackable.app
-      vars:
-        XCODE_PROJECT: "mobile/ios/App/App.xcodeproj"
-        XCODE_SCHEME: "App"
       node: 22
       xcode: latest
     scripts:
@@ -30,11 +27,18 @@ workflows:
       - name: Set up code signing
         script: |
           xcode-project use-profiles
+      - name: Debug - List files
+        script: |
+          echo "Current directory:"
+          pwd
+          echo "Listing mobile/ios/App:"
+          ls -la mobile/ios/App/
+          echo "Looking for xcodeproj:"
+          find . -name "*.xcodeproj" -type d
       - name: Build IPA
         script: |
-          xcode-project build-ipa \
-            --project mobile/ios/App/App.xcodeproj \
-            --scheme App
+          cd mobile/ios/App
+          xcode-project build-ipa --project App.xcodeproj --scheme App
     artifacts:
       - mobile/ios/App/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
