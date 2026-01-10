@@ -199,7 +199,7 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       {/* Header with safe area */}
       <div style={{ 
         background: theme.card,
-        paddingTop: 'env(safe-area-inset-top, 44px)',
+        paddingTop: 'max(50px, env(safe-area-inset-top))',
         borderBottom: `1px solid ${theme.cardBorder}`
       }}>
         {/* Title + Buttons Row */}
