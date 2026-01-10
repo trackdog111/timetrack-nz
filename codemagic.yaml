@@ -27,14 +27,6 @@ workflows:
       - name: Set up code signing
         script: |
           xcode-project use-profiles
-      - name: Debug - List files
-        script: |
-          echo "Current directory:"
-          pwd
-          echo "Listing mobile/ios/App:"
-          ls -la mobile/ios/App/
-          echo "Looking for xcodeproj:"
-          find . -name "*.xcodeproj" -type d
       - name: Build IPA
         script: |
           cd mobile/ios/App
@@ -42,3 +34,9 @@ workflows:
     artifacts:
       - mobile/ios/App/build/ios/ipa/*.ipa
       - /tmp/xcodebuild_logs/*.log
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - App Store Connect Users
