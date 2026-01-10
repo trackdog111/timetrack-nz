@@ -254,7 +254,7 @@ export default function App() {
       <div style={{
         background: theme.nav,
         padding: '16px 20px',
-paddingTop: 'max(40px, env(safe-area-inset-top))',
+        paddingTop: '59px',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
