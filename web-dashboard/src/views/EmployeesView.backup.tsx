@@ -166,6 +166,26 @@ export function EmployeesView({
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
+              <span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Interval</span>
+              <select 
+                value={emp.settings?.gpsInterval || 10} 
+                onChange={e => updateSettings(emp.id, { gpsInterval: parseInt(e.target.value) })} 
+                style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}
+              >
+                <option value={2}>2 min</option>
+                <option value={4}>4 min</option>
+                <option value={6}>6 min</option>
+                <option value={8}>8 min</option>
+                <option value={10}>10 min</option>
+                <option value={12}>12 min</option>
+                <option value={14}>14 min</option>
+                <option value={16}>16 min</option>
+                <option value={18}>18 min</option>
+                <option value={20}>20 min</option>
+              </select>
+            </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
               <span style={{ color: theme.textMuted, fontSize: '14px' }}>Require Notes</span>
               <Toggle enabled={emp.settings?.requireNotes ?? false} onClick={() => updateSettings(emp.id, { requireNotes: !emp.settings?.requireNotes })} />
             </div>
@@ -174,6 +194,40 @@ export function EmployeesView({
               <span style={{ color: theme.textMuted, fontSize: '14px' }}>Chat Access</span>
               <Toggle enabled={emp.settings?.chatEnabled !== false} onClick={() => updateSettings(emp.id, { chatEnabled: emp.settings?.chatEnabled === false })} />
             </div>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: emp.settings?.autoTravel ? theme.travelBg : theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
+              <span style={{ color: emp.settings?.autoTravel ? theme.travel : theme.textMuted, fontSize: '14px' }}>🚗 Auto-Travel</span>
+              <Toggle enabled={emp.settings?.autoTravel ?? false} onClick={() => updateSettings(emp.id, { autoTravel: !emp.settings?.autoTravel })} color={theme.travel} />
+            </div>
+            
+            {emp.settings?.autoTravel && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
+                  <span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Interval</span>
+                  <select 
+                    value={emp.settings?.autoTravelInterval || 2} 
+                    onChange={e => updateSettings(emp.id, { autoTravelInterval: parseInt(e.target.value) })} 
+                    style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}
+                  >
+                    <option value={1}>1 min</option>
+                    <option value={2}>2 min</option>
+                    <option value={5}>5 min</option>
+                  </select>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
+                  <span style={{ color: theme.textMuted, fontSize: '14px' }}>Detection Dist</span>
+                  <select 
+                    value={emp.settings?.detectionDistance || 200} 
+                    onChange={e => updateSettings(emp.id, { detectionDistance: parseInt(e.target.value) })} 
+                    style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}
+                  >
+                    <option value={100}>100m</option>
+                    <option value={200}>200m</option>
+                    <option value={500}>500m</option>
+                  </select>
+                </div>
+              </>
+            )}
           </div>
         </div>
       ))}
