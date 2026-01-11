@@ -161,6 +161,9 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
   const [filterStart, setFilterStart] = useState('');
   const [filterEnd, setFilterEnd] = useState('');
   const [expandedWeeks, setExpandedWeeks] = useState<Set<string>>(new Set());
+  
+  // Delete confirmation
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
   const styles = {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
@@ -301,6 +304,14 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
       setCustomBreakMinutes('');
       setShowCustomBreak(false);
     }
+  };
+
+  // Helper to get location count
+  const getLocationCount = (shift: Shift): number => {
+    let count = shift.locationHistory?.length || 0;
+    if (shift.clockInLocation) count++;
+    if (shift.clockOutLocation) count++;
+    return count;
   };
 
   return (
@@ -590,41 +601,6 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
             </button>
           )}
 
-          {/* Auto-Travel Settings - Dashboard only */}
-          {myEmployee && (
-            <div style={{ ...styles.card, marginTop: '16px' }}>
-              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>🚗 Auto-Travel Settings</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: myEmployee.settings?.autoTravel ? theme.travelBg : theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
-                  <span style={{ color: myEmployee.settings?.autoTravel ? theme.travel : theme.textMuted, fontSize: '14px' }}>Auto-Travel Detection</span>
-                  <button onClick={() => updateSettings(myEmployee.id, { autoTravel: !myEmployee.settings?.autoTravel })} style={{ width: '50px', height: '26px', borderRadius: '13px', border: 'none', cursor: 'pointer', background: myEmployee.settings?.autoTravel ? theme.travel : '#cbd5e1', position: 'relative' }}>
-                    <span style={{ position: 'absolute', top: '3px', width: '20px', height: '20px', borderRadius: '50%', background: 'white', left: myEmployee.settings?.autoTravel ? '27px' : '3px', transition: 'left 0.2s' }} />
-                  </button>
-                </div>
-                {myEmployee.settings?.autoTravel && (
-                  <>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
-                      <span style={{ color: theme.textMuted, fontSize: '14px' }}>GPS Interval</span>
-                      <select value={myEmployee.settings?.autoTravelInterval || 2} onChange={e => updateSettings(myEmployee.id, { autoTravelInterval: parseInt(e.target.value) })} style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}>
-                        <option value={1}>1 min</option>
-                        <option value={2}>2 min</option>
-                        <option value={5}>5 min</option>
-                      </select>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: theme.cardAlt, padding: '12px', borderRadius: '8px' }}>
-                      <span style={{ color: theme.textMuted, fontSize: '14px' }}>Detection Distance</span>
-                      <select value={myEmployee.settings?.detectionDistance || 200} onChange={e => updateSettings(myEmployee.id, { detectionDistance: parseInt(e.target.value) })} style={{ padding: '6px', borderRadius: '6px', background: theme.input, color: theme.text, border: `1px solid ${theme.inputBorder}` }}>
-                        <option value={100}>100m</option>
-                        <option value={200}>200m</option>
-                        <option value={500}>500m</option>
-                      </select>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* Manual Shift Entry */}
           {showAddManualShift && !myShift && (
             <div style={{ ...styles.card, marginTop: '16px' }}>
@@ -793,137 +769,201 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
 
                   {/* Week Shifts */}
                   {isWeekExpanded && (
-                    <div style={{ background: theme.card, border: `1px solid ${theme.cardAlt}`, borderTop: 'none', borderRadius: '0 0 12px 12px', padding: '12px' }}>
+                    <div style={{ background: theme.cardAlt, border: `1px solid ${theme.cardAlt}`, borderTop: 'none', borderRadius: '0 0 12px 12px', overflow: 'hidden' }}>
                       {shifts.map(sh => {
                         const h = getHours(sh.clockIn, sh.clockOut);
                         const b = calcBreaks(sh.breaks || [], h, paidRestMinutes);
                         const t = calcTravel(sh.travelSegments || []);
-                        const isExpanded = expandedMyShifts.has(sh.id);
+                        const workingMinutes = (h * 60) - b.unpaid;
                         const isEditing = editingMyShift === sh.id;
+                        const locationCount = getLocationCount(sh);
 
                         return (
-                          <div key={sh.id} style={{ background: theme.cardAlt, borderRadius: '8px', padding: '12px', marginBottom: '8px' }}>
+                          <div key={sh.id} style={{ background: theme.card, padding: '14px 16px', borderBottom: `1px solid ${theme.cardAlt}` }}>
                             {/* Shift Header */}
-                            <div onClick={() => toggleMyShift(sh.id)} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '8px' }}>
                               <div>
-                                <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>{fmtDate(sh.clockIn)}</p>
-                                <p style={{ color: theme.textMuted, fontSize: '12px', margin: '2px 0 0 0' }}>{fmtTime(sh.clockIn)} - {fmtTime(sh.clockOut)}</p>
+                                <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>
+                                  {fmtDate(sh.clockIn)}
+                                  {sh.manualEntry && <span style={{ marginLeft: '8px', fontSize: '10px', background: theme.cardAlt, color: theme.textMuted, padding: '2px 6px', borderRadius: '4px' }}>Manual</span>}
+                                  {sh.editedAt && <span style={{ marginLeft: '8px', fontSize: '10px', background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: '4px' }}>Edited</span>}
+                                </p>
+                                <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0 0' }}>{fmtTime(sh.clockIn)} - {fmtTime(sh.clockOut)}</p>
                               </div>
                               <div style={{ textAlign: 'right' }}>
-                                <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>{fmtDur((h * 60) - b.unpaid)}</p>
-                                <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', fontSize: '11px', marginTop: '2px' }}>
-                                  {b.total > 0 && <span style={{ color: theme.warning }}>{b.total}m breaks</span>}
-                                  {t > 0 && <span style={{ color: theme.travel }}>{t}m travel</span>}
-                                </div>
+                                <p style={{ color: theme.text, fontWeight: '700', fontSize: '16px', margin: 0 }}>{fmtDur(workingMinutes)}</p>
+                                <p style={{ color: theme.textLight, fontSize: '11px', margin: '2px 0 0 0' }}>worked</p>
                               </div>
                             </div>
 
-                            {/* Expanded Shift */}
-                            {isExpanded && (
-                              <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: `1px solid ${theme.cardBorder}` }}>
-                                {/* Stats */}
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px', marginBottom: '12px' }}>
-                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
-                                    <p style={{ color: theme.success, fontSize: '10px', margin: 0 }}>Paid</p>
-                                    <p style={{ color: theme.success, fontWeight: '600', fontSize: '13px', margin: '2px 0 0 0' }}>{b.paid}m</p>
+                            {/* Stats - matching mobile style */}
+                            <div style={{ background: theme.cardAlt, borderRadius: '8px', padding: '8px 10px', marginTop: '8px' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                <span style={{ color: theme.textMuted }}>Total shift:</span>
+                                <span style={{ color: theme.text }}>{fmtDur(h * 60)}</span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                <span style={{ color: theme.success }}>Paid breaks:</span>
+                                <span style={{ color: theme.success }}>{b.paid}m</span>
+                              </div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                <span style={{ color: theme.warning }}>Unpaid breaks:</span>
+                                <span style={{ color: theme.warning }}>{b.unpaid}m</span>
+                              </div>
+                              {t > 0 && (
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                                  <span style={{ color: '#2563eb' }}>Travel time:</span>
+                                  <span style={{ color: '#2563eb' }}>{t}m</span>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Notes */}
+                            {getJobLogField(sh.jobLog, 'field1') && (
+                              <p style={{ color: theme.textMuted, fontSize: '12px', marginTop: '8px', margin: '8px 0 0 0' }}>Notes: {getJobLogField(sh.jobLog, 'field1')}</p>
+                            )}
+                            {getJobLogField(sh.jobLog, 'field2') && (
+                              <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>Job: {getJobLogField(sh.jobLog, 'field2')}</p>
+                            )}
+                            {getJobLogField(sh.jobLog, 'field3') && (
+                              <p style={{ color: theme.textMuted, fontSize: '12px', margin: '4px 0 0 0' }}>Details: {getJobLogField(sh.jobLog, 'field3')}</p>
+                            )}
+
+                            {/* Map button - full width, matching mobile */}
+                            {locationCount > 0 && (
+                              <button 
+                                onClick={() => setMapModal({ locations: sh.locationHistory || [], title: fmtDate(sh.clockIn), clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} 
+                                style={{ 
+                                  display: 'flex', 
+                                  alignItems: 'center', 
+                                  gap: '6px', 
+                                  marginTop: '10px', 
+                                  padding: '8px 12px', 
+                                  background: theme.cardAlt, 
+                                  border: `1px solid ${theme.primary}`, 
+                                  borderRadius: '8px', 
+                                  color: theme.primary, 
+                                  fontSize: '12px', 
+                                  fontWeight: '500', 
+                                  cursor: 'pointer', 
+                                  width: '100%', 
+                                  justifyContent: 'center' 
+                                }}
+                              >
+                                View {locationCount} location point{locationCount !== 1 ? 's' : ''} on map
+                              </button>
+                            )}
+
+                            {/* Action buttons - matching mobile dashed style */}
+                            {!isEditing && deleteConfirmId !== sh.id && (
+                              <div style={{ display: 'flex', gap: '6px', marginTop: '10px', flexWrap: 'wrap' }}>
+                                <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('times'); }} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: theme.primary, border: `1px dashed ${theme.primary}`, cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Edit Times</button>
+                                <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('breaks'); }} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: '#f59e0b', border: '1px dashed #fcd34d', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>+ Break</button>
+                                <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('travel'); }} style={{ flex: 1, minWidth: '80px', padding: '8px', borderRadius: '8px', background: 'transparent', color: '#2563eb', border: '1px dashed #bfdbfe', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>+ Travel</button>
+                                <button onClick={() => setDeleteConfirmId(sh.id)} style={{ padding: '8px 12px', borderRadius: '8px', background: 'transparent', color: '#dc2626', border: '1px dashed #fca5a5', cursor: 'pointer', fontSize: '12px', fontWeight: '500' }}>Delete</button>
+                              </div>
+                            )}
+
+                            {/* Delete confirmation */}
+                            {deleteConfirmId === sh.id && (
+                              <div style={{ marginTop: '10px', background: '#fee2e2', borderRadius: '8px', padding: '12px' }}>
+                                <p style={{ color: '#991b1b', fontSize: '13px', fontWeight: '600', margin: '0 0 10px 0' }}>Delete this shift?</p>
+                                <p style={{ color: '#b91c1c', fontSize: '12px', margin: '0 0 12px 0' }}>This cannot be undone.</p>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button onClick={() => { myDeleteShift(sh.id); setDeleteConfirmId(null); }} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#dc2626', color: 'white', border: 'none', cursor: 'pointer', fontWeight: '600', fontSize: '13px' }}>Yes, Delete</button>
+                                  <button onClick={() => setDeleteConfirmId(null)} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Add Break Panel */}
+                            {isEditing && myEditMode === 'breaks' && (
+                              <div style={{ background: theme.warningBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
+                                <p style={{ color: theme.warning, fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Break</p>
+                                
+                                {/* Show existing breaks */}
+                                {(sh.breaks || []).length > 0 && (
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <p style={{ color: '#92400e', fontSize: '11px', marginBottom: '6px', margin: '0 0 6px 0' }}>Existing breaks:</p>
+                                    {sh.breaks!.map((brk, i) => (
+                                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: 'white', borderRadius: '6px', marginBottom: '4px' }}>
+                                        <span style={{ color: '#1e293b', fontSize: '13px' }}>{brk.durationMinutes || 0}m break{brk.manualEntry && <span style={{ color: '#64748b', fontSize: '10px', marginLeft: '4px' }}>(manual)</span>}</span>
+                                        <button onClick={() => myDeleteBreakFromShift(sh.id, i)} style={{ padding: '4px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}>Remove</button>
+                                      </div>
+                                    ))}
                                   </div>
-                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
-                                    <p style={{ color: theme.warning, fontSize: '10px', margin: 0 }}>Unpaid</p>
-                                    <p style={{ color: theme.warning, fontWeight: '600', fontSize: '13px', margin: '2px 0 0 0' }}>{b.unpaid}m</p>
+                                )}
+                                
+                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
+                                  {[10, 15, 20, 30, 45, 60].map(mins => (
+                                    <button key={mins} onClick={() => myAddBreakToShift(sh.id, mins)} disabled={addingBreakToShift} style={{ padding: '8px 14px', borderRadius: '6px', background: '#fef08a', color: '#854d0e', border: '1px solid #fde047', cursor: addingBreakToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingBreakToShift ? 0.7 : 1 }}>+{mins}m</button>
+                                  ))}
+                                </div>
+                                <button onClick={closeMyEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #fde047', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Done</button>
+                              </div>
+                            )}
+
+                            {/* Add Travel Panel */}
+                            {isEditing && myEditMode === 'travel' && (
+                              <div style={{ background: theme.travelBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
+                                <p style={{ color: theme.travel, fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Travel Time</p>
+                                
+                                {/* Show existing travel */}
+                                {(sh.travelSegments || []).length > 0 && (
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <p style={{ color: '#1d4ed8', fontSize: '11px', marginBottom: '6px', margin: '0 0 6px 0' }}>Existing travel:</p>
+                                    {sh.travelSegments!.map((trv, i) => (
+                                      <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 8px', background: 'white', borderRadius: '6px', marginBottom: '4px' }}>
+                                        <span style={{ color: '#1e293b', fontSize: '13px' }}>{trv.durationMinutes || 0}m travel</span>
+                                        <button onClick={() => myDeleteTravelFromShift(sh.id, i)} style={{ padding: '4px 8px', borderRadius: '4px', background: '#fee2e2', color: '#dc2626', border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '500' }}>Remove</button>
+                                      </div>
+                                    ))}
                                   </div>
-                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', textAlign: 'center' }}>
-                                    <p style={{ color: theme.travel, fontSize: '10px', margin: 0 }}>Travel</p>
-                                    <p style={{ color: theme.travel, fontWeight: '600', fontSize: '13px', margin: '2px 0 0 0' }}>{t}m</p>
+                                )}
+                                
+                                <div style={{ marginBottom: '8px' }}>
+                                  <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>Start</label>
+                                  <div style={{ display: 'flex', gap: '4px' }}>
+                                    <select value={addTravelStartHour} onChange={e => setAddTravelStartHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                      {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                                    </select>
+                                    <select value={addTravelStartMinute} onChange={e => setAddTravelStartMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                      {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                    <select value={addTravelStartAmPm} onChange={e => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                      <option value="AM">AM</option>
+                                      <option value="PM">PM</option>
+                                    </select>
                                   </div>
                                 </div>
-
-                                {/* Notes */}
-                                {getJobLogField(sh.jobLog, 'field1') && (
-                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', marginBottom: '12px' }}>
-                                    <p style={{ color: theme.textMuted, fontSize: '10px', margin: 0 }}>{companySettings.field1Label || 'Notes'}</p>
-                                    <p style={{ color: theme.text, fontSize: '12px', margin: '4px 0 0 0' }}>{getJobLogField(sh.jobLog, 'field1')}</p>
+                                <div style={{ marginBottom: '10px' }}>
+                                  <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>End</label>
+                                  <div style={{ display: 'flex', gap: '4px' }}>
+                                    <select value={addTravelEndHour} onChange={e => setAddTravelEndHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                      {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
+                                    </select>
+                                    <select value={addTravelEndMinute} onChange={e => setAddTravelEndMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                      {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
+                                    </select>
+                                    <select value={addTravelEndAmPm} onChange={e => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
+                                      <option value="AM">AM</option>
+                                      <option value="PM">PM</option>
+                                    </select>
                                   </div>
-                                )}
-
-                                {/* Field 2 */}
-                                {getJobLogField(sh.jobLog, 'field2') && (
-                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', marginBottom: '12px' }}>
-                                    <p style={{ color: theme.textMuted, fontSize: '10px', margin: 0 }}>{companySettings.field2Label || 'Field 2'}</p>
-                                    <p style={{ color: theme.text, fontSize: '12px', margin: '4px 0 0 0' }}>{getJobLogField(sh.jobLog, 'field2')}</p>
-                                  </div>
-                                )}
-
-                                {/* Field 3 */}
-                                {getJobLogField(sh.jobLog, 'field3') && (
-                                  <div style={{ background: theme.card, padding: '8px', borderRadius: '6px', marginBottom: '12px' }}>
-                                    <p style={{ color: theme.textMuted, fontSize: '10px', margin: 0 }}>{companySettings.field3Label || 'Field 3'}</p>
-                                    <p style={{ color: theme.text, fontSize: '12px', margin: '4px 0 0 0' }}>{getJobLogField(sh.jobLog, 'field3')}</p>
-                                  </div>
-                                )}
-
-                                {/* Action buttons */}
-                                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                                  <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('breaks'); }} style={{ padding: '6px 10px', borderRadius: '6px', background: theme.warningBg, color: theme.warning, border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>+ Break</button>
-                                  <button onClick={() => { setEditingMyShift(sh.id); setMyEditMode('travel'); }} style={{ padding: '6px 10px', borderRadius: '6px', background: theme.travelBg, color: theme.travel, border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>+ Travel</button>
-                                  {(sh.locationHistory?.length > 0 || sh.clockInLocation || sh.clockOutLocation) && (
-                                    <button onClick={() => setMapModal({ locations: sh.locationHistory || [], title: fmtDate(sh.clockIn), clockInLocation: sh.clockInLocation, clockOutLocation: sh.clockOutLocation })} style={{ padding: '6px 10px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>🗺️ Map</button>
-                                  )}
-                                  <button onClick={() => { if (confirm('Delete this shift?')) myDeleteShift(sh.id); }} style={{ padding: '6px 10px', borderRadius: '6px', background: theme.dangerBg, color: theme.danger, border: 'none', cursor: 'pointer', fontSize: '11px', fontWeight: '600' }}>🗑️</button>
                                 </div>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                  <button onClick={() => myAddTravelToShift(sh.id, sh.clockIn?.toDate?.() || new Date())} disabled={addingTravelToShift} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: addingTravelToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingTravelToShift ? 0.7 : 1 }}>{addingTravelToShift ? 'Adding...' : 'Add Travel'}</button>
+                                  <button onClick={closeMyEditPanel} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
+                                </div>
+                              </div>
+                            )}
 
-                                {/* Add Break Panel */}
-                                {isEditing && myEditMode === 'breaks' && (
-                                  <div style={{ background: theme.warningBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
-                                    <p style={{ color: theme.warning, fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Break</p>
-                                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '10px' }}>
-                                      {[10, 15, 20, 30, 45, 60].map(mins => (
-                                        <button key={mins} onClick={() => myAddBreakToShift(sh.id, mins)} disabled={addingBreakToShift} style={{ padding: '8px 14px', borderRadius: '6px', background: '#fef08a', color: '#854d0e', border: '1px solid #fde047', cursor: addingBreakToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingBreakToShift ? 0.7 : 1 }}>+{mins}m</button>
-                                      ))}
-                                    </div>
-                                    <button onClick={closeMyEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #fde047', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Done</button>
-                                  </div>
-                                )}
-
-                                {/* Add Travel Panel */}
-                                {isEditing && myEditMode === 'travel' && (
-                                  <div style={{ background: theme.travelBg, borderRadius: '8px', padding: '12px', marginTop: '12px' }}>
-                                    <p style={{ color: theme.travel, fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Add Travel Time</p>
-                                    <div style={{ marginBottom: '8px' }}>
-                                      <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>Start</label>
-                                      <div style={{ display: 'flex', gap: '4px' }}>
-                                        <select value={addTravelStartHour} onChange={e => setAddTravelStartHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                          {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
-                                        </select>
-                                        <select value={addTravelStartMinute} onChange={e => setAddTravelStartMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                          {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
-                                        </select>
-                                        <select value={addTravelStartAmPm} onChange={e => setAddTravelStartAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                          <option value="AM">AM</option>
-                                          <option value="PM">PM</option>
-                                        </select>
-                                      </div>
-                                    </div>
-                                    <div style={{ marginBottom: '10px' }}>
-                                      <label style={{ display: 'block', color: theme.travel, fontSize: '11px', marginBottom: '4px' }}>End</label>
-                                      <div style={{ display: 'flex', gap: '4px' }}>
-                                        <select value={addTravelEndHour} onChange={e => setAddTravelEndHour(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                          {[12,1,2,3,4,5,6,7,8,9,10,11].map(h => <option key={h} value={h}>{h}</option>)}
-                                        </select>
-                                        <select value={addTravelEndMinute} onChange={e => setAddTravelEndMinute(e.target.value)} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                          {['00','05','10','15','20','25','30','35','40','45','50','55'].map(m => <option key={m} value={m}>{m}</option>)}
-                                        </select>
-                                        <select value={addTravelEndAmPm} onChange={e => setAddTravelEndAmPm(e.target.value as 'AM' | 'PM')} style={{ flex: 1, padding: '8px', fontSize: '13px', borderRadius: '6px', border: '1px solid #bfdbfe', background: 'white' }}>
-                                          <option value="AM">AM</option>
-                                          <option value="PM">PM</option>
-                                        </select>
-                                      </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '8px' }}>
-                                      <button onClick={() => myAddTravelToShift(sh.id, sh.clockIn?.toDate?.() || new Date())} disabled={addingTravelToShift} style={{ flex: 1, padding: '10px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: addingTravelToShift ? 'not-allowed' : 'pointer', fontWeight: '600', fontSize: '13px', opacity: addingTravelToShift ? 0.7 : 1 }}>{addingTravelToShift ? 'Adding...' : 'Add Travel'}</button>
-                                      <button onClick={closeMyEditPanel} style={{ padding: '10px 16px', borderRadius: '6px', background: 'white', color: theme.textMuted, border: '1px solid #bfdbfe', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Cancel</button>
-                                    </div>
-                                  </div>
-                                )}
+                            {/* Edit Times Panel */}
+                            {isEditing && myEditMode === 'times' && (
+                              <div style={{ marginTop: '10px', background: '#e0f2fe', borderRadius: '8px', padding: '12px' }}>
+                                <p style={{ color: '#0369a1', fontSize: '12px', fontWeight: '600', marginBottom: '10px', margin: '0 0 10px 0' }}>Edit Shift Times</p>
+                                <p style={{ color: '#64748b', fontSize: '11px', marginBottom: '10px', margin: '0 0 10px 0' }}>Edit times feature coming soon. Use + Break and + Travel for now.</p>
+                                <button onClick={closeMyEditPanel} style={{ width: '100%', padding: '8px', borderRadius: '6px', background: 'white', color: '#64748b', border: '1px solid #bae6fd', cursor: 'pointer', fontWeight: '500', fontSize: '13px' }}>Close</button>
                               </div>
                             )}
                           </div>
