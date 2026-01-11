@@ -1,6 +1,5 @@
 // Trackable NZ - Shift Management Hook
 // UPDATED: Added companyId support for multi-tenant
-// UPDATED: Added background geolocation support for iOS
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { User } from 'firebase/auth';
@@ -23,37 +22,7 @@ import { Shift, Location } from '../types';
 import { EmployeeSettings } from '../types';
 import { Geolocation } from '@capacitor/geolocation';
 import { Capacitor } from '@capacitor/core';
-import { registerPlugin } from '@capacitor/core';
 
-// Background Geolocation plugin interface
-interface BackgroundGeolocationPlugin {
-  addWatcher(
-    options: {
-      backgroundMessage?: string;
-      backgroundTitle?: string;
-      requestPermissions?: boolean;
-      stale?: boolean;
-      distanceFilter?: number;
-    },
-    callback: (location: BackgroundLocation | null, error: any) => void
-  ): Promise<string>;
-  removeWatcher(options: { id: string }): Promise<void>;
-  openSettings(): Promise<void>;
-}
-
-interface BackgroundLocation {
-  latitude: number;
-  longitude: number;
-  accuracy: number;
-  altitude: number | null;
-  altitudeAccuracy: number | null;
-  bearing: number | null;
-  speed: number | null;
-  time: number;
-  simulated: boolean;
-}
-
-const BackgroundGeolocation = registerPlugin<BackgroundGeolocationPlugin>('BackgroundGeolocation');
 // Haversine formula to calculate distance between two GPS points in meters
 function calculateDistance(loc1: Location, loc2: Location): number {
   const R = 6371000; // Earth's radius in meters
@@ -101,7 +70,6 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const GPS_MIN_SAVE_INTERVAL = 30000; // ms - minimum 30 seconds between saves to prevent duplicates
 
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
-  const backgroundWatcherIdRef = useRef<string | null>(null);
   const storage = getStorage();
 
   // Get current GPS location - uses Capacitor on native, browser API on web
@@ -268,144 +236,80 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     setLastKnownLocation(location);
   }, [currentShift, settings.autoTravel, settings.detectionDistance, anchorLocation, traveling, currentTravelStart, lastKnownLocation, stationaryStartTime, onToast]);
 
-  // GPS tracking - uses background geolocation on native, interval on web
+  // GPS tracking interval - handles both regular tracking and auto-travel
   useEffect(() => {
     if (!user || !currentShift || !settings.gpsTracking) {
-      // Clean up any existing watchers/intervals
       if (gpsIntervalRef.current) {
         clearInterval(gpsIntervalRef.current);
         gpsIntervalRef.current = null;
       }
-      if (backgroundWatcherIdRef.current && Capacitor.isNativePlatform()) {
-        BackgroundGeolocation.removeWatcher({ id: backgroundWatcherIdRef.current });
-        backgroundWatcherIdRef.current = null;
-      }
       return;
     }
 
-    // Function to process a location update
-    const processLocation = async (location: Location) => {
-      if (!currentShift) return;
-      
-      // GPS FILTERING: Skip low-accuracy readings
-      if (location.accuracy > GPS_MAX_ACCURACY) {
-        console.log(`GPS: Skipping low accuracy reading (${Math.round(location.accuracy)}m > ${GPS_MAX_ACCURACY}m)`);
-        if (settings.autoTravel) {
-          await processAutoTravelDetection(location);
-        }
-        return;
-      }
-      
-      // GPS FILTERING: Skip if haven't moved enough
-      if (lastRecordedLocationRef.current) {
-        const distanceMoved = calculateDistance(location, lastRecordedLocationRef.current);
-        if (distanceMoved < GPS_MIN_DISTANCE) {
-          console.log(`GPS: Skipping - only moved ${Math.round(distanceMoved)}m (min: ${GPS_MIN_DISTANCE}m)`);
+    // Determine interval: use autoTravelInterval when auto-travel is ON, otherwise gpsInterval
+    const intervalMinutes = settings.autoTravel 
+      ? (settings.autoTravelInterval || 2) 
+      : settings.gpsInterval;
+
+    const trackLocation = async () => {
+      const location = await getCurrentLocation();
+      if (location && currentShift) {
+        // GPS FILTERING: Skip low-accuracy readings
+        if (location.accuracy > GPS_MAX_ACCURACY) {
+          console.log(`GPS: Skipping low accuracy reading (${Math.round(location.accuracy)}m > ${GPS_MAX_ACCURACY}m)`);
+          // Still process auto-travel with whatever location we have
           if (settings.autoTravel) {
             await processAutoTravelDetection(location);
           }
           return;
         }
-      }
-      
-      // GPS FILTERING: Prevent rapid duplicate saves (within 30 seconds)
-      const now = Date.now();
-      if (now - lastSaveTimestampRef.current < GPS_MIN_SAVE_INTERVAL) {
-        console.log(`GPS: Skipping - too soon since last save (${Math.round((now - lastSaveTimestampRef.current) / 1000)}s < 30s)`);
-        return;
-      }
-      
-      try {
-        await updateDoc(doc(db, 'shifts', currentShift.id), {
-          locationHistory: arrayUnion(location)
-        });
-        lastRecordedLocationRef.current = location;
-        lastSaveTimestampRef.current = Date.now();
-        console.log(`GPS: Recorded location (accuracy: ${Math.round(location.accuracy)}m)`);
         
-        if (settings.autoTravel) {
-          await processAutoTravelDetection(location);
+        // GPS FILTERING: Skip if haven't moved enough
+        if (lastRecordedLocationRef.current) {
+          const distanceMoved = calculateDistance(location, lastRecordedLocationRef.current);
+          if (distanceMoved < GPS_MIN_DISTANCE) {
+            console.log(`GPS: Skipping - only moved ${Math.round(distanceMoved)}m (min: ${GPS_MIN_DISTANCE}m)`);
+            // Still process auto-travel detection
+            if (settings.autoTravel) {
+              await processAutoTravelDetection(location);
+            }
+            return;
+          }
         }
-      } catch (err) {
-        console.error('Error updating location:', err);
+        
+        // GPS FILTERING: Prevent rapid duplicate saves (within 30 seconds)
+        const now = Date.now();
+        if (now - lastSaveTimestampRef.current < GPS_MIN_SAVE_INTERVAL) {
+          console.log(`GPS: Skipping - too soon since last save (${Math.round((now - lastSaveTimestampRef.current) / 1000)}s < 30s)`);
+          return;
+        }
+        
+        try {
+          await updateDoc(doc(db, 'shifts', currentShift.id), {
+            locationHistory: arrayUnion(location)
+          });
+          lastRecordedLocationRef.current = location;
+          lastSaveTimestampRef.current = Date.now();
+          console.log(`GPS: Recorded location (accuracy: ${Math.round(location.accuracy)}m)`);
+          
+          // Process auto-travel detection if enabled
+          if (settings.autoTravel) {
+            await processAutoTravelDetection(location);
+          }
+        } catch (err) {
+          console.error('Error updating location:', err);
+        }
       }
     };
 
-    // Native platform: Use background geolocation
-    if (Capacitor.isNativePlatform()) {
-      const startBackgroundTracking = async () => {
-        try {
-          // Distance filter based on settings (convert interval to approximate distance)
-          // For 10 min interval at walking speed (~5km/h), that's ~830m
-          // For 2 min interval, ~170m
-          const intervalMinutes = settings.autoTravel 
-            ? (settings.autoTravelInterval || 2) 
-            : settings.gpsInterval;
-          const distanceFilter = Math.max(50, intervalMinutes * 80); // ~80m per minute at avg speed
-          
-          const watcherId = await BackgroundGeolocation.addWatcher(
-            {
-              backgroundMessage: 'Trackable NZ is tracking your work location',
-              backgroundTitle: 'GPS Tracking Active',
-              requestPermissions: true,
-              stale: false,
-              distanceFilter: distanceFilter
-            },
-            (bgLocation, error) => {
-              if (error) {
-                console.error('Background location error:', error);
-                return;
-              }
-              if (bgLocation) {
-                const location: Location = {
-                  latitude: bgLocation.latitude,
-                  longitude: bgLocation.longitude,
-                  accuracy: bgLocation.accuracy,
-                  timestamp: bgLocation.time || Date.now()
-                };
-                setCurrentLocation(location);
-                processLocation(location);
-              }
-            }
-          );
-          backgroundWatcherIdRef.current = watcherId;
-          console.log('Background geolocation started, watcher ID:', watcherId);
-        } catch (err) {
-          console.error('Failed to start background geolocation:', err);
-          // Fall back to interval-based tracking
-          startIntervalTracking();
-        }
-      };
-      
-      startBackgroundTracking();
-    } else {
-      // Web: Use interval-based tracking
-      startIntervalTracking();
-    }
-
-    function startIntervalTracking() {
-      const intervalMinutes = settings.autoTravel 
-        ? (settings.autoTravelInterval || 2) 
-        : settings.gpsInterval;
-
-      const trackLocation = async () => {
-        const location = await getCurrentLocation();
-        if (location) {
-          await processLocation(location);
-        }
-      };
-
-      gpsIntervalRef.current = setInterval(trackLocation, intervalMinutes * 60 * 1000);
-    }
+    // Don't call trackLocation() immediately - clockIn already captured the initial location
+    // Just set up the interval for subsequent tracking
+    gpsIntervalRef.current = setInterval(trackLocation, intervalMinutes * 60 * 1000);
 
     return () => {
       if (gpsIntervalRef.current) {
         clearInterval(gpsIntervalRef.current);
         gpsIntervalRef.current = null;
-      }
-      if (backgroundWatcherIdRef.current && Capacitor.isNativePlatform()) {
-        BackgroundGeolocation.removeWatcher({ id: backgroundWatcherIdRef.current });
-        backgroundWatcherIdRef.current = null;
       }
     };
   }, [user, currentShift?.id, settings.gpsTracking, settings.gpsInterval, settings.autoTravel, settings.autoTravelInterval, processAutoTravelDetection]);
