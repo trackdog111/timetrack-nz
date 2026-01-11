@@ -338,39 +338,23 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
             href="https://apps.apple.com/app/trackable-nz/id6740708887" 
             target="_blank" 
             rel="noopener noreferrer"
-            style={{ 
-              display: 'inline-flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              background: 'rgba(255,255,255,0.2)', 
-              padding: '8px 14px', 
-              borderRadius: '8px', 
-              color: 'white', 
-              textDecoration: 'none',
-              fontSize: '13px',
-              fontWeight: '600'
-            }}
           >
-            🍎 App Store
+            <img 
+              src="https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg" 
+              alt="Download on the App Store" 
+              style={{ height: '40px' }}
+            />
           </a>
           <a 
             href="https://play.google.com/store/apps/details?id=nz.trackable.app" 
             target="_blank" 
             rel="noopener noreferrer"
-            style={{ 
-              display: 'inline-flex', 
-              alignItems: 'center', 
-              gap: '6px',
-              background: 'rgba(255,255,255,0.2)', 
-              padding: '8px 14px', 
-              borderRadius: '8px', 
-              color: 'white', 
-              textDecoration: 'none',
-              fontSize: '13px',
-              fontWeight: '600'
-            }}
           >
-            🤖 Play Store
+            <img 
+              src="https://play.google.com/intl/en_us/badges/static/images/badges/en_badge_web_generic.png" 
+              alt="Get it on Google Play" 
+              style={{ height: '40px' }}
+            />
           </a>
         </div>
         
