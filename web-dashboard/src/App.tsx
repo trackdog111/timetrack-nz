@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail } from 'firebase/auth';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch, arrayUnion } from 'firebase/firestore';
 import { auth, db, MOBILE_APP_URL } from './shared/firebase';
-import { Location, Break, TravelSegment, Shift, Employee, EmployeeSettings, ChatMessage, CompanySettings, Invite, Theme, Company } from './shared/types';
+import { Location, Break, TravelSegment, Shift, Employee, EmployeeSettings, ChatMessage, CompanySettings, Invite, Theme, Company, Expense } from './shared/types';
 import { lightTheme, darkTheme } from './shared/theme';
 import { defaultSettings, defaultCompanySettings, getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, fmtDateShort, getWeekEndingDate, getWeekEndingKey } from './shared/utils';
 import { MapModal, LocationMap } from './components/MapModal';
@@ -16,6 +16,7 @@ const TimesheetsView = lazy(() => import('./views/TimesheetsView').then(m => ({ 
 const ReportsView = lazy(() => import('./views/ReportsView').then(m => ({ default: m.ReportsView })));
 const ChatView = lazy(() => import('./views/ChatView').then(m => ({ default: m.ChatView })));
 const SettingsView = lazy(() => import('./views/SettingsView').then(m => ({ default: m.SettingsView })));
+const ExpensesView = lazy(() => import('./views/ExpensesView').then(m => ({ default: m.ExpensesView })));
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -35,6 +36,9 @@ export default function App() {
   const [activeShifts, setActiveShifts] = useState<Shift[]>([]);
   const [allShifts, setAllShifts] = useState<Shift[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [approvingExpense, setApprovingExpense] = useState<string | null>(null);
+  const [deletingExpense, setDeletingExpense] = useState<string | null>(null);
   const [mapModal, setMapModal] = useState<{ locations: Location[], title: string, clockInLocation?: Location, clockOutLocation?: Location } | null>(null);
   const [editShiftModal, setEditShiftModal] = useState<Shift | null>(null);
   const [newEmpEmail, setNewEmpEmail] = useState('');
@@ -188,6 +192,15 @@ export default function App() {
     ); 
   }, [user, companyId]);
 
+  // NEW: Expenses listener
+  useEffect(() => { 
+    if (!user || !companyId) return; 
+    return onSnapshot(
+      query(collection(db, 'expenses'), where('companyId', '==', companyId), orderBy('createdAt', 'desc')), 
+      (snap) => { setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() } as Expense))); }
+    ); 
+  }, [user, companyId]);
+
   // UPDATED: Company settings now stored in companies/{companyId}
   useEffect(() => { 
     if (!user || !companyId) return; 
@@ -317,6 +330,72 @@ export default function App() {
   const genReport = () => { if (!reportStart || !reportEnd) { setError('Select dates'); return; } const s = new Date(reportStart); s.setHours(0,0,0,0); const e = new Date(reportEnd); e.setHours(23,59,59,999); let data = allShifts.filter(sh => { if (!sh.clockIn?.toDate) return false; const d = sh.clockIn.toDate(); return d >= s && d <= e && sh.status === 'completed'; }); if (reportEmp !== 'all') data = data.filter(sh => sh.userId === reportEmp); setReportData(data); };
   const exportCSV = () => { if (!reportData.length) return; const rows = [['Date','Employee','In','Out','Worked','Paid','Unpaid','Travel']]; reportData.forEach(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const t = calcTravel(sh.travelSegments || []); rows.push([fmtDateShort(sh.clockIn), getEmployeeName(sh.userId, sh.userEmail), fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : '-', fmtDur((h*60)-b.unpaid), b.paid+'m', b.unpaid+'m', t+'m']); }); const csv = rows.map(r => r.join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `timetrack-${reportStart}-${reportEnd}.csv`; a.click(); };
   const exportPDF = () => { if (!reportData.length) return; let total = 0, tPaid = 0, tUnpaid = 0; const rows = reportData.map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const worked = (h*60) - b.unpaid; total += worked; tPaid += b.paid; tUnpaid += b.unpaid; return `<tr><td>${fmtDateShort(sh.clockIn)}</td><td>${getEmployeeName(sh.userId, sh.userEmail)}</td><td>${fmtTime(sh.clockIn)}</td><td>${sh.clockOut ? fmtTime(sh.clockOut) : '-'}</td><td>${fmtDur(worked)}</td><td>${b.paid}m</td><td>${b.unpaid}m</td></tr>`; }).join(''); const html = `<!DOCTYPE html><html><head><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px}th{background:#1e40af;color:white}</style></head><body><h1>TimeTrack Report</h1><p>${reportStart} to ${reportEnd}</p><table><tr><th>Date</th><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Paid</th><th>Unpaid</th></tr>${rows}</table><h3>Total: ${fmtDur(total)}, ${tPaid}m paid, ${tUnpaid}m unpaid</h3></body></html>`; const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); } };
+
+  // NEW: Expense functions
+  const approveExpense = async (expenseId: string) => {
+    if (!user) return;
+    setApprovingExpense(expenseId);
+    try {
+      await updateDoc(doc(db, 'expenses', expenseId), {
+        status: 'approved',
+        approvedAt: Timestamp.now(),
+        approvedBy: user.email
+      });
+      setSuccess('Expense approved!');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to approve expense');
+    }
+    setApprovingExpense(null);
+  };
+
+  const deleteExpense = async (expenseId: string) => {
+    setDeletingExpense(expenseId);
+    try {
+      await deleteDoc(doc(db, 'expenses', expenseId));
+      setSuccess('Expense deleted');
+      setTimeout(() => setSuccess(''), 2000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete expense');
+    }
+    setDeletingExpense(null);
+  };
+
+  const exportExpensesCSV = () => {
+    const approvedExpenses = expenses.filter(exp => {
+      if (exp.status !== 'approved') return false;
+      if (!reportStart || !reportEnd) return true;
+      const s = new Date(reportStart); s.setHours(0,0,0,0);
+      const e = new Date(reportEnd); e.setHours(23,59,59,999);
+      const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
+      return expDate >= s && expDate <= e;
+    });
+    
+    if (!approvedExpenses.length) { 
+      setError('No approved expenses in date range'); 
+      return; 
+    }
+    
+    const rows = [['Date', 'Employee', 'Category', 'Amount', 'Note', 'Approved By']];
+    approvedExpenses.forEach(exp => {
+      const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
+      rows.push([
+        expDate.toLocaleDateString('en-NZ'),
+        getEmployeeName(exp.odId, exp.odEmail),
+        exp.category,
+        exp.amount.toFixed(2),
+        exp.note || '',
+        exp.approvedBy || ''
+      ]);
+    });
+    
+    const csv = rows.map(r => r.map(cell => `"${cell}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `expenses-${reportStart || 'all'}-${reportEnd || 'all'}.csv`;
+    a.click();
+  };
 
   // UPDATED: Include companyId in messages
   const sendMsg = async () => { 
@@ -491,7 +570,7 @@ export default function App() {
     </main>
   );
 
-  const navItems = [{ id: 'live', label: '🟢 Live View' }, { id: 'mysheet', label: '⏱️ My Timesheet' }, { id: 'employees', label: '👥 Employees' }, { id: 'timesheets', label: '📋 Timesheets' }, { id: 'reports', label: '📊 Reports' }, { id: 'chat', label: '💬 Chat' }, { id: 'settings', label: '⚙️ Settings' }];
+  const navItems = [{ id: 'live', label: '🟢 Live View' }, { id: 'mysheet', label: '⏱️ My Timesheet' }, { id: 'employees', label: '👥 Employees' }, { id: 'timesheets', label: '📋 Timesheets' }, { id: 'expenses', label: '🧾 Expenses' }, { id: 'reports', label: '📊 Reports' }, { id: 'chat', label: '💬 Chat' }, { id: 'settings', label: '⚙️ Settings' }];
 
   return (
     <main style={{ minHeight: '100vh', background: theme.bg }}>
@@ -518,7 +597,8 @@ export default function App() {
           {view === 'mysheet' && <MyTimesheetView theme={theme} isMobile={isMobile} user={user ? { uid: user.uid } : null} myShift={myShift} myShiftHistory={myShiftHistory} onBreak={onBreak} breakStart={breakStart} myTraveling={myTraveling} myTravelStart={myTravelStart} myField1={myField1} setMyField1={setMyField1} saveMyField1={saveMyField1} myField2={myField2} setMyField2={setMyField2} saveMyField2={saveMyField2} myField3={myField3} setMyField3={setMyField3} saveMyField3={saveMyField3} myCurrentLocation={myCurrentLocation} companySettings={companySettings} employees={employees} myClockIn={myClockIn} myClockOut={myClockOut} clockingIn={clockingIn} clockingOut={clockingOut} myStartBreak={myStartBreak} myEndBreak={myEndBreak} myStartTravel={myStartTravel} myEndTravel={myEndTravel} myAddBreak={myAddBreak} showAddManualShift={showAddManualShift} setShowAddManualShift={setShowAddManualShift} manualDate={manualDate} setManualDate={setManualDate} manualStartHour={manualStartHour} setManualStartHour={setManualStartHour} manualStartMinute={manualStartMinute} setManualStartMinute={setManualStartMinute} manualStartAmPm={manualStartAmPm} setManualStartAmPm={setManualStartAmPm} manualEndHour={manualEndHour} setManualEndHour={setManualEndHour} manualEndMinute={manualEndMinute} setManualEndMinute={setManualEndMinute} manualEndAmPm={manualEndAmPm} setManualEndAmPm={setManualEndAmPm} manualBreaks={manualBreaks} setManualBreaks={setManualBreaks} manualTravel={manualTravel} setManualTravel={setManualTravel} manualNotes={manualNotes} setManualNotes={setManualNotes} addingManualShift={addingManualShift} myAddManualShift={myAddManualShift} expandedMyShifts={expandedMyShifts} toggleMyShift={toggleMyShift} editingMyShift={editingMyShift} setEditingMyShift={setEditingMyShift} myEditMode={myEditMode} setMyEditMode={setMyEditMode} addTravelStartHour={addTravelStartHour} setAddTravelStartHour={setAddTravelStartHour} addTravelStartMinute={addTravelStartMinute} setAddTravelStartMinute={setAddTravelStartMinute} addTravelStartAmPm={addTravelStartAmPm} setAddTravelStartAmPm={setAddTravelStartAmPm} addTravelEndHour={addTravelEndHour} setAddTravelEndHour={setAddTravelEndHour} addTravelEndMinute={addTravelEndMinute} setAddTravelEndMinute={setAddTravelEndMinute} addTravelEndAmPm={addTravelEndAmPm} setAddTravelEndAmPm={setAddTravelEndAmPm} addingTravelToShift={addingTravelToShift} addingBreakToShift={addingBreakToShift} myAddBreakToShift={myAddBreakToShift} myAddTravelToShift={myAddTravelToShift} myDeleteBreakFromShift={myDeleteBreakFromShift} myDeleteTravelFromShift={myDeleteTravelFromShift} myDeleteShift={myDeleteShift} closeMyEditPanel={closeMyEditPanel} updateSettings={updateSettings} setMapModal={setMapModal} />}
           {view === 'employees' && <EmployeesView theme={theme} isMobile={isMobile} user={user ? { uid: user.uid } : null} employees={employees} invites={invites} newEmpEmail={newEmpEmail} setNewEmpEmail={setNewEmpEmail} newEmpName={newEmpName} setNewEmpName={setNewEmpName} inviteEmployee={inviteEmployee} cancelInvite={cancelInvite} sendInviteEmail={sendInviteEmail} copyInviteLink={copyInviteLink} sendingEmail={sendingEmail} updateSettings={updateSettings} setRemoveConfirm={setRemoveConfirm} />}
           {view === 'timesheets' && <TimesheetsView theme={theme} isMobile={isMobile} companySettings={companySettings} timesheetFilterStart={timesheetFilterStart} setTimesheetFilterStart={setTimesheetFilterStart} timesheetFilterEnd={timesheetFilterEnd} setTimesheetFilterEnd={setTimesheetFilterEnd} setThisWeek={setThisWeek} setLastWeek={setLastWeek} setThisMonth={setThisMonth} setLastMonth={setLastMonth} clearTimesheetFilter={clearTimesheetFilter} getGroupedTimesheets={getGroupedTimesheets} expandedEmployees={expandedEmployees} toggleEmployee={toggleEmployee} expandedWeeks={expandedWeeks} toggleWeek={toggleWeek} finalizingWeek={finalizingWeek} finalizeWeek={finalizeWeek} timesheetEditingShiftId={timesheetEditingShiftId} setTimesheetEditingShiftId={setTimesheetEditingShiftId} timesheetEditMode={timesheetEditMode} setTimesheetEditMode={setTimesheetEditMode} timesheetDeleteConfirmId={timesheetDeleteConfirmId} setTimesheetDeleteConfirmId={setTimesheetDeleteConfirmId} deletingTimesheetShift={deletingTimesheetShift} addingBreakToShift={addingBreakToShift} addingTravelToShift={addingTravelToShift} handleTimesheetAddBreak={handleTimesheetAddBreak} handleTimesheetAddTravel={handleTimesheetAddTravel} handleTimesheetDeleteShift={handleTimesheetDeleteShift} closeTimesheetEditPanel={closeTimesheetEditPanel} setEditShiftModal={setEditShiftModal} setMapModal={setMapModal} />}
-          {view === 'reports' && <ReportsView theme={theme} isMobile={isMobile} employees={employees} companySettings={companySettings} reportStart={reportStart} setReportStart={setReportStart} reportEnd={reportEnd} setReportEnd={setReportEnd} reportEmp={reportEmp} setReportEmp={setReportEmp} reportData={reportData} genReport={genReport} exportCSV={exportCSV} exportPDF={exportPDF} getEmployeeName={getEmployeeName} />}
+          {view === 'expenses' && <ExpensesView theme={theme} isMobile={isMobile} expenses={expenses} employees={employees} getEmployeeName={getEmployeeName} approveExpense={approveExpense} deleteExpense={deleteExpense} approvingExpense={approvingExpense} deletingExpense={deletingExpense} />}
+          {view === 'reports' && <ReportsView theme={theme} isMobile={isMobile} employees={employees} companySettings={companySettings} reportStart={reportStart} setReportStart={setReportStart} reportEnd={reportEnd} setReportEnd={setReportEnd} reportEmp={reportEmp} setReportEmp={setReportEmp} reportData={reportData} genReport={genReport} exportCSV={exportCSV} exportPDF={exportPDF} getEmployeeName={getEmployeeName} expenses={expenses} exportExpensesCSV={exportExpensesCSV} />}
           {view === 'chat' && <ChatView theme={theme} isMobile={isMobile} messages={messages} chatTab={chatTab} setChatTab={setChatTab} newMsg={newMsg} setNewMsg={setNewMsg} sendMsg={sendMsg} getEmployeeName={getEmployeeName} />}
           {view === 'settings' && <SettingsView theme={theme} isMobile={isMobile} allShifts={allShifts} employees={employees} messages={messages} editingCompanySettings={editingCompanySettings} setEditingCompanySettings={setEditingCompanySettings} saveCompanySettings={saveCompanySettings} savingCompanySettings={savingCompanySettings} cleanupStart={cleanupStart} setCleanupStart={setCleanupStart} cleanupEnd={cleanupEnd} setCleanupEnd={setCleanupEnd} cleanupConfirm={cleanupConfirm} setCleanupConfirm={setCleanupConfirm} cleanup={cleanup} />}
         </Suspense>

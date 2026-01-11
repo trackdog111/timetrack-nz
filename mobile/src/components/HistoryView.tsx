@@ -738,7 +738,7 @@ export function HistoryView({
   const minuteOptions = ['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'];
 
   return (
-    <div style={{ padding: '16px' }}>
+    <div style={{ padding: '16px', paddingBottom: '100px' }}>
       {mapModal && (
         <MapModal
           locations={mapModal.locations}

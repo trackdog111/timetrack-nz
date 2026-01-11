@@ -1,5 +1,5 @@
 // Trackable NZ - Type Definitions
-// UPDATED: Added companyId to all relevant interfaces for multi-tenant support
+// UPDATED: Added Expense types and updated ViewType to include 'expenses'
 
 export interface Location {
   latitude: number;
@@ -123,7 +123,53 @@ export interface Invite {
   createdAt: any;
 }
 
-export type ViewType = 'clock' | 'joblog' | 'chat' | 'history';
+// ==================== EXPENSE TYPES ====================
+
+export interface Expense {
+  id: string;
+  companyId: string;
+  odId: string;         // User ID (matches odId in shifts)
+  odName: string;       // Employee name for display
+  odEmail: string;      // Employee email
+  amount: number;       // Dollar amount
+  category: ExpenseCategory;
+  photoUrl?: string;    // Firebase Storage URL (optional)
+  note?: string;        // Optional description
+  date: any;            // Firestore Timestamp - expense date
+  status: 'pending' | 'approved';
+  createdAt: any;       // Firestore Timestamp
+  approvedAt?: any;     // Firestore Timestamp
+  approvedBy?: string;  // Manager email who approved
+}
+
+export type ExpenseCategory = 
+  | 'Mileage'
+  | 'Parking'
+  | 'Fuel'
+  | 'Meals'
+  | 'Accommodation'
+  | 'Tools'
+  | 'Materials'
+  | 'PPE/Safety Gear'
+  | 'Phone/Data'
+  | 'Other';
+
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  'Mileage',
+  'Parking',
+  'Fuel',
+  'Meals',
+  'Accommodation',
+  'Tools',
+  'Materials',
+  'PPE/Safety Gear',
+  'Phone/Data',
+  'Other'
+];
+
+// ==================== VIEW TYPES ====================
+
+export type ViewType = 'clock' | 'joblog' | 'chat' | 'history' | 'expenses';  // UPDATED: Added 'expenses'
 export type ChatTabType = 'team' | 'employer';
 export type AuthMode = 'signin' | 'invite';
 export type InviteStep = 'email' | 'password';

@@ -152,3 +152,46 @@ export interface MapModalProps {
   clockInLocation?: Location;
   clockOutLocation?: Location;
 }
+
+// NEW: Expense types for reimbursement claims
+export type ExpenseCategory = 
+  | 'Mileage'
+  | 'Parking'
+  | 'Fuel'
+  | 'Meals'
+  | 'Accommodation'
+  | 'Tools'
+  | 'Materials'
+  | 'PPE/Safety Gear'
+  | 'Phone/Data'
+  | 'Other';
+
+export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
+  'Mileage',
+  'Parking',
+  'Fuel',
+  'Meals',
+  'Accommodation',
+  'Tools',
+  'Materials',
+  'PPE/Safety Gear',
+  'Phone/Data',
+  'Other'
+];
+
+export interface Expense {
+  id: string;
+  companyId: string;
+  odId: string;           // User ID (employee)
+  odName: string;         // Employee display name
+  odEmail: string;        // Employee email
+  amount: number;         // Dollar amount
+  category: ExpenseCategory;
+  photoUrl?: string;      // Firebase Storage URL (optional receipt)
+  note?: string;          // Description (optional)
+  date: Timestamp;        // Expense date
+  status: 'pending' | 'approved';
+  createdAt: Timestamp;
+  approvedAt?: Timestamp; // When approved
+  approvedBy?: string;    // Manager email who approved
+}

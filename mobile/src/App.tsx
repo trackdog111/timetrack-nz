@@ -1,14 +1,13 @@
 // Trackable NZ - Main App Component
-// Refactored from monolithic 800-line file into clean modular structure
-// UPDATED: Added companyId support for multi-tenant
+// UPDATED: Added Expenses tab with edit/delete support
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import { lightTheme, darkTheme } from './theme';
 import { ViewType, Invite } from './types';
-import { useAuth, useShift, useChat, useSettings } from './hooks';
-import { LoginScreen, ClockView, JobLogView, ChatView, HistoryView } from './components';
+import { useAuth, useShift, useChat, useSettings, useExpenses } from './hooks';
+import { LoginScreen, ClockView, JobLogView, ChatView, HistoryView, ExpensesView } from './components';
 
 export default function App() {
   // Auth hook - NOW PROVIDES companyId
@@ -17,15 +16,15 @@ export default function App() {
     loading,
     error: authError,
     setError: setAuthError,
-    companyId,        // NEW
-    loadingCompany,   // NEW
+    companyId,
+    loadingCompany,
     signIn,
     resetPassword,
     checkInvite,
     acceptInvite
   } = useAuth();
 
-  // Settings hook - NOW RECEIVES companyId
+  // Settings hook
   const { settings, labels } = useSettings(user, companyId);
 
   // UI state
@@ -34,22 +33,20 @@ export default function App() {
   const [toast, setToast] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Toast function ref - allows us to pass to useShift without hoisting issues
+  // Toast function ref
   const showToastRef = useRef<(message: string) => void>(() => {});
   
-  // Update the ref when component mounts
   showToastRef.current = (message: string) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
     setToast(message);
     toastTimeoutRef.current = setTimeout(() => setToast(null), 2000);
   };
 
-  // Stable callback that uses the ref
   const showToast = useCallback((message: string) => {
     showToastRef.current(message);
   }, []);
 
-  // Shift hook - NOW RECEIVES companyId
+  // Shift hook
   const {
     currentShift,
     shiftHistory,
@@ -85,9 +82,9 @@ export default function App() {
     deleteShift,
     autoTravelActive,
     anchorLocation
-  } = useShift(user, settings, companyId, showToast);  // UPDATED: Added companyId
+  } = useShift(user, settings, companyId, showToast);
 
-  // Chat hook - NOW RECEIVES companyId
+  // Chat hook
   const {
     messages,
     newMessage,
@@ -96,7 +93,17 @@ export default function App() {
     setChatTab,
     sendMessage,
     sendJobUpdate
-  } = useChat(user, settings.chatEnabled, companyId);  // UPDATED: Added companyId
+  } = useChat(user, settings.chatEnabled, companyId);
+
+  // Expenses hook - UPDATED: Added updateExpense and deleteExpense
+  const {
+    expenses,
+    loading: expensesLoading,
+    submitting: expenseSubmitting,
+    submitExpense,
+    updateExpense,
+    deleteExpense
+  } = useExpenses(user, companyId);
 
   // Invite URL handling
   const [initialEmail, setInitialEmail] = useState('');
@@ -108,12 +115,10 @@ export default function App() {
       const urlParams = new URLSearchParams(window.location.search);
       const inviteId = urlParams.get('invite');
       
-      // Also check for /join path
       const isJoinPath = window.location.pathname === '/join';
       
       if (inviteId && (isJoinPath || inviteId !== 'true')) {
         try {
-          // Fetch invite from Firestore
           const { getDoc, doc } = await import('firebase/firestore');
           const { db } = await import('./firebase');
           const inviteDoc = await getDoc(doc(db, 'invites', inviteId));
@@ -151,7 +156,7 @@ export default function App() {
     }
   };
 
-  // Loading state - UPDATED: Include loadingCompany
+  // Loading state
   if (loading || loadingCompany) {
     return (
       <main style={{ 
@@ -186,7 +191,7 @@ export default function App() {
     );
   }
 
-  // NEW: Show error if user has no company
+  // Show error if user has no company
   if (!companyId) {
     return (
       <main style={{ 
@@ -406,6 +411,20 @@ export default function App() {
         />
       )}
 
+      {/* Expenses View - UPDATED: Added onUpdateExpense and onDeleteExpense */}
+      {view === 'expenses' && (
+        <ExpensesView
+          theme={theme}
+          expenses={expenses}
+          loading={expensesLoading}
+          submitting={expenseSubmitting}
+          onSubmitExpense={submitExpense}
+          onUpdateExpense={updateExpense}
+          onDeleteExpense={deleteExpense}
+          showToast={showToast}
+        />
+      )}
+
       {/* Bottom navigation */}
       <div style={{
         position: 'fixed',
@@ -420,6 +439,7 @@ export default function App() {
           {[
             { id: 'clock', label: 'Clock', icon: '⏱️' },
             ...(settings.chatEnabled ? [{ id: 'chat', label: 'Chat', icon: '💬' }] : []),
+            { id: 'expenses', label: 'Expenses', icon: '🧾' },
             { id: 'history', label: 'History', icon: '📋' }
           ].map(item => (
             <button

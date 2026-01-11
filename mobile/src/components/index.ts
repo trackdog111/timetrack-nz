@@ -6,3 +6,4 @@ export { ClockView } from './ClockView';
 export { JobLogView } from './JobLogView';
 export { ChatView } from './ChatView';
 export { HistoryView } from './HistoryView';
+export { ExpensesView } from './ExpensesView';

@@ -1,4 +1,4 @@
-import { Shift, Theme, Employee, CompanySettings } from '../shared/types';
+import { Shift, Theme, Employee, CompanySettings, Expense } from '../shared/types';
 import { getHours, calcBreaks, fmtDur, fmtTime, fmtDateShort } from '../shared/utils';
 
 interface ReportsViewProps {
@@ -17,6 +17,9 @@ interface ReportsViewProps {
   exportCSV: () => void;
   exportPDF: () => void;
   getEmployeeName: (userId?: string, userEmail?: string) => string;
+  // NEW: Expenses props
+  expenses?: Expense[];
+  exportExpensesCSV?: () => void;
 }
 
 export function ReportsView({
@@ -34,14 +37,29 @@ export function ReportsView({
   genReport,
   exportCSV,
   exportPDF,
-  getEmployeeName
+  getEmployeeName,
+  expenses = [],
+  exportExpensesCSV
 }: ReportsViewProps) {
   const styles = {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
     input: { padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
     btn: { padding: '10px 20px', borderRadius: '8px', border: 'none', background: theme.primary, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
-    btnDanger: { padding: '10px 20px', borderRadius: '8px', border: 'none', background: theme.danger, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' }
+    btnDanger: { padding: '10px 20px', borderRadius: '8px', border: 'none', background: theme.danger, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
+    btnWarning: { padding: '10px 20px', borderRadius: '8px', border: 'none', background: theme.warning, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' }
   };
+
+  // Calculate approved expenses in date range
+  const approvedExpensesInRange = expenses.filter(exp => {
+    if (exp.status !== 'approved') return false;
+    if (!reportStart || !reportEnd) return false;
+    const s = new Date(reportStart); s.setHours(0,0,0,0);
+    const e = new Date(reportEnd); e.setHours(23,59,59,999);
+    const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
+    return expDate >= s && expDate <= e;
+  });
+
+  const totalExpenses = approvedExpensesInRange.reduce((sum, e) => sum + e.amount, 0);
 
   return (
     <div>
@@ -73,11 +91,37 @@ export function ReportsView({
         <div style={styles.card}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
             <h3 style={{ color: theme.text, margin: 0 }}>{reportData.length} shifts</h3>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={exportCSV} style={{ ...styles.btn, background: theme.success }}>📄 CSV</button>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button onClick={exportCSV} style={{ ...styles.btn, background: theme.success }}>📄 Timesheet CSV</button>
               <button onClick={exportPDF} style={styles.btnDanger}>📑 PDF</button>
+              {exportExpensesCSV && approvedExpensesInRange.length > 0 && (
+                <button onClick={exportExpensesCSV} style={styles.btnWarning}>🧾 Expenses CSV</button>
+              )}
             </div>
           </div>
+
+          {/* Expenses Summary (if any in range) */}
+          {approvedExpensesInRange.length > 0 && (
+            <div style={{ 
+              background: theme.warningBg, 
+              borderRadius: '8px', 
+              padding: '12px 16px', 
+              marginBottom: '16px',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '8px'
+            }}>
+              <span style={{ color: theme.warning, fontWeight: '600', fontSize: '14px' }}>
+                🧾 {approvedExpensesInRange.length} approved expense{approvedExpensesInRange.length !== 1 ? 's' : ''} in this period
+              </span>
+              <span style={{ color: theme.warning, fontWeight: '700', fontSize: '16px' }}>
+                ${totalExpenses.toFixed(2)}
+              </span>
+            </div>
+          )}
+
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '600px' }}>
               <thead>

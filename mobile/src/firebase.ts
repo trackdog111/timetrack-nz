@@ -1,7 +1,10 @@
 // Trackable NZ - Firebase Configuration
+// UPDATED: Added Firebase Storage for expense photo uploads
+
 import { initializeApp } from 'firebase/app';
 import { getAuth, indexedDBLocalPersistence, initializeAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
+import { getStorage } from 'firebase/storage';
 import { Capacitor } from '@capacitor/core';
 
 const firebaseConfig = {
@@ -21,4 +24,5 @@ export const auth = Capacitor.isNativePlatform()
   : getAuth(app);
 
 export const db = getFirestore(app);
+export const storage = getStorage(app);  // NEW: Firebase Storage
 export default app;

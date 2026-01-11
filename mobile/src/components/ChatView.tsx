@@ -142,6 +142,7 @@ export function ChatView({
       {/* Input area */}
       <div style={{
         padding: '16px',
+        paddingBottom: '90px',
         background: theme.nav,
         borderTop: `1px solid ${theme.navBorder}`
       }}>
