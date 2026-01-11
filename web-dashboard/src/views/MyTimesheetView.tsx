@@ -318,6 +318,77 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
     <div style={{ paddingBottom: isMobile ? '300px' : '0' }}>
       <h1 style={{ color: theme.text, marginBottom: '16px', fontSize: isMobile ? '22px' : '28px' }}>My Timesheet</h1>
       
+      {/* App Download Notice */}
+      <div style={{ 
+        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)', 
+        borderRadius: '12px', 
+        padding: '16px 20px', 
+        marginBottom: '20px',
+        color: 'white'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
+          <span style={{ fontSize: '24px' }}>📱</span>
+          <div>
+            <p style={{ fontWeight: '700', fontSize: '16px', margin: 0 }}>Track your time on the go</p>
+            <p style={{ fontSize: '13px', opacity: 0.9, margin: '4px 0 0 0' }}>Download the app for better GPS tracking. Use your same login - no invite needed.</p>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '16px' }}>
+          <a 
+            href="https://apps.apple.com/app/trackable-nz/id6740708887" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{ 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              background: 'rgba(255,255,255,0.2)', 
+              padding: '8px 14px', 
+              borderRadius: '8px', 
+              color: 'white', 
+              textDecoration: 'none',
+              fontSize: '13px',
+              fontWeight: '600'
+            }}
+          >
+            🍎 App Store
+          </a>
+          <a 
+            href="https://play.google.com/store/apps/details?id=nz.trackable.app" 
+            target="_blank" 
+            rel="noopener noreferrer"
+            style={{ 
+              display: 'inline-flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              background: 'rgba(255,255,255,0.2)', 
+              padding: '8px 14px', 
+              borderRadius: '8px', 
+              color: 'white', 
+              textDecoration: 'none',
+              fontSize: '13px',
+              fontWeight: '600'
+            }}
+          >
+            🤖 Play Store
+          </a>
+        </div>
+        
+        {/* PWA Instructions */}
+        <div style={{ 
+          background: 'rgba(255,255,255,0.15)', 
+          borderRadius: '8px', 
+          padding: '12px 14px'
+        }}>
+          <p style={{ fontWeight: '600', fontSize: '14px', margin: '0 0 8px 0' }}>💡 Add Dashboard to your phone</p>
+          <p style={{ fontSize: '12px', opacity: 0.9, margin: '0 0 8px 0' }}>Access this dashboard like an app - no download required:</p>
+          <div style={{ fontSize: '12px', opacity: 0.9 }}>
+            <p style={{ margin: '0 0 4px 0' }}><strong>iPhone:</strong> Tap Share → "Add to Home Screen"</p>
+            <p style={{ margin: 0 }}><strong>Android:</strong> Tap Menu (⋮) → "Add to Home Screen"</p>
+          </div>
+        </div>
+      </div>
+
       {/* Tab Navigation */}
       <div style={{ display: 'flex', marginBottom: '20px', background: theme.cardAlt, borderRadius: '12px', padding: '4px' }}>
         <button
