@@ -320,19 +320,17 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
       
       {/* App Download Notice */}
       <div style={{ 
-        background: theme.primary, 
+        background: theme.card, 
         borderRadius: '12px', 
         padding: '16px 20px', 
         marginBottom: '12px',
-        color: 'white'
+        border: `1px solid ${theme.cardBorder}`
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '12px' }}>
-          <span style={{ fontSize: '24px' }}>📱</span>
-          <div>
-            <p style={{ fontWeight: '700', fontSize: '16px', margin: 0 }}>Track your time on the go</p>
-            <p style={{ fontSize: '13px', opacity: 0.9, margin: '4px 0 0 0' }}>Download the app for better GPS tracking. Use your same login - no invite needed.</p>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <span style={{ fontSize: '20px' }}>📱</span>
+          <p style={{ fontWeight: '700', fontSize: '15px', margin: 0, color: theme.text }}>Track your time on the go</p>
         </div>
+        <p style={{ fontSize: '13px', color: theme.textMuted, margin: '0 0 12px 0' }}>Download the app for better GPS tracking. Use your same login - no invite needed.</p>
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <a 
             href="https://apps.apple.com/app/trackable-nz/id6740708887" 
@@ -359,25 +357,28 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
         </div>
       </div>
       
-      {/* PWA Instructions - separate green box */}
+      {/* PWA Instructions */}
       <div style={{ 
-        background: theme.success, 
+        background: theme.card, 
         borderRadius: '12px', 
         padding: '16px 20px', 
         marginBottom: '20px',
-        color: 'white'
+        border: `1px solid ${theme.cardBorder}`
       }}>
-        <p style={{ fontWeight: '700', fontSize: '15px', margin: '0 0 6px 0' }}>💡 Add this Dashboard to your phone's home screen</p>
-        <p style={{ fontSize: '13px', opacity: 0.9, margin: '0 0 12px 0' }}>Quick access without downloading - works like an app!</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          <span style={{ fontSize: '20px' }}>💡</span>
+          <p style={{ fontWeight: '700', fontSize: '15px', margin: 0, color: theme.text }}>Add this Dashboard to your phone's home screen</p>
+        </div>
+        <p style={{ fontSize: '13px', color: theme.textMuted, margin: '0 0 12px 0' }}>Quick access without downloading - works like an app!</p>
         
-        <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '10px 12px', marginBottom: '8px' }}>
-          <p style={{ fontWeight: '600', fontSize: '13px', margin: '0 0 4px 0' }}>🍎 iPhone / iPad:</p>
-          <p style={{ fontSize: '12px', margin: 0, opacity: 0.95 }}>1. Open <strong>dashboard.trackable.co.nz</strong> in Safari → 2. Tap <strong>Share</strong> (square with arrow) → 3. Tap <strong>"Add to Home Screen"</strong></p>
+        <div style={{ background: theme.successBg, borderRadius: '8px', padding: '10px 12px', marginBottom: '8px' }}>
+          <p style={{ fontWeight: '600', fontSize: '13px', margin: '0 0 4px 0', color: theme.success }}>🍎 iPhone / iPad:</p>
+          <p style={{ fontSize: '12px', margin: 0, color: theme.text }}>1. Open <strong>dashboard.trackable.co.nz</strong> in Safari → 2. Tap <strong>Share</strong> (square with arrow) → 3. Tap <strong>"Add to Home Screen"</strong></p>
         </div>
         
-        <div style={{ background: 'rgba(255,255,255,0.15)', borderRadius: '8px', padding: '10px 12px' }}>
-          <p style={{ fontWeight: '600', fontSize: '13px', margin: '0 0 4px 0' }}>🤖 Android:</p>
-          <p style={{ fontSize: '12px', margin: 0, opacity: 0.95 }}>1. Open <strong>dashboard.trackable.co.nz</strong> in Chrome → 2. Tap <strong>Menu</strong> (⋮) → 3. Tap <strong>"Add to Home Screen"</strong></p>
+        <div style={{ background: theme.successBg, borderRadius: '8px', padding: '10px 12px' }}>
+          <p style={{ fontWeight: '600', fontSize: '13px', margin: '0 0 4px 0', color: theme.success }}>🤖 Android:</p>
+          <p style={{ fontSize: '12px', margin: 0, color: theme.text }}>1. Open <strong>dashboard.trackable.co.nz</strong> in Chrome → 2. Tap <strong>Menu</strong> (⋮) → 3. Tap <strong>"Add to Home Screen"</strong></p>
         </div>
       </div>
 
