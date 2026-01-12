@@ -234,7 +234,13 @@ export default function App() {
 
   // Main app
   return (
-    <main style={{ minHeight: '100vh', background: theme.bg, paddingBottom: '80px' }}>
+    <main style={{ 
+      minHeight: '100vh', 
+      background: theme.bg, 
+      paddingBottom: '80px',
+      paddingLeft: 'max(16px, env(safe-area-inset-left))',
+      paddingRight: 'max(16px, env(safe-area-inset-right))'
+    }}>
       {/* Toast notification */}
       {toast && (
         <div style={{
@@ -260,10 +266,14 @@ export default function App() {
         background: theme.nav,
         padding: '16px 20px',
         paddingTop: '59px',
+        paddingLeft: 'max(16px, env(safe-area-inset-left))',
+        paddingRight: 'max(16px, env(safe-area-inset-right))',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        borderBottom: `1px solid ${theme.navBorder}`
+        borderBottom: `1px solid ${theme.navBorder}`,
+        marginLeft: 'calc(-1 * max(16px, env(safe-area-inset-left)))',
+        marginRight: 'calc(-1 * max(16px, env(safe-area-inset-right)))'
       }}>
         <h1 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>
           Trackable NZ
@@ -300,7 +310,7 @@ export default function App() {
       {/* Error banner */}
       {error && (
         <div style={{
-          margin: '16px',
+          margin: '16px 0',
           padding: '12px 16px',
           background: theme.dangerBg,
           border: `1px solid ${theme.danger}`,

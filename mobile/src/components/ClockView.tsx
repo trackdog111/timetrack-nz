@@ -998,8 +998,8 @@ export function ClockView({
             <button
               onClick={() => setShowMapModal(true)}
               style={{
-                width: 'calc(100% - 32px)',
-                margin: '0 16px 16px 16px',
+                width: '100%',
+                marginBottom: '16px',
                 padding: '14px 20px',
                 background: theme.cardAlt,
                 border: `1px solid ${theme.cardBorder}`,

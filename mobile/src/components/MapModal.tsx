@@ -211,6 +211,8 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         {/* Title + Buttons Row */}
         <div style={{ 
           padding: '12px 16px',
+          paddingLeft: 'max(16px, env(safe-area-inset-left))',
+          paddingRight: 'max(16px, env(safe-area-inset-right))',
           display: 'flex', 
           justifyContent: 'space-between',
           alignItems: 'center'
@@ -252,7 +254,9 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         
         {/* Legend Row */}
         <div style={{ 
-          padding: '8px 16px 12px 16px', 
+          padding: '8px 16px 12px 16px',
+          paddingLeft: 'max(16px, env(safe-area-inset-left))',
+          paddingRight: 'max(16px, env(safe-area-inset-right))',
           display: 'flex', 
           gap: '12px', 
           flexWrap: 'wrap', 
@@ -312,7 +316,9 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
                 display: 'flex', 
                 justifyContent: 'space-between', 
                 alignItems: 'center',
-                padding: '10px 16px', 
+                padding: '10px 16px',
+                paddingLeft: 'max(16px, env(safe-area-inset-left))',
+                paddingRight: 'max(16px, env(safe-area-inset-right))',
                 background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
                 cursor: 'pointer',
                 borderBottom: `1px solid ${theme.cardBorder}`
