@@ -29,7 +29,7 @@ export default async function handler(req, res) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'Trackable NZ <onboarding@resend.dev>',
+        from: 'Trackable NZ <noreply@trackable.co.nz>',
         to: email,
         subject: "You've been invited to Trackable NZ",
         html: `
