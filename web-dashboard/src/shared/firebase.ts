@@ -12,7 +12,7 @@ const firebaseConfig = {
 };
 
 export const API_URL = 'https://timetrack-dashboard-v2.vercel.app';
-export const MOBILE_APP_URL = 'https://timetrack-mobile-v2.vercel.app';
+export const MOBILE_APP_URL = 'https://dashboard.trackable.co.nz';
 
 export const app = initializeApp(firebaseConfig);
 export const auth = getAuth(app);

@@ -18,7 +18,7 @@ export default async function handler(req, res) {
   }
 
   const RESEND_API_KEY = process.env.RESEND_API_KEY;
-  const MOBILE_APP_URL = 'https://timetrack-mobile-v2.vercel.app';
+  const MOBILE_APP_URL = 'https://app.trackable.co.nz';
   const inviteLink = `${MOBILE_APP_URL}?invite=true&email=${encodeURIComponent(email)}`;
 
   try {
