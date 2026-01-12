@@ -24,6 +24,11 @@ workflows:
         script: |
           cd mobile
           npx cap sync ios
+      - name: Set iOS version
+        script: |
+          cd mobile/ios/App
+          agvtool new-version -all 17
+          agvtool new-marketing-version 1.0.2
       - name: Resolve SPM dependencies
         script: |
           cd mobile/ios/App
