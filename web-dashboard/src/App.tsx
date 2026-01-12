@@ -119,30 +119,40 @@ export default function App() {
   // NEW: Load companyId - check both companies (owner) and employees
   useEffect(() => {
     if (!user) {
+      console.log('[DEBUG] No user, setting companyId to null');
       setCompanyId(null);
       return;
     }
+    console.log('[DEBUG] User logged in:', user.uid, user.email);
     setLoadingCompany(true);
     const loadCompanyId = async () => {
       try {
         // First: check if user owns a company
+        console.log('[DEBUG] Querying companies where ownerId ==', user.uid);
         const companiesQuery = query(collection(db, 'companies'), where('ownerId', '==', user.uid));
         const companiesSnap = await getDocs(companiesQuery);
+        console.log('[DEBUG] Companies query result:', companiesSnap.size, 'docs found');
         if (!companiesSnap.empty) {
-          setCompanyId(companiesSnap.docs[0].id);
+          const foundCompanyId = companiesSnap.docs[0].id;
+          console.log('[DEBUG] Found company as owner:', foundCompanyId);
+          setCompanyId(foundCompanyId);
           setLoadingCompany(false);
           return;
         }
         
         // Fallback: check employees collection
+        console.log('[DEBUG] No company owned, checking employees collection for', user.uid);
         const empDoc = await getDoc(doc(db, 'employees', user.uid));
         if (empDoc.exists()) {
-          setCompanyId(empDoc.data().companyId || null);
+          const empCompanyId = empDoc.data().companyId || null;
+          console.log('[DEBUG] Found employee doc with companyId:', empCompanyId);
+          setCompanyId(empCompanyId);
         } else {
+          console.log('[DEBUG] No employee doc found, setting companyId to null');
           setCompanyId(null);
         }
       } catch (err) {
-        console.error('Error loading company:', err);
+        console.error('[DEBUG] Error loading company:', err);
         setCompanyId(null);
       } finally {
         setLoadingCompany(false);
@@ -169,10 +179,17 @@ export default function App() {
   }, [user, companyId]);
 
   useEffect(() => { 
-    if (!user || !companyId) return; 
+    if (!user || !companyId) {
+      console.log('[DEBUG] Active shifts listener - skipping. user:', !!user, 'companyId:', companyId);
+      return; 
+    }
+    console.log('[DEBUG] Setting up active shifts listener for companyId:', companyId);
     return onSnapshot(
       query(collection(db, 'shifts'), where('companyId', '==', companyId), where('status', '==', 'active')), 
-      (snap) => { setActiveShifts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift))); }
+      (snap) => { 
+        console.log('[DEBUG] Active shifts snapshot:', snap.size, 'shifts found');
+        setActiveShifts(snap.docs.map(d => ({ id: d.id, ...d.data() } as Shift))); 
+      }
     ); 
   }, [user, companyId]);
 

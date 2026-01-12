@@ -40,7 +40,7 @@ export function useAuth() {
     return () => unsubscribe();
   }, []);
 
-  // NEW: Load companyId when user changes
+  // NEW: Load companyId when user changes - check both companies (owner) and employees
   useEffect(() => {
     if (!user) {
       setCompanyId(null);
@@ -50,6 +50,16 @@ export function useAuth() {
     setLoadingCompany(true);
     const loadCompanyId = async () => {
       try {
+        // First: check if user owns a company
+        const companiesQuery = query(collection(db, 'companies'), where('ownerId', '==', user.uid));
+        const companiesSnap = await getDocs(companiesQuery);
+        if (!companiesSnap.empty) {
+          setCompanyId(companiesSnap.docs[0].id);
+          setLoadingCompany(false);
+          return;
+        }
+        
+        // Fallback: check employees collection
         const empDoc = await getDoc(doc(db, 'employees', user.uid));
         if (empDoc.exists()) {
           setCompanyId(empDoc.data().companyId || null);
