@@ -1,0 +1,82 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - main [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Trackable NZ" [level=1] [ref=e5]
+      - generic [ref=e6]:
+        - button "🌙" [ref=e7] [cursor=pointer]
+        - button "Sign Out" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - heading "Expenses" [level=2] [ref=e11]
+        - paragraph [ref=e12]: Submit receipts for reimbursement
+      - generic [ref=e13]:
+        - heading "Edit Expense" [level=3] [ref=e14]
+        - generic [ref=e15]:
+          - generic [ref=e16]: Amount *
+          - generic [ref=e17]:
+            - generic [ref=e18]: $
+            - spinbutton [ref=e19]: "25.5"
+        - generic [ref=e20]:
+          - generic [ref=e21]: Category *
+          - combobox [ref=e22] [cursor=pointer]:
+            - option "Mileage"
+            - option "Parking" [selected]
+            - option "Fuel"
+            - option "Meals"
+            - option "Accommodation"
+            - option "Tools"
+            - option "Materials"
+            - option "PPE/Safety Gear"
+            - option "Phone/Data"
+            - option "Other"
+        - generic [ref=e23]:
+          - generic [ref=e24]: Date
+          - textbox [ref=e25]: 2026-01-12
+        - generic [ref=e26]:
+          - generic [ref=e27]: Note (optional)
+          - textbox "e.g., Auckland CBD parking for Smith job" [ref=e28]: Test expense from automated test
+        - button "Update Expense" [ref=e29] [cursor=pointer]
+        - button "Close" [ref=e30] [cursor=pointer]
+      - generic [ref=e31]:
+        - heading "Your Expenses" [level=3] [ref=e32]
+        - generic [ref=e33]:
+          - generic [ref=e34]:
+            - generic [ref=e36]: 🧾
+            - generic [ref=e37]:
+              - generic [ref=e38]:
+                - generic [ref=e39]: $25.50
+                - generic [ref=e40]: ⏳ Pending
+              - paragraph [ref=e41]: Parking
+              - paragraph [ref=e42]: Test expense from automated test
+              - paragraph [ref=e43]: 12 Jan 2026
+          - generic [ref=e44]:
+            - button "Edit" [active] [ref=e45] [cursor=pointer]
+            - button "Delete" [ref=e46] [cursor=pointer]
+        - generic [ref=e48]:
+          - generic [ref=e50]: 🧾
+          - generic [ref=e51]:
+            - generic [ref=e52]:
+              - generic [ref=e53]: $36.00
+              - generic [ref=e54]: ✓ Approved
+            - paragraph [ref=e55]: Parking
+            - paragraph [ref=e56]: parking wakefield street
+            - paragraph [ref=e57]: 12 Jan 2026
+    - generic [ref=e59]:
+      - button "⏱️ Clock" [ref=e60] [cursor=pointer]:
+        - generic [ref=e61]: ⏱️
+        - generic [ref=e62]: Clock
+      - button "💬 Chat" [ref=e63] [cursor=pointer]:
+        - generic [ref=e64]: 💬
+        - generic [ref=e65]: Chat
+      - button "🧾 Expenses" [ref=e66] [cursor=pointer]:
+        - generic [ref=e67]: 🧾
+        - generic [ref=e68]: Expenses
+      - button "📋 History" [ref=e69] [cursor=pointer]:
+        - generic [ref=e70]: 📋
+        - generic [ref=e71]: History
+  - iframe [ref=e72]:
+    
+```

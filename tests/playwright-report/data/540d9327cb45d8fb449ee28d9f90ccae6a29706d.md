@@ -1,0 +1,55 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - main [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Trackable NZ" [level=1] [ref=e5]
+      - generic [ref=e6]:
+        - button "🌙" [ref=e7] [cursor=pointer]
+        - button "Sign Out" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - heading "Expenses" [level=2] [ref=e11]
+        - paragraph [ref=e12]: Submit receipts for reimbursement
+      - button "+ Add Expense" [ref=e13] [cursor=pointer]
+      - generic [ref=e14]:
+        - heading "Your Expenses" [level=3] [ref=e15]
+        - generic [ref=e16]:
+          - generic [ref=e17]:
+            - generic [ref=e19]: 🧾
+            - generic [ref=e20]:
+              - generic [ref=e21]:
+                - generic [ref=e22]: $25.50
+                - generic [ref=e23]: ⏳ Pending
+              - paragraph [ref=e24]: Parking
+              - paragraph [ref=e25]: Test expense from automated test
+              - paragraph [ref=e26]: 12 Jan 2026
+          - generic [ref=e27]:
+            - button "Edit" [ref=e28] [cursor=pointer]
+            - button "Delete" [ref=e29] [cursor=pointer]
+        - generic [ref=e31]:
+          - generic [ref=e33]: 🧾
+          - generic [ref=e34]:
+            - generic [ref=e35]:
+              - generic [ref=e36]: $36.00
+              - generic [ref=e37]: ✓ Approved
+            - paragraph [ref=e38]: Parking
+            - paragraph [ref=e39]: parking wakefield street
+            - paragraph [ref=e40]: 12 Jan 2026
+    - generic [ref=e42]:
+      - button "⏱️ Clock" [ref=e43] [cursor=pointer]:
+        - generic [ref=e44]: ⏱️
+        - generic [ref=e45]: Clock
+      - button "💬 Chat" [ref=e46] [cursor=pointer]:
+        - generic [ref=e47]: 💬
+        - generic [ref=e48]: Chat
+      - button "🧾 Expenses" [active] [ref=e49] [cursor=pointer]:
+        - generic [ref=e50]: 🧾
+        - generic [ref=e51]: Expenses
+      - button "📋 History" [ref=e52] [cursor=pointer]:
+        - generic [ref=e53]: 📋
+        - generic [ref=e54]: History
+  - iframe [ref=e55]:
+    
+```

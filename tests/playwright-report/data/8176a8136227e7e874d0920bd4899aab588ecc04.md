@@ -1,0 +1,64 @@
+# Page snapshot
+
+```yaml
+- generic [active] [ref=e1]:
+  - main [ref=e3]:
+    - generic [ref=e4]:
+      - heading "Trackable NZ" [level=1] [ref=e5]
+      - generic [ref=e6]:
+        - button "🌙" [ref=e7] [cursor=pointer]
+        - button "Sign Out" [ref=e8] [cursor=pointer]
+    - generic [ref=e9]:
+      - generic [ref=e10]:
+        - generic [ref=e11]:
+          - paragraph [ref=e12]: Clocked in at
+          - paragraph [ref=e13]: 10:25 am
+          - paragraph [ref=e14]: 0m worked
+        - generic [ref=e15]:
+          - button "☕ Start Break" [ref=e16] [cursor=pointer]
+          - button "🚗 Start Travel" [ref=e17] [cursor=pointer]
+        - button "Clock Out" [ref=e18] [cursor=pointer]
+      - generic [ref=e19]:
+        - heading "Add Break" [level=3] [ref=e21]
+        - paragraph [ref=e22]: "Forgot to start timer? Add break time:"
+        - generic [ref=e23]:
+          - button "10m" [ref=e24] [cursor=pointer]
+          - button "15m" [ref=e25] [cursor=pointer]
+          - button "20m" [ref=e26] [cursor=pointer]
+          - button "30m" [ref=e27] [cursor=pointer]
+        - button "+ Custom minutes" [ref=e28] [cursor=pointer]
+      - generic [ref=e29]:
+        - heading "Break & Travel Summary" [level=3] [ref=e30]
+        - generic [ref=e31]:
+          - paragraph [ref=e32]: "Your entitlement for 0m shift:"
+          - paragraph [ref=e33]: 0× paid rest (0m) + 0× unpaid meal (0m)
+          - paragraph [ref=e34]: "✨ Enhanced: 15min paid rest breaks"
+        - paragraph [ref=e35]: No breaks or travel recorded yet
+      - generic [ref=e36]:
+        - generic [ref=e37]: Notes
+        - textbox "Enter Notes..." [ref=e38]
+      - generic [ref=e39]:
+        - generic [ref=e40]: Lists
+        - textbox "Enter Lists..." [ref=e41]
+      - button "ℹ️ NZ Break Rules Enhanced ▼" [ref=e43] [cursor=pointer]:
+        - generic [ref=e44]:
+          - generic [ref=e45]: ℹ️
+          - generic [ref=e46]: NZ Break Rules
+          - generic [ref=e47]: Enhanced
+        - generic [ref=e48]: ▼
+    - generic [ref=e50]:
+      - button "⏱️ Clock" [ref=e51] [cursor=pointer]:
+        - generic [ref=e52]: ⏱️
+        - generic [ref=e53]: Clock
+      - button "💬 Chat" [ref=e54] [cursor=pointer]:
+        - generic [ref=e55]: 💬
+        - generic [ref=e56]: Chat
+      - button "🧾 Expenses" [ref=e57] [cursor=pointer]:
+        - generic [ref=e58]: 🧾
+        - generic [ref=e59]: Expenses
+      - button "📋 History" [ref=e60] [cursor=pointer]:
+        - generic [ref=e61]: 📋
+        - generic [ref=e62]: History
+  - iframe [ref=e63]:
+    
+```

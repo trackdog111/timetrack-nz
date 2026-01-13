@@ -1,4 +1,4 @@
-import { Shift, Theme, CompanySettings, Location } from '../shared/types';
+import { Shift, Theme, CompanySettings, Location, Expense } from '../shared/types';
 import { getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, fmtDateShort, fmtWeekEnding, getJobLogField, weekDayNames } from '../shared/utils';
 
 interface GroupedWeek {
@@ -50,6 +50,7 @@ interface TimesheetsViewProps {
   closeTimesheetEditPanel: () => void;
   setEditShiftModal: (shift: Shift | null) => void;
   setMapModal: (modal: { locations: Location[], title: string, clockInLocation?: Location, clockOutLocation?: Location } | null) => void;
+  expenses: Expense[];
 }
 
 export function TimesheetsView({
@@ -86,15 +87,170 @@ export function TimesheetsView({
   handleTimesheetDeleteShift,
   closeTimesheetEditPanel,
   setEditShiftModal,
-  setMapModal
+  setMapModal,
+  expenses
 }: TimesheetsViewProps) {
   const styles = {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
     input: { padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px', width: '100%', boxSizing: 'border-box' as const }
   };
 
+  // Export finalized week as PDF
+  const exportWeekPDF = (empName: string, empEmail: string, weekEnd: Date, shifts: Shift[]) => {
+    const weekStart = new Date(weekEnd);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const weekEndStr = weekEnd.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+    const fileNameDate = weekEnd.toISOString().split('T')[0];
+
+    let totalMinutes = 0, totalPaid = 0, totalUnpaid = 0, totalTravel = 0;
+    const csvRows: string[][] = [];
+    const shiftRows = shifts.map(sh => {
+      const h = getHours(sh.clockIn, sh.clockOut);
+      const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
+      const t = calcTravel(sh.travelSegments || []);
+      const worked = (h * 60) - b.unpaid;
+      totalMinutes += worked;
+      totalPaid += b.paid;
+      totalUnpaid += b.unpaid;
+      totalTravel += t;
+      const field1 = sh.jobLog?.field1 || '';
+      const field2 = sh.jobLog?.field2 || '';
+      const field3 = sh.jobLog?.field3 || '';
+      csvRows.push([fmtDateShort(sh.clockIn), fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : '', b.paid.toString(), b.unpaid.toString(), t.toString(), fmtDur(worked), field1, field2, field3]);
+      return '<tr><td>' + fmtDateShort(sh.clockIn) + '</td><td>' + fmtTime(sh.clockIn) + '</td><td>' + (sh.clockOut ? fmtTime(sh.clockOut) : '-') + '</td><td>' + b.paid + 'm</td><td>' + b.unpaid + 'm</td><td>' + (t > 0 ? t + 'm' : '-') + '</td><td><strong>' + fmtDur(worked) + '</strong></td><td class="shift-notes">' + (field1 || '-') + '</td><td class="shift-notes">' + (field2 || '-') + '</td><td class="shift-notes">' + (field3 || '-') + '</td></tr>';
+    }).join('');
+
+    const weekExpenses = expenses.filter(exp => {
+      if (exp.status !== 'approved') return false;
+      if (exp.odEmail !== empEmail && exp.odId !== empEmail) return false;
+      const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
+      return expDate >= weekStart && expDate <= weekEnd;
+    });
+    const totalExpenses = weekExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+
+    const expenseRows = weekExpenses.map(exp => {
+      const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
+      const photoCell = exp.photoUrl ? '<img src="' + exp.photoUrl + '" class="receipt-thumbnail" alt="Receipt">' : '<div class="no-receipt">No photo</div>';
+      return '<tr><td>' + photoCell + '</td><td>' + expDate.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' }) + '</td><td><span class="expense-category">' + exp.category + '</span></td><td>' + (exp.note || '-') + '</td><td class="expense-amount">$' + exp.amount.toFixed(2) + '</td></tr>';
+    }).join('');
+
+    const field1Label = companySettings.field1Label || 'Site';
+    const field2Label = companySettings.field2Label || 'Job Code';
+    const field3Label = companySettings.field3Label || 'Notes';
+
+    const expensesSection = weekExpenses.length > 0 ? '<div class="section"><div class="section-title">Expense Claims</div><table class="expenses-table"><thead><tr><th>Receipt</th><th>Date</th><th>Category</th><th>Description</th><th>Amount</th></tr></thead><tbody>' + expenseRows + '<tr class="totals-row"><td></td><td colspan="3"><strong>TOTAL</strong></td><td><span class="grand-total">$' + totalExpenses.toFixed(2) + '</span></td></tr></tbody></table></div>' : '';
+
+    const expensesMeta = totalExpenses > 0 ? '<div class="report-meta-item"><div class="label">Expenses</div><div class="value">$' + totalExpenses.toFixed(2) + '</div></div>' : '';
+
+    // Build CSV data
+    const csvHeader = ['Date', 'In', 'Out', 'Paid Break', 'Unpaid Break', 'Travel', 'Total', field1Label, field2Label, field3Label];
+    const csvContent = [csvHeader, ...csvRows].map(row => row.map(cell => '"' + (cell || '').replace(/"/g, '""') + '"').join(',')).join('\n');
+    const csvDataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
+    const csvFileName = empName.replace(/[^a-zA-Z0-9]/g, '-') + '-' + fileNameDate + '.csv';
+
+    const html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Trackable NZ - Weekly Timesheet</title><style>* { box-sizing: border-box; margin: 0; padding: 0; } body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; background: #f5f5f5; padding: 20px; color: #333; } .report-container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; } .report-header { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 24px 32px; } .report-header h1 { font-size: 24px; margin-bottom: 4px; } .report-header .subtitle { opacity: 0.9; font-size: 14px; } .report-meta { display: flex; justify-content: space-between; padding: 16px 32px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 14px; flex-wrap: wrap; gap: 16px; } .report-meta-item { text-align: center; } .report-meta-item .label { color: #6b7280; margin-bottom: 4px; } .report-meta-item .value { font-weight: 600; font-size: 18px; color: #111; } .section { padding: 24px 32px; border-bottom: 1px solid #e5e7eb; } .section:last-child { border-bottom: none; } .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #374151; } .shifts-table { width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; overflow: hidden; } .shifts-table th { text-align: left; padding: 10px 8px; background: #f9fafb; font-weight: 600; font-size: 10px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; } .shifts-table td { padding: 10px 8px; border-bottom: 1px solid #e5e7eb; font-size: 12px; } .shifts-table .total-row { background: #f0fdf4; font-weight: 600; } .shift-notes { max-width: 120px; font-size: 11px; color: #374151; } .expenses-table { width: 100%; border-collapse: collapse; } .expenses-table th { text-align: left; padding: 12px 16px; background: #f9fafb; font-weight: 600; font-size: 13px; color: #6b7280; text-transform: uppercase; } .expenses-table td { padding: 12px 16px; border-bottom: 1px solid #e5e7eb; vertical-align: middle; } .expense-category { display: inline-block; padding: 2px 8px; background: #e5e7eb; border-radius: 4px; font-size: 12px; color: #374151; } .expense-amount { font-weight: 600; color: #111; } .receipt-thumbnail { width: 60px; height: 60px; object-fit: cover; border-radius: 6px; border: 1px solid #e5e7eb; } .no-receipt { width: 60px; height: 60px; background: #f3f4f6; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 11px; } .grand-total { font-size: 20px; color: #16a34a; } .totals-row { background: #f0fdf4; } .totals-row td { font-weight: 600; } .actions { padding: 24px 32px; background: #f9fafb; display: flex; gap: 12px; justify-content: flex-end; } .btn { padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; text-decoration: none; display: inline-block; } .btn-primary { background: #22c55e; color: white; } .btn-secondary { background: white; color: #374151; border: 1px solid #d1d5db; } @media print { body { background: white; padding: 0; } .report-container { box-shadow: none; } .receipt-thumbnail { width: 50px; height: 50px; } .actions { display: none; } }</style></head><body><div class="report-container"><div class="report-header"><h1>Weekly Timesheet</h1><div class="subtitle">' + empName + ' - Week Ending ' + weekEndStr + '</div></div><div class="report-meta"><div class="report-meta-item"><div class="label">Employee</div><div class="value">' + empName + '</div></div><div class="report-meta-item"><div class="label">Total Hours</div><div class="value">' + fmtDur(totalMinutes) + '</div></div><div class="report-meta-item"><div class="label">Shifts</div><div class="value">' + shifts.length + '</div></div>' + expensesMeta + '</div><div class="section"><div class="section-title">Shifts</div><table class="shifts-table"><thead><tr><th>Date</th><th>In</th><th>Out</th><th>Paid</th><th>Unpaid</th><th>Travel</th><th>Total</th><th>' + field1Label + '</th><th>' + field2Label + '</th><th>' + field3Label + '</th></tr></thead><tbody>' + shiftRows + '<tr class="total-row"><td><strong>TOTAL</strong></td><td></td><td></td><td>' + totalPaid + 'm</td><td>' + totalUnpaid + 'm</td><td>' + totalTravel + 'm</td><td><strong>' + fmtDur(totalMinutes) + '</strong></td><td></td><td></td><td></td></tr></tbody></table></div>' + expensesSection + '<div class="actions"><button class="btn btn-secondary" onclick="window.print()">Print / Save PDF</button><a class="btn btn-primary" href="' + csvDataUri + '" download="' + csvFileName + '">Download CSV</a></div></div></body></html>';
+
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); }
+  };
+
   const grouped = getGroupedTimesheets();
   const empIds = Object.keys(grouped).sort((a, b) => grouped[a].name.localeCompare(grouped[b].name));
+
+  // Get all unique finalized weeks across all employees
+  const getAllFinalizedWeeks = () => {
+    const weeks: Record<string, { weekEnd: Date; employees: { name: string; email: string; shifts: Shift[] }[] }> = {};
+    Object.values(grouped).forEach(emp => {
+      Object.entries(emp.weeks).forEach(([weekKey, weekData]) => {
+        if (weekData.finalized) {
+          if (!weeks[weekKey]) {
+            weeks[weekKey] = { weekEnd: weekData.weekEnd, employees: [] };
+          }
+          weeks[weekKey].employees.push({ name: emp.name, email: emp.email, shifts: weekData.shifts });
+        }
+      });
+    });
+    return weeks;
+  };
+
+  const finalizedWeeks = getAllFinalizedWeeks();
+  const weekKeys = Object.keys(finalizedWeeks).sort((a, b) => b.localeCompare(a));
+
+  // Export all employees for a week
+  const exportAllWeekPDF = (weekKey: string) => {
+    const weekData = finalizedWeeks[weekKey];
+    if (!weekData) return;
+
+    const weekEnd = weekData.weekEnd;
+    const weekStart = new Date(weekEnd);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const weekEndStr = weekEnd.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+    const fileNameDate = weekEnd.toISOString().split('T')[0];
+
+    const field1Label = companySettings.field1Label || 'Site';
+    const field2Label = companySettings.field2Label || 'Job Code';
+    const field3Label = companySettings.field3Label || 'Notes';
+
+    let grandTotalMinutes = 0;
+    let grandTotalExpenses = 0;
+    const allCsvRows: string[][] = [];
+    
+    // Build employee sections
+    const employeeSections = weekData.employees.map(emp => {
+      let totalMinutes = 0, totalPaid = 0, totalUnpaid = 0, totalTravel = 0;
+      
+      const shiftRows = emp.shifts.map(sh => {
+        const h = getHours(sh.clockIn, sh.clockOut);
+        const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
+        const t = calcTravel(sh.travelSegments || []);
+        const worked = (h * 60) - b.unpaid;
+        totalMinutes += worked;
+        totalPaid += b.paid;
+        totalUnpaid += b.unpaid;
+        totalTravel += t;
+        const field1 = sh.jobLog?.field1 || '';
+        const field2 = sh.jobLog?.field2 || '';
+        const field3 = sh.jobLog?.field3 || '';
+        allCsvRows.push([emp.name, fmtDateShort(sh.clockIn), fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : '', b.paid.toString(), b.unpaid.toString(), t.toString(), fmtDur(worked), field1, field2, field3]);
+        return '<tr><td>' + fmtDateShort(sh.clockIn) + '</td><td>' + fmtTime(sh.clockIn) + '</td><td>' + (sh.clockOut ? fmtTime(sh.clockOut) : '-') + '</td><td>' + b.paid + 'm</td><td>' + b.unpaid + 'm</td><td>' + (t > 0 ? t + 'm' : '-') + '</td><td><strong>' + fmtDur(worked) + '</strong></td><td class="shift-notes">' + (field1 || '-') + '</td><td class="shift-notes">' + (field2 || '-') + '</td><td class="shift-notes">' + (field3 || '-') + '</td></tr>';
+      }).join('');
+
+      grandTotalMinutes += totalMinutes;
+
+      // Get expenses for this employee
+      const empExpenses = expenses.filter(exp => {
+        if (exp.status !== 'approved') return false;
+        if (exp.odEmail !== emp.email && exp.odId !== emp.email) return false;
+        const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
+        return expDate >= weekStart && expDate <= weekEnd;
+      });
+      const empTotalExpenses = empExpenses.reduce((sum, exp) => sum + (exp.amount || 0), 0);
+      grandTotalExpenses += empTotalExpenses;
+
+      const expenseRows = empExpenses.map(exp => {
+        const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
+        const photoCell = exp.photoUrl ? '<img src="' + exp.photoUrl + '" class="receipt-thumbnail" alt="Receipt">' : '<div class="no-receipt">No photo</div>';
+        return '<tr><td>' + photoCell + '</td><td>' + expDate.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' }) + '</td><td><span class="expense-category">' + exp.category + '</span></td><td>' + (exp.note || '-') + '</td><td class="expense-amount">$' + exp.amount.toFixed(2) + '</td></tr>';
+      }).join('');
+
+      const expensesTable = empExpenses.length > 0 ? '<div class="expenses-section"><div class="expenses-title">Expenses</div><table class="expenses-table"><thead><tr><th>Receipt</th><th>Date</th><th>Category</th><th>Note</th><th>Amount</th></tr></thead><tbody>' + expenseRows + '<tr class="totals-row"><td></td><td colspan="3"><strong>Total</strong></td><td>$' + empTotalExpenses.toFixed(2) + '</td></tr></tbody></table></div>' : '';
+
+      return '<div class="employee-section"><div class="employee-header">' + emp.name + '</div><table class="shifts-table"><thead><tr><th>Date</th><th>In</th><th>Out</th><th>Paid</th><th>Unpaid</th><th>Travel</th><th>Total</th><th>' + field1Label + '</th><th>' + field2Label + '</th><th>' + field3Label + '</th></tr></thead><tbody>' + shiftRows + '<tr class="total-row"><td><strong>TOTAL</strong></td><td></td><td></td><td>' + totalPaid + 'm</td><td>' + totalUnpaid + 'm</td><td>' + totalTravel + 'm</td><td><strong>' + fmtDur(totalMinutes) + '</strong></td><td></td><td></td><td></td></tr></tbody></table>' + expensesTable + '</div>';
+    }).join('');
+
+    // Build CSV
+    const csvHeader = ['Employee', 'Date', 'In', 'Out', 'Paid Break', 'Unpaid Break', 'Travel', 'Total', field1Label, field2Label, field3Label];
+    const csvContent = [csvHeader, ...allCsvRows].map(row => row.map(cell => '"' + (cell || '').replace(/"/g, '""') + '"').join(',')).join('\n');
+    const csvDataUri = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csvContent);
+    const csvFileName = 'all-timesheets-' + fileNameDate + '.csv';
+
+    const expensesMeta = grandTotalExpenses > 0 ? '<div class="report-meta-item"><div class="label">Total Expenses</div><div class="value">$' + grandTotalExpenses.toFixed(2) + '</div></div>' : '';
+
+    const html = '<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Trackable NZ - All Timesheets</title><style>* { box-sizing: border-box; margin: 0; padding: 0; } body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, sans-serif; background: #f5f5f5; padding: 20px; color: #333; } .report-container { max-width: 1000px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); overflow: hidden; } .report-header { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 24px 32px; } .report-header h1 { font-size: 24px; margin-bottom: 4px; } .report-header .subtitle { opacity: 0.9; font-size: 14px; } .report-meta { display: flex; justify-content: space-between; padding: 16px 32px; background: #f9fafb; border-bottom: 1px solid #e5e7eb; font-size: 14px; flex-wrap: wrap; gap: 16px; } .report-meta-item { text-align: center; } .report-meta-item .label { color: #6b7280; margin-bottom: 4px; } .report-meta-item .value { font-weight: 600; font-size: 18px; color: #111; } .employee-section { padding: 24px 32px; border-bottom: 1px solid #e5e7eb; } .employee-header { font-size: 18px; font-weight: 700; color: #22c55e; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 2px solid #22c55e; } .shifts-table { width: 100%; border-collapse: collapse; border: 1px solid #e5e7eb; margin-bottom: 16px; } .shifts-table th { text-align: left; padding: 10px 8px; background: #f9fafb; font-weight: 600; font-size: 10px; color: #6b7280; text-transform: uppercase; } .shifts-table td { padding: 10px 8px; border-bottom: 1px solid #e5e7eb; font-size: 12px; } .shifts-table .total-row { background: #f0fdf4; font-weight: 600; } .shift-notes { max-width: 120px; font-size: 11px; color: #374151; } .expenses-section { margin-top: 16px; } .expenses-title { font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 8px; } .expenses-table { width: 100%; border-collapse: collapse; } .expenses-table th { text-align: left; padding: 8px; background: #f9fafb; font-size: 11px; color: #6b7280; text-transform: uppercase; } .expenses-table td { padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 12px; vertical-align: middle; } .expense-category { display: inline-block; padding: 2px 6px; background: #e5e7eb; border-radius: 4px; font-size: 11px; } .expense-amount { font-weight: 600; } .receipt-thumbnail { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; } .no-receipt { width: 40px; height: 40px; background: #f3f4f6; border-radius: 4px; display: flex; align-items: center; justify-content: center; color: #9ca3af; font-size: 9px; } .totals-row { background: #f0fdf4; font-weight: 600; } .grand-total { font-size: 20px; color: #16a34a; } .actions { padding: 24px 32px; background: #f9fafb; display: flex; gap: 12px; justify-content: flex-end; } .btn { padding: 12px 24px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; border: none; text-decoration: none; display: inline-block; } .btn-primary { background: #22c55e; color: white; } .btn-secondary { background: white; color: #374151; border: 1px solid #d1d5db; } @media print { body { background: white; padding: 0; } .report-container { box-shadow: none; } .actions { display: none; } .employee-section { page-break-inside: avoid; } }</style></head><body><div class="report-container"><div class="report-header"><h1>Weekly Timesheets - All Employees</h1><div class="subtitle">Week Ending ' + weekEndStr + '</div></div><div class="report-meta"><div class="report-meta-item"><div class="label">Employees</div><div class="value">' + weekData.employees.length + '</div></div><div class="report-meta-item"><div class="label">Total Hours</div><div class="value">' + fmtDur(grandTotalMinutes) + '</div></div>' + expensesMeta + '</div>' + employeeSections + '<div class="actions"><button class="btn btn-secondary" onclick="window.print()">Print / Save PDF</button><a class="btn btn-primary" href="' + csvDataUri + '" download="' + csvFileName + '">Download CSV</a></div></div></body></html>';
+
+    const w = window.open('', '_blank');
+    if (w) { w.document.write(html); w.document.close(); }
+  };
 
   return (
     <div>
@@ -129,6 +285,28 @@ export function TimesheetsView({
       </div>
       
       <p style={{ color: theme.textMuted, marginBottom: '16px', fontSize: '14px' }}>Week ends on {weekDayNames[companySettings.payWeekEndDay]}</p>
+      
+      {/* Export All Section */}
+      {weekKeys.length > 0 && (
+        <div style={{ ...styles.card, marginBottom: '16px', background: theme.cardAlt }}>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span style={{ color: theme.text, fontWeight: '600', fontSize: '14px' }}>Export All Employees:</span>
+            {weekKeys.map(weekKey => {
+              const weekData = finalizedWeeks[weekKey];
+              const weekEndStr = weekData.weekEnd.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+              return (
+                <button 
+                  key={weekKey}
+                  onClick={() => exportAllWeekPDF(weekKey)}
+                  style={{ padding: '8px 16px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: '500' }}
+                >
+                  Week {weekEndStr} ({weekData.employees.length})
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
       
       {empIds.length === 0 ? (
         <div style={styles.card}><p style={{ color: theme.textMuted, textAlign: 'center' }}>No completed shifts</p></div>
@@ -175,6 +353,14 @@ export function TimesheetsView({
                           </div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                             <p style={{ color: theme.primary, fontWeight: '700', fontSize: '16px', margin: 0 }}>{fmtDur(totalMinutes)}</p>
+                            {finalized && (
+                              <button 
+                                onClick={(e) => { e.stopPropagation(); exportWeekPDF(name, email, weekEnd, shifts); }}
+                                style={{ padding: '6px 12px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+                              >
+                                Export
+                              </button>
+                            )}
                             {!finalized && (
                               <button 
                                 onClick={(e) => { e.stopPropagation(); finalizeWeek(email, weekKey, shifts); }}

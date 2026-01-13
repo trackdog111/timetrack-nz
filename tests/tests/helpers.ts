@@ -1,67 +1,79 @@
-import { Page, expect } from '@playwright/test';
+import { test as base, expect, Page } from '@playwright/test';
 
-export function generateTestEmail(): string {
-  const timestamp = Date.now();
-  return `test-${timestamp}@example.com`;
-}
+// Test user credentials - UPDATE THESE with real test account
+export const TEST_EMPLOYEE = {
+  email: 'info@cityscaffold.co.nz',
+  password: 'test1234',
+};
 
-export const TEST_PASSWORD = 'test1234';
-export const TEST_COMPANY = 'Test Company';
+export const TEST_OWNER = {
+  email: 'test.owner@example.com', 
+  password: 'test1234',
+};
 
-export const MOBILE_URL = 'https://timetrack-mobile-v2.vercel.app';
-export const DASHBOARD_URL = 'https://timetrack-dashboard-v2.vercel.app';
-
-export async function waitForAuth(page: Page): Promise<void> {
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(1000);
-}
-
-export async function loginMobile(page: Page, email: string, password: string): Promise<void> {
-  await page.goto(MOBILE_URL);
-  await waitForAuth(page);
+// Helper to login as employee
+export async function loginAsEmployee(page: Page) {
+  await page.goto('/');
   
-  await page.getByPlaceholder(/email/i).fill(email);
-  await page.getByPlaceholder(/password/i).fill(password);
-  await page.locator('form button:has-text("Sign In"), button[type="submit"]').click();
+  // Wait for login form
+  await page.waitForSelector('input[type="email"], input[placeholder*="email" i]', { timeout: 10000 });
   
-  await waitForAuth(page);
-  await page.waitForTimeout(2000);
-}
-
-export async function loginDashboard(page: Page, email: string, password: string): Promise<void> {
-  await page.goto(DASHBOARD_URL);
-  await waitForAuth(page);
+  // Fill credentials
+  await page.fill('input[type="email"], input[placeholder*="email" i]', TEST_EMPLOYEE.email);
+  await page.fill('input[type="password"], input[placeholder*="password" i]', TEST_EMPLOYEE.password);
   
-  await page.getByPlaceholder(/email/i).fill(email);
-  await page.getByPlaceholder(/password/i).fill(password);
-  await page.locator('form button:has-text("Sign In"), button[type="submit"]').click();
+  // Click login button
+  await page.click('button[type="submit"]');
   
-  await waitForAuth(page);
-  await page.waitForTimeout(2000);
+  // Wait for navigation to main app
+  await page.waitForSelector('text=/trackable/i', { timeout: 30000 });
 }
 
-export async function clockIn(page: Page): Promise<void> {
-  const clockInButton = page.getByRole('button', { name: /clock in/i });
-  await expect(clockInButton).toBeVisible({ timeout: 10000 });
-  await clockInButton.click();
-  await page.waitForTimeout(3000);
-  await expect(page.getByRole('button', { name: /clock out/i })).toBeVisible({ timeout: 15000 });
+// Helper to login as business owner
+export async function loginAsOwner(page: Page) {
+  await page.goto('/');
+  
+  await page.waitForSelector('input[type="email"], input[placeholder*="email" i]', { timeout: 10000 });
+  
+  await page.fill('input[type="email"], input[placeholder*="email" i]', TEST_OWNER.email);
+  await page.fill('input[type="password"], input[placeholder*="password" i]', TEST_OWNER.password);
+  
+  await page.click('button[type="submit"]');
+  
+  await page.waitForSelector('text=/trackable/i', { timeout: 30000 });
 }
 
-export async function clockOut(page: Page): Promise<void> {
-  const clockOutButton = page.getByRole('button', { name: /clock out/i });
-  await expect(clockOutButton).toBeVisible();
-  await clockOutButton.click();
-  await page.waitForTimeout(3000);
-  await expect(page.getByRole('button', { name: /clock in/i })).toBeVisible({ timeout: 15000 });
+// Helper to logout
+export async function logout(page: Page) {
+  const signOutBtn = page.locator('text=/sign out/i');
+  
+  if (await signOutBtn.count() > 0) {
+    await signOutBtn.first().click();
+  }
+  
+  // Wait for login screen
+  await page.waitForSelector('input[type="email"], input[placeholder*="email" i]', { timeout: 10000 });
 }
 
-export async function grantGeolocation(page: Page): Promise<void> {
-  await page.context().grantPermissions(['geolocation']);
-  await page.context().setGeolocation({ latitude: -36.8509, longitude: 174.7645 });
+// Helper to navigate to a specific tab/view
+export async function navigateTo(page: Page, tabName: 'clock' | 'history' | 'expenses' | 'chat') {
+  const tabSelectors: Record<string, string> = {
+    clock: 'text=/clock/i',
+    history: 'text=/history/i',
+    expenses: 'text=/expense/i',
+    chat: 'text=/chat/i',
+  };
+  
+  await page.click(tabSelectors[tabName]);
+  await page.waitForTimeout(500);
 }
 
-export async function isLoggedIn(page: Page): Promise<boolean> {
-  const clockButton = page.getByRole('button', { name: /clock in|clock out/i });
-  return await clockButton.isVisible({ timeout: 5000 }).catch(() => false);
-}
+// Extended test with login helper
+export const test = base.extend<{ loginPage: Page }>({
+  loginPage: async ({ page }, use) => {
+    await loginAsEmployee(page);
+    await use(page);
+  },
+});
+
+export { expect };

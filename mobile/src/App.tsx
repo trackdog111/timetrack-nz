@@ -1,5 +1,5 @@
 // Trackable NZ - Main App Component
-// UPDATED: Added Expenses tab with edit/delete support
+// UPDATED: Fixed header/nav position - they stay fixed, only content scrolls
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
@@ -232,20 +232,23 @@ export default function App() {
     );
   }
 
-  // Main app
+  // Calculate header height for content offset
+  const headerHeight = 'calc(env(safe-area-inset-top, 16px) + 12px + 24px + 12px)'; // safe area + padding + content + padding
+  const navHeight = 'calc(52px + max(20px, env(safe-area-inset-bottom)))';
+
+  // Main app with fixed header and nav
   return (
-    <main style={{ 
+    <div style={{ 
       minHeight: '100vh', 
-      background: theme.bg, 
-      paddingBottom: '80px',
-      paddingLeft: 'max(16px, env(safe-area-inset-left))',
-      paddingRight: 'max(16px, env(safe-area-inset-right))'
+      background: theme.bg,
+      position: 'relative',
+      overflow: 'hidden'
     }}>
       {/* Toast notification */}
       {toast && (
         <div style={{
           position: 'fixed',
-          top: '80px',
+          top: '120px',
           left: '50%',
           transform: 'translateX(-50%)',
           background: theme.success,
@@ -254,26 +257,29 @@ export default function App() {
           borderRadius: '12px',
           fontWeight: '600',
           fontSize: '14px',
-          zIndex: 1000,
+          zIndex: 1001,
           boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
         }}>
           {toast}
         </div>
       )}
 
-      {/* Header */}
-      <div style={{
+      {/* FIXED Header */}
+      <header style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
         background: theme.nav,
-        padding: '16px 20px',
-        paddingTop: '59px',
+        paddingTop: 'calc(env(safe-area-inset-top, 16px) + 12px)',
+        paddingBottom: '12px',
         paddingLeft: 'max(16px, env(safe-area-inset-left))',
         paddingRight: 'max(16px, env(safe-area-inset-right))',
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
         borderBottom: `1px solid ${theme.navBorder}`,
-        marginLeft: 'calc(-1 * max(16px, env(safe-area-inset-left)))',
-        marginRight: 'calc(-1 * max(16px, env(safe-area-inset-right)))'
+        zIndex: 1000
       }}>
         <h1 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>
           Trackable NZ
@@ -305,145 +311,165 @@ export default function App() {
             Sign Out
           </button>
         </div>
-      </div>
+      </header>
 
-      {/* Error banner */}
-      {error && (
-        <div style={{
-          margin: '16px 0',
-          padding: '12px 16px',
-          background: theme.dangerBg,
-          border: `1px solid ${theme.danger}`,
-          borderRadius: '12px'
-        }}>
-          <p style={{ color: theme.danger, fontSize: '14px', margin: 0 }}>{error}</p>
-          <button
-            onClick={() => setError('')}
-            style={{
-              color: theme.danger,
-              fontSize: '12px',
-              background: 'none',
-              border: 'none',
-              textDecoration: 'underline',
-              cursor: 'pointer',
-              marginTop: '4px'
-            }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      {/* Scrollable content area */}
+      <main style={{
+        position: 'fixed',
+        top: headerHeight,
+        left: 0,
+        right: 0,
+        bottom: navHeight,
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        WebkitOverflowScrolling: 'touch',
+        background: theme.bg,
+        paddingLeft: 'max(16px, env(safe-area-inset-left))',
+        paddingRight: 'max(16px, env(safe-area-inset-right))',
+        paddingTop: '16px',
+        paddingBottom: '16px'
+      }}>
+        {/* Error banner */}
+        {error && (
+          <div style={{
+            marginBottom: '16px',
+            padding: '12px 16px',
+            background: theme.dangerBg,
+            border: `1px solid ${theme.danger}`,
+            borderRadius: '12px'
+          }}>
+            <p style={{ color: theme.danger, fontSize: '14px', margin: 0 }}>{error}</p>
+            <button
+              onClick={() => setError('')}
+              style={{
+                color: theme.danger,
+                fontSize: '12px',
+                background: 'none',
+                border: 'none',
+                textDecoration: 'underline',
+                cursor: 'pointer',
+                marginTop: '4px'
+              }}
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
 
-      {/* Views */}
-      {view === 'clock' && (
-        <ClockView
-          theme={theme}
-          currentShift={currentShift}
-          currentLocation={currentLocation}
-          locationHistory={currentShift?.locationHistory || []}
-          onBreak={onBreak}
-          currentBreakStart={currentBreakStart}
-          traveling={traveling}
-          currentTravelStart={currentTravelStart}
-          settings={settings}
-          paidRestMinutes={labels.paidRestMinutes}
-          photoVerification={settings.photoVerification || false}
-          onClockIn={clockIn}
-          clockingIn={clockingIn}
-          onClockOut={handleClockOut}
-          onStartBreak={startBreak}
-          onEndBreak={endBreak}
-          onStartTravel={startTravel}
-          onEndTravel={endTravel}
-          onAddPresetBreak={addPresetBreak}
-          onDeleteBreak={deleteBreak}
-          onAddManualShift={addManualShift}
-          showToast={showToast}
-          autoTravelEnabled={settings.autoTravel || false}
-          autoTravelActive={autoTravelActive}
-          field1={field1}
-          field2={field2}
-          field3={field3}
-          setField1={setField1}
-          setField2={setField2}
-          setField3={setField3}
-          onSaveFields={saveFields}
-          labels={labels}
-        />
-      )}
+        {/* Views */}
+        {view === 'clock' && (
+          <ClockView
+            theme={theme}
+            currentShift={currentShift}
+            currentLocation={currentLocation}
+            locationHistory={currentShift?.locationHistory || []}
+            onBreak={onBreak}
+            currentBreakStart={currentBreakStart}
+            traveling={traveling}
+            currentTravelStart={currentTravelStart}
+            settings={settings}
+            paidRestMinutes={labels.paidRestMinutes}
+            photoVerification={settings.photoVerification || false}
+            onClockIn={clockIn}
+            clockingIn={clockingIn}
+            onClockOut={handleClockOut}
+            onStartBreak={startBreak}
+            onEndBreak={endBreak}
+            onStartTravel={startTravel}
+            onEndTravel={endTravel}
+            onAddPresetBreak={addPresetBreak}
+            onDeleteBreak={deleteBreak}
+            onAddManualShift={addManualShift}
+            showToast={showToast}
+            autoTravelEnabled={settings.autoTravel || false}
+            autoTravelActive={autoTravelActive}
+            field1={field1}
+            field2={field2}
+            field3={field3}
+            setField1={setField1}
+            setField2={setField2}
+            setField3={setField3}
+            onSaveFields={saveFields}
+            labels={labels}
+          />
+        )}
 
-      {view === 'joblog' && (
-        <JobLogView
-          theme={theme}
-          currentShift={currentShift}
-          field1={field1}
-          field2={field2}
-          field3={field3}
-          setField1={setField1}
-          setField2={setField2}
-          setField3={setField3}
-          onSave={saveFields}
-          onShareToChat={sendJobUpdate}
-          labels={labels}
-          requireNotes={settings.requireNotes}
-          showToast={showToast}
-        />
-      )}
+        {view === 'joblog' && (
+          <JobLogView
+            theme={theme}
+            currentShift={currentShift}
+            field1={field1}
+            field2={field2}
+            field3={field3}
+            setField1={setField1}
+            setField2={setField2}
+            setField3={setField3}
+            onSave={saveFields}
+            onShareToChat={sendJobUpdate}
+            labels={labels}
+            requireNotes={settings.requireNotes}
+            showToast={showToast}
+          />
+        )}
 
-      {view === 'chat' && (
-        <ChatView
-          theme={theme}
-          messages={messages}
-          newMessage={newMessage}
-          setNewMessage={setNewMessage}
-          chatTab={chatTab}
-          setChatTab={setChatTab}
-          onSendMessage={sendMessage}
-          userId={user.uid}
-          chatEnabled={settings.chatEnabled}
-          labels={labels}
-        />
-      )}
+        {view === 'chat' && (
+          <ChatView
+            theme={theme}
+            messages={messages}
+            newMessage={newMessage}
+            setNewMessage={setNewMessage}
+            chatTab={chatTab}
+            setChatTab={setChatTab}
+            onSendMessage={sendMessage}
+            userId={user.uid}
+            chatEnabled={settings.chatEnabled}
+            labels={labels}
+          />
+        )}
 
-      {view === 'history' && (
-        <HistoryView
-          theme={theme}
-          shiftHistory={shiftHistory}
-          onAddTravelToShift={addTravelToShift}
-          onAddBreakToShift={addBreakToShift}
-          onDeleteBreakFromShift={deleteBreakFromShift}
-          onDeleteTravelFromShift={deleteTravelFromShift}
-          onEditShift={editShift}
-          onDeleteShift={deleteShift}
-          showToast={showToast}
-          paidRestMinutes={labels.paidRestMinutes}
-          payWeekEndDay={labels.payWeekEndDay}
-        />
-      )}
+        {view === 'history' && (
+          <HistoryView
+            theme={theme}
+            shiftHistory={shiftHistory}
+            onAddTravelToShift={addTravelToShift}
+            onAddBreakToShift={addBreakToShift}
+            onDeleteBreakFromShift={deleteBreakFromShift}
+            onDeleteTravelFromShift={deleteTravelFromShift}
+            onEditShift={editShift}
+            onDeleteShift={deleteShift}
+            showToast={showToast}
+            paidRestMinutes={labels.paidRestMinutes}
+            payWeekEndDay={labels.payWeekEndDay}
+          />
+        )}
 
-      {/* Expenses View - UPDATED: Added onUpdateExpense and onDeleteExpense */}
-      {view === 'expenses' && (
-        <ExpensesView
-          theme={theme}
-          expenses={expenses}
-          loading={expensesLoading}
-          submitting={expenseSubmitting}
-          onSubmitExpense={submitExpense}
-          onUpdateExpense={updateExpense}
-          onDeleteExpense={deleteExpense}
-          showToast={showToast}
-        />
-      )}
+        {/* Expenses View */}
+        {view === 'expenses' && (
+          <ExpensesView
+            theme={theme}
+            expenses={expenses}
+            loading={expensesLoading}
+            submitting={expenseSubmitting}
+            onSubmitExpense={submitExpense}
+            onUpdateExpense={updateExpense}
+            onDeleteExpense={deleteExpense}
+            showToast={showToast}
+          />
+        )}
+      </main>
 
-      {/* Bottom navigation */}
-      <div style={{
+      {/* FIXED Bottom navigation */}
+      <nav style={{
         position: 'fixed',
         bottom: 0,
         left: 0,
         right: 0,
         background: theme.nav,
         borderTop: `1px solid ${theme.navBorder}`,
-        paddingBottom: 'max(20px, env(safe-area-inset-bottom))'
+        paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
+        paddingLeft: 'env(safe-area-inset-left)',
+        paddingRight: 'env(safe-area-inset-right)',
+        zIndex: 1000
       }}>
         <div style={{ display: 'flex' }}>
           {[
@@ -478,7 +504,7 @@ export default function App() {
             </button>
           ))}
         </div>
-      </div>
-    </main>
+      </nav>
+    </div>
   );
 }

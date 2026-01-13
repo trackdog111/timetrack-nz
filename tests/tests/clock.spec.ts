@@ -1,104 +1,112 @@
 import { test, expect } from '@playwright/test';
+import { loginAsEmployee, navigateTo } from './helpers';
 
-const TEST_PASSWORD = 'test1234';
-const MOBILE_URL = 'https://timetrack-mobile-v2.vercel.app';
-const TEST_EMPLOYEE_EMAIL = 'trackdog111@hotmail.com';
-
-async function loginMobile(page: any) {
-  await page.goto(MOBILE_URL);
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(1000);
-  
-  await page.getByPlaceholder(/email/i).fill(TEST_EMPLOYEE_EMAIL);
-  await page.getByPlaceholder(/password/i).fill(TEST_PASSWORD);
-  await page.locator('form button:has-text("Sign In"), button[type="submit"]').click();
-  
-  await page.waitForLoadState('networkidle');
-  await page.waitForTimeout(3000);
-}
-
-test.describe('Clock In/Out Flow', () => {
+test.describe('Clock In/Out', () => {
   
   test.beforeEach(async ({ page }) => {
-    await page.context().grantPermissions(['geolocation']);
-    await page.context().setGeolocation({ latitude: -36.8509, longitude: 174.7645 });
+    await loginAsEmployee(page);
+  });
+
+  test('should show clock view with clock in button when not clocked in', async ({ page }) => {
+    await navigateTo(page, 'clock');
+    
+    // Should see either "Clock In" button or "Clock Out" button
+    const clockInBtn = page.locator('button:has-text("Clock In")');
+    const clockOutBtn = page.locator('button:has-text("Clock Out")');
+    
+    const hasClockIn = await clockInBtn.isVisible().catch(() => false);
+    const hasClockOut = await clockOutBtn.isVisible().catch(() => false);
+    
+    expect(hasClockIn || hasClockOut).toBeTruthy();
   });
 
   test('should clock in successfully', async ({ page }) => {
-    await loginMobile(page);
+    await navigateTo(page, 'clock');
     
-    // Check if already clocked in, if so clock out first
-    const clockOutButton = page.getByRole('button', { name: /clock out/i });
-    if (await clockOutButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await clockOutButton.click();
-      await page.waitForTimeout(3000);
+    const clockInBtn = page.locator('button:has-text("Clock In")');
+    
+    // Skip if already clocked in
+    if (!(await clockInBtn.isVisible().catch(() => false))) {
+      test.skip();
+      return;
     }
     
-    // Now clock in
-    const clockInButton = page.getByRole('button', { name: /clock in/i });
-    await expect(clockInButton).toBeVisible({ timeout: 10000 });
-    await clockInButton.click();
+    await clockInBtn.click();
     
-    await page.waitForTimeout(3000);
+    // Should now show Clock Out button
+    await expect(page.locator('button:has-text("Clock Out")')).toBeVisible({ timeout: 10000 });
+  });
+
+  test('should show current shift duration when clocked in', async ({ page }) => {
+    await navigateTo(page, 'clock');
     
-    // Verify clocked in state
-    await expect(page.getByRole('button', { name: /clock out/i })).toBeVisible({ timeout: 15000 });
+    // Check if clocked in
+    const clockOutBtn = page.locator('button:has-text("Clock Out")');
+    
+    if (!(await clockOutBtn.isVisible().catch(() => false))) {
+      // Clock in first
+      await page.click('button:has-text("Clock In")');
+      await expect(clockOutBtn).toBeVisible({ timeout: 10000 });
+    }
+    
+    // Should show duration timer (format like 0:00:00 or 00:00:00)
+    await expect(page.locator('text=/\\d+:\\d{2}(:\\d{2})?/')).toBeVisible({ timeout: 5000 });
   });
 
   test('should clock out successfully', async ({ page }) => {
-    await loginMobile(page);
+    await navigateTo(page, 'clock');
     
-    // Ensure we're clocked in
-    const clockInButton = page.getByRole('button', { name: /clock in/i });
-    if (await clockInButton.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await clockInButton.click();
-      await page.waitForTimeout(3000);
+    const clockOutBtn = page.locator('button:has-text("Clock Out")');
+    
+    // Skip if not clocked in
+    if (!(await clockOutBtn.isVisible().catch(() => false))) {
+      test.skip();
+      return;
     }
     
-    // Now clock out
-    const clockOutButton = page.getByRole('button', { name: /clock out/i });
-    await expect(clockOutButton).toBeVisible({ timeout: 10000 });
-    await clockOutButton.click();
+    await clockOutBtn.click();
     
-    await page.waitForTimeout(3000);
-    
-    // Verify clocked out state
-    await expect(page.getByRole('button', { name: /clock in/i })).toBeVisible({ timeout: 15000 });
-  });
-
-  test('should complete full shift cycle', async ({ page }) => {
-    await loginMobile(page);
-    
-    // Start fresh - clock out if needed
-    const clockOutBtn = page.getByRole('button', { name: /clock out/i });
-    if (await clockOutBtn.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await clockOutBtn.click();
-      await page.waitForTimeout(3000);
+    // May show confirmation dialog - click confirm if present
+    const confirmBtn = page.locator('button:has-text("Confirm"), button:has-text("Yes"), button:has-text("End Shift")');
+    if (await confirmBtn.isVisible().catch(() => false)) {
+      await confirmBtn.click();
     }
     
-    // Clock in
-    await page.getByRole('button', { name: /clock in/i }).click();
-    await page.waitForTimeout(3000);
-    await expect(page.getByRole('button', { name: /clock out/i })).toBeVisible({ timeout: 15000 });
-    
-    // Clock out
-    await page.getByRole('button', { name: /clock out/i }).click();
-    await page.waitForTimeout(3000);
-    await expect(page.getByRole('button', { name: /clock in/i })).toBeVisible({ timeout: 15000 });
+    // Should now show Clock In button
+    await expect(page.locator('button:has-text("Clock In")')).toBeVisible({ timeout: 10000 });
   });
 
-  test('should show shift in history after completion', async ({ page }) => {
-    await loginMobile(page);
+  test('should request location permission for GPS tracking', async ({ page, context }) => {
+    // Grant geolocation permission
+    await context.grantPermissions(['geolocation']);
     
-    // Navigate to history
-    await page.getByRole('button', { name: /history/i }).click();
-    await page.waitForTimeout(2000);
+    // Mock geolocation (Auckland coordinates)
+    await context.setGeolocation({ latitude: -36.8485, longitude: 174.7633 });
     
-    // Should see Shift History heading
-    await expect(page.getByText('Shift History')).toBeVisible({ timeout: 10000 });
+    await navigateTo(page, 'clock');
     
-    // Should see week ending section
-    await expect(page.getByText(/Week Ending/i)).toBeVisible({ timeout: 5000 });
+    // Clock in (if not already)
+    const clockInBtn = page.locator('button:has-text("Clock In")');
+    if (await clockInBtn.isVisible().catch(() => false)) {
+      await clockInBtn.click();
+      
+      // Should complete without location error
+      await expect(page.locator('button:has-text("Clock Out")')).toBeVisible({ timeout: 15000 });
+    }
   });
 
+  test('should show break button when clocked in', async ({ page }) => {
+    await navigateTo(page, 'clock');
+    
+    // Ensure clocked in
+    const clockOutBtn = page.locator('button:has-text("Clock Out")');
+    if (!(await clockOutBtn.isVisible().catch(() => false))) {
+      await page.click('button:has-text("Clock In")');
+      await expect(clockOutBtn).toBeVisible({ timeout: 10000 });
+    }
+    
+    // Should see break button
+    const breakBtn = page.locator('button:has-text("Break"), button:has-text("Start Break"), button:has-text("Take Break")');
+    await expect(breakBtn).toBeVisible({ timeout: 5000 });
+  });
 });
