@@ -27,7 +27,7 @@ workflows:
       - name: Set iOS version
         script: |
           cd mobile/ios/App
-          agvtool new-version -all 23
+          agvtool new-version -all 24
           agvtool new-marketing-version 1.0.6
       - name: Resolve SPM dependencies
         script: |
