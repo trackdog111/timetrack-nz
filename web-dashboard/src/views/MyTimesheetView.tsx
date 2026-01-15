@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { Shift, Theme, Employee, CompanySettings, Location, EmployeeSettings } from '../shared/types';
-import { getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, getJobLogField } from '../shared/utils';
+import { getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, getJobLogField, getBreakEntitlements } from '../shared/utils';
 import { BreakRulesInfo } from '../components/BreakRulesInfo';
 interface MyTimesheetViewProps {
   theme: Theme;
@@ -87,23 +87,7 @@ interface MyTimesheetViewProps {
   setMapModal: (modal: { locations: Location[], title: string, clockInLocation?: Location, clockOutLocation?: Location } | null) => void;
 }
 
-// Helper: Get break entitlements based on shift hours
-function getBreakEntitlements(shiftHours: number, paidRestMinutes: number = 10) {
-  let paidBreaks = 0;
-  let unpaidBreaks = 0;
-  
-  if (shiftHours >= 2) paidBreaks = 1;
-  if (shiftHours >= 4) unpaidBreaks = 1;
-  if (shiftHours >= 6) paidBreaks = 2;
-  if (shiftHours >= 8) unpaidBreaks = 2;
-  
-  return {
-    paidBreaks,
-    unpaidBreaks,
-    paidMinutes: paidBreaks * paidRestMinutes,
-    unpaidMinutes: unpaidBreaks * 30
-  };
-}
+
 
 // Helper: Get week ending date based on pay week end day
 function getWeekEndingDate(shiftDate: Date, payWeekEndDay: number): Date {
@@ -278,7 +262,9 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
       
       const h = getHours(shift.clockIn, shift.clockOut);
       const b = calcBreaks(shift.breaks || [], h, paidRestMinutes);
-      grouped[weekKey].totalMinutes += (h * 60) - b.unpaid;
+      const ent = getBreakEntitlements(h, paidRestMinutes);
+      const untakenPaid = Math.max(0, ent.paidMinutes - b.paid);
+      grouped[weekKey].totalMinutes += (h * 60) - b.unpaid + untakenPaid;
     });
 
     // Sort weeks descending
@@ -565,7 +551,7 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
                   Your entitlement for {fmtDur(shiftHours * 60)} shift:
                 </p>
                 <p style={{ color: theme.text, fontSize: '14px' }}>
-                  {entitlements.paidBreaks}× paid rest ({entitlements.paidMinutes}m) + {entitlements.unpaidBreaks}× unpaid meal ({entitlements.unpaidMinutes}m)
+                  {entitlements.paidMinutes}m paid rest + {entitlements.unpaidMinutes}m unpaid meal
                 </p>
                 {paidRestMinutes > 10 && (
                   <p style={{ color: theme.success, fontSize: '12px', marginTop: '4px' }}>
@@ -838,7 +824,9 @@ export function MyTimesheetView(props: MyTimesheetViewProps) {
                         const h = getHours(sh.clockIn, sh.clockOut);
                         const b = calcBreaks(sh.breaks || [], h, paidRestMinutes);
                         const t = calcTravel(sh.travelSegments || []);
-                        const workingMinutes = (h * 60) - b.unpaid;
+                        const ent = getBreakEntitlements(h, paidRestMinutes);
+                        const untakenPaid = Math.max(0, ent.paidMinutes - b.paid);
+                        const workingMinutes = (h * 60) - b.unpaid + untakenPaid;
                         const isEditing = editingMyShift === sh.id;
                         const locationCount = getLocationCount(sh);
 

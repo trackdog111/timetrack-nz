@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Shift, Theme, CompanySettings, Location, Expense } from '../shared/types';
-import { getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, fmtDateShort, fmtWeekEnding, getJobLogField, weekDayNames } from '../shared/utils';
+import { getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, fmtDateShort, fmtWeekEnding, getJobLogField, weekDayNames, getBreakEntitlements } from '../shared/utils';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface GroupedWeek {
@@ -159,7 +159,9 @@ export function TimesheetsView({
       const h = getHours(sh.clockIn, sh.clockOut);
       const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
       const t = calcTravel(sh.travelSegments || []);
-      const worked = (h * 60) - b.unpaid;
+      const ent = getBreakEntitlements(h, companySettings.paidRestMinutes);
+      const untakenPaid = Math.max(0, ent.paidMinutes - b.paid);
+      const worked = (h * 60) - b.unpaid + untakenPaid;
       totalMinutes += worked;
       totalPaid += b.paid;
       totalUnpaid += b.unpaid;
@@ -254,7 +256,9 @@ export function TimesheetsView({
         const h = getHours(sh.clockIn, sh.clockOut);
         const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes);
         const t = calcTravel(sh.travelSegments || []);
-        const worked = (h * 60) - b.unpaid;
+        const ent = getBreakEntitlements(h, companySettings.paidRestMinutes);
+        const untakenPaid = Math.max(0, ent.paidMinutes - b.paid);
+        const worked = (h * 60) - b.unpaid + untakenPaid;
         totalMinutes += worked;
         totalPaid += b.paid;
         totalUnpaid += b.unpaid;
@@ -445,7 +449,9 @@ export function TimesheetsView({
                               const shiftHours = getHours(sh.clockIn, sh.clockOut);
                               const breakAllocation = calcBreaks(sh.breaks || [], shiftHours, companySettings.paidRestMinutes);
                               const travelMinutes = calcTravel(sh.travelSegments || []);
-                              const workingMinutes = (shiftHours * 60) - breakAllocation.unpaid;
+                              const entitlement = getBreakEntitlements(shiftHours, companySettings.paidRestMinutes);
+                              const untakenPaidBreaks = Math.max(0, entitlement.paidMinutes - breakAllocation.paid);
+                              const workingMinutes = (shiftHours * 60) - breakAllocation.unpaid + untakenPaidBreaks;
                               const f1 = getJobLogField(sh.jobLog, 'field1');
                               const isTimesheetEditing = timesheetEditingShiftId === sh.id;
                               const locationCount = (sh.locationHistory?.length || 0) + (sh.clockInLocation ? 1 : 0) + (sh.clockOutLocation ? 1 : 0);

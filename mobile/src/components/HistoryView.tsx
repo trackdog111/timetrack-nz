@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Theme, createStyles } from '../theme';
 import { Shift, Location } from '../types';
-import { fmtDur, fmtTime, fmtDate, getHours, calcBreaks, calcTravel } from '../utils';
+import { fmtDur, fmtTime, fmtDate, getHours, calcBreaks, calcTravel, getBreakEntitlements } from '../utils';
 import { BreakRulesInfo } from './BreakRulesInfo';
 
 interface HistoryViewProps {
@@ -497,8 +497,10 @@ export function HistoryView({
       
       const h = getHours(shift.clockIn, shift.clockOut);
       const b = calcBreaks(shift.breaks || [], h, paidRestMinutes);
+      const ent = getBreakEntitlements(h, paidRestMinutes);
+      const untakenPaid = Math.max(0, ent.paidMinutes - b.paid);
       grouped[weekKey].shifts.push(shift);
-      grouped[weekKey].totalMinutes += (h * 60) - b.unpaid;
+      grouped[weekKey].totalMinutes += (h * 60) - b.unpaid + untakenPaid;
     });
     
     // Sort weeks newest first
@@ -583,7 +585,9 @@ export function HistoryView({
         const totalMinutes = filteredShifts.reduce((sum, shift) => {
           const h = getHours(shift.clockIn, shift.clockOut);
           const b = calcBreaks(shift.breaks || [], h, paidRestMinutes);
-          return sum + (h * 60) - b.unpaid;
+          const ent = getBreakEntitlements(h, paidRestMinutes);
+          const untakenPaid = Math.max(0, ent.paidMinutes - b.paid);
+          return sum + (h * 60) - b.unpaid + untakenPaid;
         }, 0);
         
         filtered[weekKey] = {
@@ -845,7 +849,9 @@ export function HistoryView({
                     const shiftHours = getHours(shift.clockIn, shift.clockOut);
                     const breakAllocation = calcBreaks(shift.breaks || [], shiftHours, paidRestMinutes);
                     const travelMinutes = calcTravel(shift.travelSegments || []);
-                    const workingMinutes = (shiftHours * 60) - breakAllocation.unpaid;
+                    const entitlement = getBreakEntitlements(shiftHours, paidRestMinutes);
+                    const untakenPaidBreaks = Math.max(0, entitlement.paidMinutes - breakAllocation.paid);
+                    const workingMinutes = (shiftHours * 60) - breakAllocation.unpaid + untakenPaidBreaks;
                     const isEditing = editingShiftId === shift.id;
                     const locationCount = getLocationCount(shift);
 
