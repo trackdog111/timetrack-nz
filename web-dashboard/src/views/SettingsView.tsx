@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { Shift, Theme, Employee, CompanySettings, ChatMessage } from '../shared/types';
 import { weekDayNames } from '../shared/utils';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface SettingsViewProps {
   theme: Theme;
@@ -18,6 +20,13 @@ interface SettingsViewProps {
   cleanupConfirm: boolean;
   setCleanupConfirm: (v: boolean) => void;
   cleanup: () => void;
+  companyId: string;
+}
+
+interface XeroStatus {
+  connected: boolean;
+  tenantName?: string;
+  connectedAt?: string;
 }
 
 export function SettingsView({
@@ -36,13 +45,96 @@ export function SettingsView({
   setCleanupEnd,
   cleanupConfirm,
   setCleanupConfirm,
-  cleanup
+  cleanup,
+  companyId
 }: SettingsViewProps) {
   const styles = {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
     input: { padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px', width: '100%', boxSizing: 'border-box' as const },
     btn: { padding: '10px 20px', borderRadius: '8px', border: 'none', background: theme.primary, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' },
     btnDanger: { padding: '10px 20px', borderRadius: '8px', border: 'none', background: theme.danger, color: 'white', cursor: 'pointer', fontWeight: '600' as const, fontSize: '14px' }
+  };
+
+  // Xero integration state
+  const [xeroStatus, setXeroStatus] = useState<XeroStatus | null>(null);
+  const [xeroLoading, setXeroLoading] = useState(true);
+  const [xeroConnecting, setXeroConnecting] = useState(false);
+  const [xeroDisconnecting, setXeroDisconnecting] = useState(false);
+  const [xeroError, setXeroError] = useState<string | null>(null);
+
+  const functions = getFunctions(undefined, 'australia-southeast1');
+
+  // Check for OAuth callback results in URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const xeroConnected = params.get('xero_connected');
+    const xeroErrorParam = params.get('xero_error');
+
+    if (xeroConnected === 'true') {
+      setXeroError(null);
+      window.history.replaceState({}, '', window.location.pathname);
+      // Refresh status
+      fetchXeroStatus();
+    } else if (xeroErrorParam) {
+      const errorMessages: Record<string, string> = {
+        'missing_params': 'OAuth callback missing required parameters',
+        'invalid_state': 'Invalid or expired authorization session',
+        'no_organisation': 'No Xero organisation found. Please ensure you have access to a Xero organisation.',
+        'token_exchange_failed': 'Failed to connect to Xero. Please try again.'
+      };
+      setXeroError(errorMessages[xeroErrorParam] || `Connection error: ${xeroErrorParam}`);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Fetch Xero connection status
+  const fetchXeroStatus = async () => {
+    if (!companyId) return;
+    try {
+      const xeroGetStatus = httpsCallable<{ companyId: string }, XeroStatus>(functions, 'xeroGetStatus');
+      const result = await xeroGetStatus({ companyId });
+      setXeroStatus(result.data);
+    } catch (err: any) {
+      console.error('Error fetching Xero status:', err);
+    } finally {
+      setXeroLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchXeroStatus();
+  }, [companyId]);
+
+  // Connect to Xero
+  const handleXeroConnect = async () => {
+    setXeroConnecting(true);
+    setXeroError(null);
+    try {
+      const xeroGetAuthUrl = httpsCallable<{ companyId: string }, { authUrl: string }>(functions, 'xeroGetAuthUrl');
+      const result = await xeroGetAuthUrl({ companyId });
+      window.location.href = result.data.authUrl;
+    } catch (err: any) {
+      console.error('Error getting auth URL:', err);
+      setXeroError('Failed to initiate Xero connection');
+      setXeroConnecting(false);
+    }
+  };
+
+  // Disconnect from Xero
+  const handleXeroDisconnect = async () => {
+    if (!confirm('Are you sure you want to disconnect Xero? You will need to reconnect to export timesheets.')) return;
+    setXeroDisconnecting(true);
+    setXeroError(null);
+    try {
+      const xeroDisconnect = httpsCallable<{ companyId: string }, { success: boolean }>(functions, 'xeroDisconnect');
+      await xeroDisconnect({ companyId });
+      setXeroStatus({ connected: false });
+    } catch (err: any) {
+      console.error('Error disconnecting Xero:', err);
+      setXeroError('Failed to disconnect Xero');
+    } finally {
+      setXeroDisconnecting(false);
+    }
   };
 
   const shiftsToDelete = allShifts.filter(s => {
@@ -191,6 +283,77 @@ export function SettingsView({
         <button onClick={saveCompanySettings} disabled={savingCompanySettings} style={{ ...styles.btn, opacity: savingCompanySettings ? 0.7 : 1 }}>
           {savingCompanySettings ? 'Saving...' : 'Save Settings'}
         </button>
+      </div>
+
+      {/* Xero Integration Card */}
+      <div style={styles.card}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <h3 style={{ color: theme.text, fontSize: '16px', margin: 0 }}>📊 Xero Integration</h3>
+          {xeroStatus?.connected && (
+            <span style={{ background: theme.successBg, color: theme.success, padding: '4px 10px', borderRadius: '12px', fontSize: '12px', fontWeight: '600' }}>Connected</span>
+          )}
+        </div>
+
+        {xeroError && (
+          <div style={{ marginBottom: '16px', padding: '12px', background: theme.dangerBg, borderRadius: '8px' }}>
+            <p style={{ color: theme.danger, fontSize: '13px', margin: 0 }}>{xeroError}</p>
+          </div>
+        )}
+
+        {xeroLoading ? (
+          <p style={{ color: theme.textMuted, fontSize: '14px' }}>Checking Xero connection...</p>
+        ) : xeroStatus?.connected ? (
+          <div>
+            <div style={{ marginBottom: '16px', padding: '16px', background: theme.cardAlt, borderRadius: '8px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '40px', height: '40px', background: '#13B5EA', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ color: 'white', fontWeight: '700', fontSize: '18px' }}>X</span>
+                </div>
+                <div>
+                  <p style={{ color: theme.text, fontWeight: '600', fontSize: '14px', margin: 0 }}>{xeroStatus.tenantName}</p>
+                  <p style={{ color: theme.textMuted, fontSize: '12px', margin: '2px 0 0 0' }}>
+                    Connected {xeroStatus.connectedAt ? new Date(xeroStatus.connectedAt).toLocaleDateString('en-NZ') : ''}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
+              Your Xero account is connected. You can export finalized timesheets directly to Xero Payroll from the Timesheets page.
+            </p>
+            <button
+              onClick={handleXeroDisconnect}
+              disabled={xeroDisconnecting}
+              style={{ padding: '8px 16px', borderRadius: '6px', background: 'transparent', color: theme.danger, border: `1px solid ${theme.danger}`, cursor: xeroDisconnecting ? 'not-allowed' : 'pointer', fontSize: '13px', fontWeight: '500', opacity: xeroDisconnecting ? 0.7 : 1 }}
+            >
+              {xeroDisconnecting ? 'Disconnecting...' : 'Disconnect Xero'}
+            </button>
+          </div>
+        ) : (
+          <div>
+            <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '16px' }}>
+              Connect your Xero account to export finalized timesheets directly to Xero Payroll for seamless payroll processing.
+            </p>
+            <div style={{ marginBottom: '16px', padding: '12px', background: '#eff6ff', borderRadius: '8px' }}>
+              <p style={{ color: '#1e40af', fontSize: '12px', margin: 0 }}>
+                <strong>Note:</strong> You'll need to be an admin of your Xero organisation to connect.
+              </p>
+            </div>
+            <button
+              onClick={handleXeroConnect}
+              disabled={xeroConnecting}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '8px', background: '#13B5EA', color: 'white', border: 'none', cursor: xeroConnecting ? 'not-allowed' : 'pointer', fontSize: '14px', fontWeight: '600', opacity: xeroConnecting ? 0.7 : 1 }}
+            >
+              {xeroConnecting ? (
+                'Connecting...'
+              ) : (
+                <>
+                  <span style={{ fontWeight: '700' }}>X</span>
+                  Connect to Xero
+                </>
+              )}
+            </button>
+          </div>
+        )}
       </div>
       
       <div style={styles.card}>

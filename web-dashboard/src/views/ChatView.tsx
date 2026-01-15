@@ -9,7 +9,7 @@ interface ChatViewProps {
   setChatTab: (tab: string) => void;
   newMsg: string;
   setNewMsg: (msg: string) => void;
-  sendMsg: () => void;
+  sendMsg: (e: React.FormEvent) => void;
   getEmployeeName: (userId?: string, userEmail?: string) => string;
 }
 
@@ -71,7 +71,7 @@ export function ChatView({
           placeholder="Message..." 
           value={newMsg} 
           onChange={e => setNewMsg(e.target.value)} 
-          onKeyPress={e => e.key === 'Enter' && sendMsg()} 
+          onKeyPress={e => e.key === 'Enter' && sendMsg(e as any)} 
           style={{ ...styles.input, flex: 1, borderRadius: '24px' }} 
         />
         <button onClick={sendMsg} style={{ ...styles.btn, borderRadius: '24px' }}>Send</button>

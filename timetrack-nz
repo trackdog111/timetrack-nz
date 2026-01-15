@@ -27,8 +27,8 @@ workflows:
       - name: Set iOS version
         script: |
           cd mobile/ios/App
-          agvtool new-version -all 26
-          agvtool new-marketing-version 1.0.6
+          agvtool new-version -all 17
+          agvtool new-marketing-version 1.0.2
       - name: Resolve SPM dependencies
         script: |
           cd mobile/ios/App
@@ -48,4 +48,4 @@ workflows:
         auth: integration
         submit_to_testflight: true
         beta_groups:
-          - outside testers
+          - App Store Connect Users

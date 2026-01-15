@@ -283,17 +283,23 @@ export function ClockView({
         right: 0,
         bottom: 0,
         background: '#000',
-        zIndex: 1000,
+        zIndex: 2000,
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        overflow: 'hidden',
+        width: '100%',
+        maxWidth: '100vw'
       }}>
+        {/* Safe area spacer */}
+        <div style={{ height: '59px', minHeight: '59px', background: 'rgba(0,0,0,0.8)', flexShrink: 0 }} />
         {/* Header */}
         <div style={{
-          padding: '16px 20px',
+          padding: '12px 20px',
           background: 'rgba(0,0,0,0.8)',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          alignItems: 'center',
+          flexShrink: 0
         }}>
           <h2 style={{ color: 'white', fontSize: '18px', fontWeight: '600', margin: 0 }}>
             📸 Clock-In Photo
@@ -369,10 +375,12 @@ export function ClockView({
         {/* Controls */}
         <div style={{
           padding: '20px',
+          paddingBottom: '40px',
           background: 'rgba(0,0,0,0.8)',
           display: 'flex',
           justifyContent: 'center',
-          gap: '16px'
+          gap: '16px',
+          flexShrink: 0
         }}>
           {!capturedPhoto && !cameraError && (
             <button

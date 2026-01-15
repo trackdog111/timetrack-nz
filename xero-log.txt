@@ -1,0 +1,15 @@
+2026-01-15T02:40:59.423358Z ? xeroExportTimesheet:       "currentRecord": true,
+2026-01-15T02:40:59.423361Z ? xeroExportTimesheet:       "expenseAccountID": "d6fa52d6-e6f5-4a23-927a-0b82df783a05",
+2026-01-15T02:40:59.423365Z ? xeroExportTimesheet:       "fixedAmount": null,
+2026-01-15T02:40:59.423368Z ? xeroExportTimesheet:       "ratePerUnit": null,
+2026-01-15T02:40:59.423372Z ? xeroExportTimesheet:       "multipleOfOrdinaryEarningsRate": null
+2026-01-15T02:40:59.423374Z ? xeroExportTimesheet:     },
+2026-01-15T02:40:59.423376Z ? xeroExportTimesheet:     {
+2026-01-15T02:40:59.423379Z ? xeroExportTimesheet:       "earningsRateID": "f6057f13-7639-4157-9c57-1179c93a626b",
+2026-01-15T02:40:59.423382Z ? xeroExportTimesheet:       "name": "Salary",
+2026-01-15T02:40:59.423384Z ? xeroExportTimesheet:       "earningsType": "RegularEarnings",
+2026-01-15T02:40:59.423387Z ? xeroExportTimesheet:       "rateType": "RatePerUnit",
+2026-01-15T02:40:59.423389Z ? xeroExportTimesheet:       "typeOfUnits": "hours",
+2026-01-15T02:40:59.423392Z ? xeroExportTimesheet:       "currentRecord": true,
+2026-01-15T02:40:59.423395Z ? xeroExportTimesheet:       "expenseAccountID": "d6fa52d6-e6f5-4a23-927a-0b82df783a05",
+2026-01-15T02:40:59.423398Z ? xeroExportTimesheet:       "fixedAmount": null,

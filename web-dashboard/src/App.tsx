@@ -370,13 +370,8 @@ export default function App() {
       const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
       return expDate >= s && expDate <= e;
     });
-    
-    if (!approvedExpenses.length) { 
-      setError('No approved expenses in date range'); 
-      return; 
-    }
-    
-    const rows = [['Date', 'Employee', 'Category', 'Amount', 'Note', 'Approved By']];
+    if (!approvedExpenses.length) { setError('No approved expenses to export'); return; }
+    const rows = [['Date','Employee','Category','Amount','Note','Approved By']];
     approvedExpenses.forEach(exp => {
       const expDate: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
       rows.push([
@@ -388,110 +383,35 @@ export default function App() {
         exp.approvedBy || ''
       ]);
     });
-    
-    const csv = rows.map(r => r.map(cell => `"${cell}"`).join(',')).join('\n');
+    const csv = rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `expenses-${reportStart || 'all'}-${reportEnd || 'all'}.csv`;
+    const a = document.createElement('a'); 
+    a.href = URL.createObjectURL(blob); 
+    a.download = `expenses-${reportStart || 'all'}-${reportEnd || 'all'}.csv`; 
     a.click();
   };
 
-  // UPDATED: Include companyId in messages
-  const sendMsg = async () => { 
-    if (!newMsg.trim() || !companyId) return; 
-    await addDoc(collection(db, 'messages'), { 
-      companyId,  // NEW
-      type: chatTab, 
-      senderId: 'employer', 
-      senderEmail: 'Employer', 
-      text: newMsg.trim(), 
-      timestamp: Timestamp.now(), 
-      participants: [] 
-    }); 
-    setNewMsg(''); 
-  };
+  const cleanup = async () => { if (!cleanupConfirm) return; const s = new Date(cleanupStart); const e = new Date(cleanupEnd); e.setHours(23,59,59); const toDelete = allShifts.filter(sh => { if (!sh.clockIn?.toDate) return false; const d = sh.clockIn.toDate(); return d >= s && d <= e && sh.status === 'completed'; }); const batch = writeBatch(db); toDelete.forEach(sh => batch.delete(doc(db, 'shifts', sh.id))); await batch.commit(); setCleanupConfirm(false); setCleanupStart(''); setCleanupEnd(''); setSuccess(`Deleted ${toDelete.length} shifts`); };
+  const sendMsg = async (e: React.FormEvent) => { e.preventDefault(); if (!newMsg.trim() || !user || !companyId) return; await addDoc(collection(db, 'messages'), { companyId, text: newMsg.trim(), senderId: user.uid, senderEmail: user.email, timestamp: Timestamp.now(), target: chatTab === 'team' ? 'team' : undefined }); setNewMsg(''); };
 
-  const cleanup = async () => { if (!cleanupStart || !cleanupEnd || !cleanupConfirm) { setError('Select dates and confirm'); return; } const s = new Date(cleanupStart); const e = new Date(cleanupEnd); e.setHours(23,59,59); const toDelete = allShifts.filter(sh => { if (!sh.clockIn?.toDate) return false; const d = sh.clockIn.toDate(); return d >= s && d <= e && sh.status === 'completed'; }); const batch = writeBatch(db); toDelete.forEach(sh => batch.delete(doc(db, 'shifts', sh.id))); await batch.commit(); setSuccess(`Deleted ${toDelete.length} shifts`); setCleanupConfirm(false); setCleanupStart(''); setCleanupEnd(''); };
+  const myClockIn = async () => { if (!user || !companyId) return; setClockingIn(true); const location = await getMyCurrentLocation(); try { await addDoc(collection(db, 'shifts'), { companyId, userId: user.uid, userEmail: user.email, clockIn: Timestamp.now(), status: 'active', breaks: [], travelSegments: [], locationHistory: location ? [location] : [], clockInLocation: location || null, jobLog: { field1: '', field2: '', field3: '' } }); setSuccess('Clocked in!'); } catch (err: any) { setError(err.message); } setClockingIn(false); };
+  const myClockOut = async () => { if (!myShift) return; setClockingOut(true); const location = await getMyCurrentLocation(); try { const updates: any = { clockOut: Timestamp.now(), status: 'completed' }; if (location) updates.clockOutLocation = location; if (onBreak && breakStart) { const breaks = [...(myShift.breaks || [])]; const idx = breaks.findIndex(b => !b.endTime && !b.manualEntry); if (idx !== -1) { breaks[idx] = { ...breaks[idx], endTime: Timestamp.now() }; updates.breaks = breaks; } } await updateDoc(doc(db, 'shifts', myShift.id), updates); setSuccess('Clocked out!'); } catch (err: any) { setError(err.message); } setClockingOut(false); };
+  const myStartBreak = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { breaks: arrayUnion({ startTime: Timestamp.now(), endTime: null }) }); };
+  const myEndBreak = async () => { if (!myShift) return; const breaks = [...(myShift.breaks || [])]; const idx = breaks.findIndex(b => !b.endTime && !b.manualEntry); if (idx !== -1) { breaks[idx] = { ...breaks[idx], endTime: Timestamp.now() }; await updateDoc(doc(db, 'shifts', myShift.id), { breaks }); } };
+  const myStartTravel = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { travelSegments: arrayUnion({ startTime: Timestamp.now(), endTime: null }) }); };
+  const myEndTravel = async () => { if (!myShift) return; const segs = [...(myShift.travelSegments || [])]; const idx = segs.findIndex(t => !t.endTime); if (idx !== -1) { segs[idx] = { ...segs[idx], endTime: Timestamp.now() }; await updateDoc(doc(db, 'shifts', myShift.id), { travelSegments: segs }); } };
+  const myAddBreak = async (mins: number) => { if (!myShift) return; const now = Timestamp.now(); await updateDoc(doc(db, 'shifts', myShift.id), { breaks: arrayUnion({ startTime: now, endTime: now, durationMinutes: mins, manualEntry: true }) }); setSuccess(`${mins}m break added`); setTimeout(() => setSuccess(''), 2000); };
 
-  // UPDATED: Include companyId in clock in
-  const myClockIn = async () => { 
-    if (!user || !companyId || clockingIn) return; 
-    setClockingIn(true); 
-    try { 
-      const location = await getMyCurrentLocation(); 
-      await addDoc(collection(db, 'shifts'), { 
-        companyId,  // NEW
-        userId: user.uid, 
-        userEmail: user.email, 
-        clockIn: Timestamp.now(), 
-        clockInLocation: location, 
-        locationHistory: [], 
-        breaks: [], 
-        travelSegments: [], 
-        jobLog: { field1: '', field2: '', field3: '' }, 
-        status: 'active' 
-      }); 
-      setSuccess('Clocked in!'); 
-    } catch (err: any) { setError(err.message || 'Failed to clock in'); } 
-    finally { setClockingIn(false); } 
-  };
+  const saveMyField1 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field1': myField1 }); setSuccess('Saved!'); setTimeout(() => setSuccess(''), 1500); };
+  const saveMyField2 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field2': myField2 }); setSuccess('Saved!'); setTimeout(() => setSuccess(''), 1500); };
+  const saveMyField3 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field3': myField3 }); setSuccess('Saved!'); setTimeout(() => setSuccess(''), 1500); };
 
-  const myClockOut = async () => { if (!myShift || clockingOut) return; setClockingOut(true); try { const location = await getMyCurrentLocation(); let ub = [...(myShift.breaks || [])]; const ai = ub.findIndex(b => !b.endTime && !b.manualEntry); if (ai !== -1 && breakStart) { ub[ai] = { ...ub[ai], endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) }; } let ut = [...(myShift.travelSegments || [])]; const ti = ut.findIndex(t => !t.endTime); if (ti !== -1 && myTravelStart) { ut[ti] = { ...ut[ti], endTime: Timestamp.now(), ...(location ? { endLocation: location } : {}), durationMinutes: Math.round((Date.now() - myTravelStart.getTime()) / 60000) }; } await updateDoc(doc(db, 'shifts', myShift.id), { clockOut: Timestamp.now(), clockOutLocation: location, breaks: ub, travelSegments: ut, 'jobLog.field1': myField1, 'jobLog.field2': myField2, 'jobLog.field3': myField3, status: 'completed' }); setSuccess('Clocked out!'); } catch (err: any) { setError(err.message || 'Failed to clock out'); } finally { setClockingOut(false); } };
-  const myStartBreak = async () => { if (!myShift) return; const location = await getMyCurrentLocation(); const updateData: any = { breaks: [...(myShift.breaks || []), { startTime: Timestamp.now(), manualEntry: false }] }; if (location) updateData.locationHistory = arrayUnion(location); await updateDoc(doc(db, 'shifts', myShift.id), updateData); setOnBreak(true); setBreakStart(new Date()); };
-  const myEndBreak = async () => { if (!myShift || !breakStart) return; const location = await getMyCurrentLocation(); const ub = myShift.breaks.map((b, i) => i === myShift.breaks.length - 1 && !b.endTime && !b.manualEntry ? { ...b, endTime: Timestamp.now(), durationMinutes: Math.round((Date.now() - breakStart.getTime()) / 60000) } : b); const updateData: any = { breaks: ub }; if (location) updateData.locationHistory = arrayUnion(location); await updateDoc(doc(db, 'shifts', myShift.id), updateData); setOnBreak(false); setBreakStart(null); };
-  const myAddBreak = async (m: number) => { if (!myShift) return; const now = Timestamp.now(); await updateDoc(doc(db, 'shifts', myShift.id), { breaks: [...(myShift.breaks || []), { startTime: now, endTime: now, durationMinutes: m, manualEntry: true }] }); };
-  const saveMyField1 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field1': myField1 }); };
-  const saveMyField2 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field2': myField2 }); };
-  const saveMyField3 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field3': myField3 }); };
-  const myStartTravel = async () => { if (!myShift) return; const location = await getMyCurrentLocation(); const updateData: any = { travelSegments: [...(myShift.travelSegments || []), { startTime: Timestamp.now(), ...(location ? { startLocation: location } : {}) }] }; if (location) updateData.locationHistory = arrayUnion(location); await updateDoc(doc(db, 'shifts', myShift.id), updateData); setMyTraveling(true); setMyTravelStart(new Date()); };
-  const myEndTravel = async () => { if (!myShift || !myTravelStart) return; const location = await getMyCurrentLocation(); const durationMinutes = Math.round((Date.now() - myTravelStart.getTime()) / 60000); const updatedTravel = (myShift.travelSegments || []).map((t, i, arr) => i === arr.length - 1 && !t.endTime ? { ...t, endTime: Timestamp.now(), ...(location ? { endLocation: location } : {}), durationMinutes } : t); const updateData: any = { travelSegments: updatedTravel }; if (location) updateData.locationHistory = arrayUnion(location); await updateDoc(doc(db, 'shifts', myShift.id), updateData); setMyTraveling(false); setMyTravelStart(null); };
-
-  // UPDATED: Include companyId in manual shift
-  const myAddManualShift = async () => { 
-    if (!user || !companyId) return; 
-    setAddingManualShift(true); 
-    try { 
-      let sHour = parseInt(manualStartHour); 
-      if (manualStartAmPm === 'PM' && sHour !== 12) sHour += 12; 
-      if (manualStartAmPm === 'AM' && sHour === 12) sHour = 0; 
-      let eHour = parseInt(manualEndHour); 
-      if (manualEndAmPm === 'PM' && eHour !== 12) eHour += 12; 
-      if (manualEndAmPm === 'AM' && eHour === 12) eHour = 0; 
-      const clockIn = new Date(manualDate); 
-      clockIn.setHours(sHour, parseInt(manualStartMinute), 0, 0); 
-      const clockOut = new Date(manualDate); 
-      clockOut.setHours(eHour, parseInt(manualEndMinute), 0, 0); 
-      if (clockOut <= clockIn) clockOut.setDate(clockOut.getDate() + 1); 
-      const shiftBreaks = manualBreaks.map(mins => { const now = Timestamp.fromDate(clockIn); return { startTime: now, endTime: now, durationMinutes: mins, manualEntry: true }; }); 
-      const shiftTravel = manualTravel.map(mins => { const now = Timestamp.fromDate(clockIn); return { startTime: now, endTime: now, durationMinutes: mins }; }); 
-      await addDoc(collection(db, 'shifts'), { 
-        companyId,  // NEW
-        userId: user.uid, 
-        userEmail: user.email, 
-        clockIn: Timestamp.fromDate(clockIn), 
-        clockOut: Timestamp.fromDate(clockOut), 
-        breaks: shiftBreaks, 
-        travelSegments: shiftTravel, 
-        jobLog: { field1: manualNotes, field2: '', field3: '' }, 
-        status: 'completed', 
-        manualEntry: true, 
-        locationHistory: [] 
-      }); 
-      setShowAddManualShift(false); 
-      setManualBreaks([]); 
-      setManualTravel([]); 
-      setManualNotes(''); 
-      setSuccess('Shift added!'); 
-    } catch (err: any) { setError(err.message); } 
-    setAddingManualShift(false); 
-  };
-
-  const myAddBreakToShift = async (shiftId: string, minutes: number) => { setAddingBreakToShift(true); try { const shiftRef = doc(db, 'shifts', shiftId); const shiftSnap = await getDoc(shiftRef); if (shiftSnap.exists()) { const now = Timestamp.now(); await updateDoc(shiftRef, { breaks: [...(shiftSnap.data().breaks || []), { startTime: now, endTime: now, durationMinutes: minutes, manualEntry: true }], editedAt: now, editedBy: user?.uid, editedByEmail: user?.email }); setSuccess(`${minutes}m break added ✓`); setTimeout(() => setSuccess(''), 2000); } } catch (err: any) { setError(err.message); } setAddingBreakToShift(false); };
-  const myAddTravelToShift = async (shiftId: string, shiftDate: Date) => { setAddingTravelToShift(true); try { let sHour = parseInt(addTravelStartHour); if (addTravelStartAmPm === 'PM' && sHour !== 12) sHour += 12; if (addTravelStartAmPm === 'AM' && sHour === 12) sHour = 0; let eHour = parseInt(addTravelEndHour); if (addTravelEndAmPm === 'PM' && eHour !== 12) eHour += 12; if (addTravelEndAmPm === 'AM' && eHour === 12) eHour = 0; const travelStart = new Date(shiftDate); travelStart.setHours(sHour, parseInt(addTravelStartMinute), 0, 0); const travelEnd = new Date(shiftDate); travelEnd.setHours(eHour, parseInt(addTravelEndMinute), 0, 0); if (travelEnd <= travelStart) travelEnd.setDate(travelEnd.getDate() + 1); const durationMinutes = Math.round((travelEnd.getTime() - travelStart.getTime()) / 60000); if (durationMinutes <= 0 || durationMinutes > 480) { setError('Invalid travel duration'); setAddingTravelToShift(false); return; } const shiftRef = doc(db, 'shifts', shiftId); const shiftSnap = await getDoc(shiftRef); if (shiftSnap.exists()) { await updateDoc(shiftRef, { travelSegments: [...(shiftSnap.data().travelSegments || []), { startTime: Timestamp.fromDate(travelStart), endTime: Timestamp.fromDate(travelEnd), durationMinutes }], editedAt: Timestamp.now(), editedBy: user?.uid, editedByEmail: user?.email }); } setSuccess('Travel added ✓'); setTimeout(() => setSuccess(''), 2000); setMyEditMode(null); setEditingMyShift(null); } catch (err: any) { setError(err.message); } setAddingTravelToShift(false); };
-  const myDeleteBreakFromShift = async (shiftId: string, breakIndex: number) => { try { const shiftRef = doc(db, 'shifts', shiftId); const shiftSnap = await getDoc(shiftRef); if (shiftSnap.exists()) { const updatedBreaks = (shiftSnap.data().breaks || []).filter((_: any, i: number) => i !== breakIndex); await updateDoc(shiftRef, { breaks: updatedBreaks, editedAt: Timestamp.now(), editedBy: user?.uid, editedByEmail: user?.email }); setSuccess('Break removed'); setTimeout(() => setSuccess(''), 2000); } } catch (err: any) { setError(err.message); } };
-  const myDeleteTravelFromShift = async (shiftId: string, travelIndex: number) => { try { const shiftRef = doc(db, 'shifts', shiftId); const shiftSnap = await getDoc(shiftRef); if (shiftSnap.exists()) { const updatedTravel = (shiftSnap.data().travelSegments || []).filter((_: any, i: number) => i !== travelIndex); await updateDoc(shiftRef, { travelSegments: updatedTravel, editedAt: Timestamp.now(), editedBy: user?.uid, editedByEmail: user?.email }); setSuccess('Travel removed'); setTimeout(() => setSuccess(''), 2000); } } catch (err: any) { setError(err.message); } };
-  const myDeleteShift = async (shiftId: string) => { try { await deleteDoc(doc(db, 'shifts', shiftId)); setSuccess('Shift deleted'); setTimeout(() => setSuccess(''), 2000); } catch (err: any) { setError(err.message); } };
+  const myAddManualShift = async () => { if (!user || !companyId) return; setAddingManualShift(true); try { const startH = parseInt(manualStartHour) + (manualStartAmPm === 'PM' && parseInt(manualStartHour) !== 12 ? 12 : 0) - (manualStartAmPm === 'AM' && parseInt(manualStartHour) === 12 ? 12 : 0); const endH = parseInt(manualEndHour) + (manualEndAmPm === 'PM' && parseInt(manualEndHour) !== 12 ? 12 : 0) - (manualEndAmPm === 'AM' && parseInt(manualEndHour) === 12 ? 12 : 0); const startDate = new Date(manualDate); startDate.setHours(startH, parseInt(manualStartMinute), 0, 0); const endDate = new Date(manualDate); endDate.setHours(endH, parseInt(manualEndMinute), 0, 0); if (endDate <= startDate) endDate.setDate(endDate.getDate() + 1); const breaksArr = manualBreaks.map(mins => ({ startTime: Timestamp.fromDate(startDate), endTime: Timestamp.fromDate(startDate), durationMinutes: mins, manualEntry: true })); const travelArr = manualTravel.map(mins => ({ startTime: Timestamp.fromDate(startDate), endTime: Timestamp.fromDate(startDate), durationMinutes: mins })); await addDoc(collection(db, 'shifts'), { companyId, userId: user.uid, userEmail: user.email, clockIn: Timestamp.fromDate(startDate), clockOut: Timestamp.fromDate(endDate), status: 'completed', breaks: breaksArr, travelSegments: travelArr, locationHistory: [], manualEntry: true, jobLog: { field1: manualNotes, field2: '', field3: '' } }); setShowAddManualShift(false); setManualBreaks([]); setManualTravel([]); setManualNotes(''); setSuccess('Shift added!'); } catch (err: any) { setError(err.message); } setAddingManualShift(false); };
+  const myAddBreakToShift = async (shiftId: string, mins: number) => { setAddingBreakToShift(true); try { const now = Timestamp.now(); await updateDoc(doc(db, 'shifts', shiftId), { breaks: arrayUnion({ startTime: now, endTime: now, durationMinutes: mins, manualEntry: true }) }); setSuccess(`${mins}m break added`); setTimeout(() => setSuccess(''), 2000); } catch (err: any) { setError(err.message); } setAddingBreakToShift(false); };
+  const myAddTravelToShift = async (shiftId: string) => { if (!user) return; setAddingTravelToShift(true); try { const startH = parseInt(addTravelStartHour) + (addTravelStartAmPm === 'PM' && parseInt(addTravelStartHour) !== 12 ? 12 : 0) - (addTravelStartAmPm === 'AM' && parseInt(addTravelStartHour) === 12 ? 12 : 0); const endH = parseInt(addTravelEndHour) + (addTravelEndAmPm === 'PM' && parseInt(addTravelEndHour) !== 12 ? 12 : 0) - (addTravelEndAmPm === 'AM' && parseInt(addTravelEndHour) === 12 ? 12 : 0); const startDate = new Date(); startDate.setHours(startH, parseInt(addTravelStartMinute), 0, 0); const endDate = new Date(); endDate.setHours(endH, parseInt(addTravelEndMinute), 0, 0); if (endDate <= startDate) endDate.setDate(endDate.getDate() + 1); const mins = Math.round((endDate.getTime() - startDate.getTime()) / 60000); await updateDoc(doc(db, 'shifts', shiftId), { travelSegments: arrayUnion({ startTime: Timestamp.fromDate(startDate), endTime: Timestamp.fromDate(endDate), durationMinutes: mins }) }); setSuccess(`${mins}m travel added`); setTimeout(() => setSuccess(''), 2000); setEditingMyShift(null); setMyEditMode(null); } catch (err: any) { setError(err.message); } setAddingTravelToShift(false); };
+  const myDeleteBreakFromShift = async (shiftId: string, breakIndex: number) => { const shift = myShiftHistory.find(s => s.id === shiftId); if (!shift) return; const breaks = [...(shift.breaks || [])]; breaks.splice(breakIndex, 1); await updateDoc(doc(db, 'shifts', shiftId), { breaks }); setSuccess('Break removed'); setTimeout(() => setSuccess(''), 2000); };
+  const myDeleteTravelFromShift = async (shiftId: string, travelIndex: number) => { const shift = myShiftHistory.find(s => s.id === shiftId); if (!shift) return; const segs = [...(shift.travelSegments || [])]; segs.splice(travelIndex, 1); await updateDoc(doc(db, 'shifts', shiftId), { travelSegments: segs }); setSuccess('Travel removed'); setTimeout(() => setSuccess(''), 2000); };
+  const myDeleteShift = async (shiftId: string) => { await deleteDoc(doc(db, 'shifts', shiftId)); setSuccess('Shift deleted'); setTimeout(() => setSuccess(''), 2000); };
   const toggleMyShift = (id: string) => { const n = new Set(expandedMyShifts); n.has(id) ? n.delete(id) : n.add(id); setExpandedMyShifts(n); };
   const closeMyEditPanel = () => { setEditingMyShift(null); setMyEditMode(null); };
 
@@ -596,11 +516,11 @@ export default function App() {
           {view === 'live' && <LiveView theme={theme} isMobile={isMobile} activeShifts={activeShifts} companySettings={companySettings} getEmployeeName={getEmployeeName} setMapModal={setMapModal} />}
           {view === 'mysheet' && <MyTimesheetView theme={theme} isMobile={isMobile} user={user ? { uid: user.uid } : null} myShift={myShift} myShiftHistory={myShiftHistory} onBreak={onBreak} breakStart={breakStart} myTraveling={myTraveling} myTravelStart={myTravelStart} myField1={myField1} setMyField1={setMyField1} saveMyField1={saveMyField1} myField2={myField2} setMyField2={setMyField2} saveMyField2={saveMyField2} myField3={myField3} setMyField3={setMyField3} saveMyField3={saveMyField3} myCurrentLocation={myCurrentLocation} companySettings={companySettings} employees={employees} myClockIn={myClockIn} myClockOut={myClockOut} clockingIn={clockingIn} clockingOut={clockingOut} myStartBreak={myStartBreak} myEndBreak={myEndBreak} myStartTravel={myStartTravel} myEndTravel={myEndTravel} myAddBreak={myAddBreak} showAddManualShift={showAddManualShift} setShowAddManualShift={setShowAddManualShift} manualDate={manualDate} setManualDate={setManualDate} manualStartHour={manualStartHour} setManualStartHour={setManualStartHour} manualStartMinute={manualStartMinute} setManualStartMinute={setManualStartMinute} manualStartAmPm={manualStartAmPm} setManualStartAmPm={setManualStartAmPm} manualEndHour={manualEndHour} setManualEndHour={setManualEndHour} manualEndMinute={manualEndMinute} setManualEndMinute={setManualEndMinute} manualEndAmPm={manualEndAmPm} setManualEndAmPm={setManualEndAmPm} manualBreaks={manualBreaks} setManualBreaks={setManualBreaks} manualTravel={manualTravel} setManualTravel={setManualTravel} manualNotes={manualNotes} setManualNotes={setManualNotes} addingManualShift={addingManualShift} myAddManualShift={myAddManualShift} expandedMyShifts={expandedMyShifts} toggleMyShift={toggleMyShift} editingMyShift={editingMyShift} setEditingMyShift={setEditingMyShift} myEditMode={myEditMode} setMyEditMode={setMyEditMode} addTravelStartHour={addTravelStartHour} setAddTravelStartHour={setAddTravelStartHour} addTravelStartMinute={addTravelStartMinute} setAddTravelStartMinute={setAddTravelStartMinute} addTravelStartAmPm={addTravelStartAmPm} setAddTravelStartAmPm={setAddTravelStartAmPm} addTravelEndHour={addTravelEndHour} setAddTravelEndHour={setAddTravelEndHour} addTravelEndMinute={addTravelEndMinute} setAddTravelEndMinute={setAddTravelEndMinute} addTravelEndAmPm={addTravelEndAmPm} setAddTravelEndAmPm={setAddTravelEndAmPm} addingTravelToShift={addingTravelToShift} addingBreakToShift={addingBreakToShift} myAddBreakToShift={myAddBreakToShift} myAddTravelToShift={myAddTravelToShift} myDeleteBreakFromShift={myDeleteBreakFromShift} myDeleteTravelFromShift={myDeleteTravelFromShift} myDeleteShift={myDeleteShift} closeMyEditPanel={closeMyEditPanel} updateSettings={updateSettings} setMapModal={setMapModal} />}
           {view === 'employees' && <EmployeesView theme={theme} isMobile={isMobile} user={user ? { uid: user.uid } : null} employees={employees} invites={invites} newEmpEmail={newEmpEmail} setNewEmpEmail={setNewEmpEmail} newEmpName={newEmpName} setNewEmpName={setNewEmpName} inviteEmployee={inviteEmployee} cancelInvite={cancelInvite} sendInviteEmail={sendInviteEmail} copyInviteLink={copyInviteLink} sendingEmail={sendingEmail} updateSettings={updateSettings} setRemoveConfirm={setRemoveConfirm} />}
-          {view === 'timesheets' && <TimesheetsView theme={theme} isMobile={isMobile} companySettings={companySettings} timesheetFilterStart={timesheetFilterStart} setTimesheetFilterStart={setTimesheetFilterStart} timesheetFilterEnd={timesheetFilterEnd} setTimesheetFilterEnd={setTimesheetFilterEnd} setThisWeek={setThisWeek} setLastWeek={setLastWeek} setThisMonth={setThisMonth} setLastMonth={setLastMonth} clearTimesheetFilter={clearTimesheetFilter} getGroupedTimesheets={getGroupedTimesheets} expandedEmployees={expandedEmployees} toggleEmployee={toggleEmployee} expandedWeeks={expandedWeeks} toggleWeek={toggleWeek} finalizingWeek={finalizingWeek} finalizeWeek={finalizeWeek} timesheetEditingShiftId={timesheetEditingShiftId} setTimesheetEditingShiftId={setTimesheetEditingShiftId} timesheetEditMode={timesheetEditMode} setTimesheetEditMode={setTimesheetEditMode} timesheetDeleteConfirmId={timesheetDeleteConfirmId} setTimesheetDeleteConfirmId={setTimesheetDeleteConfirmId} deletingTimesheetShift={deletingTimesheetShift} addingBreakToShift={addingBreakToShift} addingTravelToShift={addingTravelToShift} handleTimesheetAddBreak={handleTimesheetAddBreak} handleTimesheetAddTravel={handleTimesheetAddTravel} handleTimesheetDeleteShift={handleTimesheetDeleteShift} closeTimesheetEditPanel={closeTimesheetEditPanel} setEditShiftModal={setEditShiftModal} setMapModal={setMapModal} expenses={expenses} />}
+          {view === 'timesheets' && <TimesheetsView theme={theme} isMobile={isMobile} companySettings={companySettings} companyId={companyId || ''} timesheetFilterStart={timesheetFilterStart} setTimesheetFilterStart={setTimesheetFilterStart} timesheetFilterEnd={timesheetFilterEnd} setTimesheetFilterEnd={setTimesheetFilterEnd} setThisWeek={setThisWeek} setLastWeek={setLastWeek} setThisMonth={setThisMonth} setLastMonth={setLastMonth} clearTimesheetFilter={clearTimesheetFilter} getGroupedTimesheets={getGroupedTimesheets} expandedEmployees={expandedEmployees} toggleEmployee={toggleEmployee} expandedWeeks={expandedWeeks} toggleWeek={toggleWeek} finalizingWeek={finalizingWeek} finalizeWeek={finalizeWeek} timesheetEditingShiftId={timesheetEditingShiftId} setTimesheetEditingShiftId={setTimesheetEditingShiftId} timesheetEditMode={timesheetEditMode} setTimesheetEditMode={setTimesheetEditMode} timesheetDeleteConfirmId={timesheetDeleteConfirmId} setTimesheetDeleteConfirmId={setTimesheetDeleteConfirmId} deletingTimesheetShift={deletingTimesheetShift} addingBreakToShift={addingBreakToShift} addingTravelToShift={addingTravelToShift} handleTimesheetAddBreak={handleTimesheetAddBreak} handleTimesheetAddTravel={handleTimesheetAddTravel} handleTimesheetDeleteShift={handleTimesheetDeleteShift} closeTimesheetEditPanel={closeTimesheetEditPanel} setEditShiftModal={setEditShiftModal} setMapModal={setMapModal} expenses={expenses} />}
           {view === 'expenses' && <ExpensesView theme={theme} isMobile={isMobile} expenses={expenses} employees={employees} getEmployeeName={getEmployeeName} approveExpense={approveExpense} deleteExpense={deleteExpense} approvingExpense={approvingExpense} deletingExpense={deletingExpense} />}
           {view === 'reports' && <ReportsView theme={theme} isMobile={isMobile} employees={employees} companySettings={companySettings} reportStart={reportStart} setReportStart={setReportStart} reportEnd={reportEnd} setReportEnd={setReportEnd} reportEmp={reportEmp} setReportEmp={setReportEmp} reportData={reportData} genReport={genReport} exportCSV={exportCSV} exportPDF={exportPDF} getEmployeeName={getEmployeeName} expenses={expenses} exportExpensesCSV={exportExpensesCSV} />}
           {view === 'chat' && <ChatView theme={theme} isMobile={isMobile} messages={messages} chatTab={chatTab} setChatTab={setChatTab} newMsg={newMsg} setNewMsg={setNewMsg} sendMsg={sendMsg} getEmployeeName={getEmployeeName} />}
-          {view === 'settings' && <SettingsView theme={theme} isMobile={isMobile} allShifts={allShifts} employees={employees} messages={messages} editingCompanySettings={editingCompanySettings} setEditingCompanySettings={setEditingCompanySettings} saveCompanySettings={saveCompanySettings} savingCompanySettings={savingCompanySettings} cleanupStart={cleanupStart} setCleanupStart={setCleanupStart} cleanupEnd={cleanupEnd} setCleanupEnd={setCleanupEnd} cleanupConfirm={cleanupConfirm} setCleanupConfirm={setCleanupConfirm} cleanup={cleanup} />}
+          {view === 'settings' && <SettingsView theme={theme} isMobile={isMobile} allShifts={allShifts} employees={employees} messages={messages} editingCompanySettings={editingCompanySettings} setEditingCompanySettings={setEditingCompanySettings} saveCompanySettings={saveCompanySettings} savingCompanySettings={savingCompanySettings} cleanupStart={cleanupStart} setCleanupStart={setCleanupStart} cleanupEnd={cleanupEnd} setCleanupEnd={setCleanupEnd} cleanupConfirm={cleanupConfirm} setCleanupConfirm={setCleanupConfirm} cleanup={cleanup} companyId={companyId || ''} />}
         </Suspense>
       </div>
     </main>

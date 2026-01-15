@@ -1,5 +1,5 @@
 // Trackable NZ - Main App Component
-// UPDATED: Fixed header/nav position - they stay fixed, only content scrolls
+// UPDATED: Fixed header with 59px spacer div - header and nav stay locked, only content scrolls
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
@@ -232,17 +232,22 @@ export default function App() {
     );
   }
 
-  // Calculate header height for content offset
-  const headerHeight = 'calc(env(safe-area-inset-top, 16px) + 12px + 24px + 12px)'; // safe area + padding + content + padding
-  const navHeight = 'calc(52px + max(20px, env(safe-area-inset-bottom)))';
+  // Fixed heights - 59px for iPhone safe area (Dynamic Island), 72px for bottom nav
+  const HEADER_HEIGHT = 59;
+  const NAV_HEIGHT = 72;
 
   // Main app with fixed header and nav
   return (
     <div style={{ 
-      minHeight: '100vh', 
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
       background: theme.bg,
-      position: 'relative',
-      overflow: 'hidden'
+      overflow: 'hidden',
+      width: '100%',
+      maxWidth: '100vw'
     }}>
       {/* Toast notification */}
       {toast && (
@@ -264,68 +269,81 @@ export default function App() {
         </div>
       )}
 
-      {/* FIXED Header */}
+      {/* FIXED Header - uses spacer div for reliable positioning */}
       <header style={{
-        position: 'fixed',
+        position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         background: theme.nav,
-        paddingTop: 'calc(env(safe-area-inset-top, 16px) + 12px)',
-        paddingBottom: '12px',
-        paddingLeft: 'max(16px, env(safe-area-inset-left))',
-        paddingRight: 'max(16px, env(safe-area-inset-right))',
+        zIndex: 1000,
         display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        borderBottom: `1px solid ${theme.navBorder}`,
-        zIndex: 1000
+        flexDirection: 'column'
       }}>
-        <h1 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>
-          Trackable NZ
-        </h1>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <button
-            onClick={() => setDark(!dark)}
-            style={{
-              background: 'none',
-              border: 'none',
-              color: theme.textMuted,
-              cursor: 'pointer',
-              fontSize: '18px',
-              padding: '4px'
-            }}
-          >
-            {dark ? '☀️' : '🌙'}
-          </button>
-          <button
-            onClick={() => signOut(auth)}
-            style={{
-              color: theme.textMuted,
-              fontSize: '14px',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer'
-            }}
-          >
-            Sign Out
-          </button>
+        {/* Safe area spacer - fixed 59px, never changes */}
+        <div style={{ 
+          height: `${HEADER_HEIGHT}px`, 
+          minHeight: `${HEADER_HEIGHT}px`, 
+          background: theme.nav,
+          flexShrink: 0
+        }} />
+        {/* Header content */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          paddingLeft: '16px',
+          paddingRight: '16px',
+          paddingTop: '8px',
+          paddingBottom: '12px',
+          borderBottom: `1px solid ${theme.navBorder}`
+        }}>
+          <h1 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>
+            Trackable NZ
+          </h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <button
+              onClick={() => setDark(!dark)}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: theme.textMuted,
+                cursor: 'pointer',
+                fontSize: '18px',
+                padding: '4px'
+              }}
+            >
+              {dark ? '☀️' : '🌙'}
+            </button>
+            <button
+              onClick={() => signOut(auth)}
+              style={{
+                color: theme.textMuted,
+                fontSize: '14px',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer'
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Scrollable content area */}
+      {/* Scrollable content area - positioned between header and nav */}
       <main style={{
-        position: 'fixed',
-        top: headerHeight,
+        position: 'absolute',
+        top: `${HEADER_HEIGHT + 49}px`,
         left: 0,
         right: 0,
-        bottom: navHeight,
+        bottom: `${NAV_HEIGHT}px`,
         overflowY: 'auto',
         overflowX: 'hidden',
         WebkitOverflowScrolling: 'touch',
         background: theme.bg,
-        paddingLeft: 'max(16px, env(safe-area-inset-left))',
-        paddingRight: 'max(16px, env(safe-area-inset-right))',
+        paddingLeft: '16px',
+        paddingRight: '16px',
         paddingTop: '16px',
         paddingBottom: '16px'
       }}>
@@ -460,18 +478,19 @@ export default function App() {
 
       {/* FIXED Bottom navigation */}
       <nav style={{
-        position: 'fixed',
+        position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
+        height: `${NAV_HEIGHT}px`,
         background: theme.nav,
         borderTop: `1px solid ${theme.navBorder}`,
-        paddingBottom: 'max(20px, env(safe-area-inset-bottom))',
-        paddingLeft: 'env(safe-area-inset-left)',
-        paddingRight: 'env(safe-area-inset-right)',
-        zIndex: 1000
+        zIndex: 1000,
+        display: 'flex',
+        flexDirection: 'column'
       }}>
-        <div style={{ display: 'flex' }}>
+        {/* Nav buttons */}
+        <div style={{ display: 'flex', flex: 1 }}>
           {[
             { id: 'clock', label: 'Clock', icon: '⏱️' },
             ...(settings.chatEnabled ? [{ id: 'chat', label: 'Chat', icon: '💬' }] : []),
@@ -483,14 +502,14 @@ export default function App() {
               onClick={() => setView(item.id as ViewType)}
               style={{
                 flex: 1,
-                padding: '12px 0',
+                padding: '8px 0',
                 background: 'none',
                 border: 'none',
                 cursor: 'pointer',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: '4px'
+                gap: '2px'
               }}
             >
               <span style={{ fontSize: '20px' }}>{item.icon}</span>
@@ -504,6 +523,13 @@ export default function App() {
             </button>
           ))}
         </div>
+        {/* Bottom safe area spacer - fixed 20px */}
+        <div style={{ 
+          height: '20px', 
+          minHeight: '20px',
+          background: theme.nav,
+          flexShrink: 0
+        }} />
       </nav>
     </div>
   );

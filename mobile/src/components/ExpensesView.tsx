@@ -253,14 +253,18 @@ export function ExpensesView({
         background: '#000',
         zIndex: 2000,
         display: 'flex',
-        flexDirection: 'column'
+        flexDirection: 'column',
+        overflow: 'hidden',
+        width: '100%',
+        maxWidth: '100vw'
       }}>
         <div style={{
           padding: '16px',
-          paddingTop: 'max(16px, env(safe-area-inset-top))',
+          paddingTop: '75px',
           display: 'flex',
           justifyContent: 'space-between',
-          alignItems: 'center'
+          alignItems: 'center',
+          flexShrink: 0
         }}>
           <button
             onClick={stopCamera}
@@ -302,9 +306,10 @@ export function ExpensesView({
 
         <div style={{
           padding: '24px',
-          paddingBottom: 'max(24px, env(safe-area-inset-bottom))',
+          paddingBottom: '44px',
           display: 'flex',
-          justifyContent: 'center'
+          justifyContent: 'center',
+          flexShrink: 0
         }}>
           {cameraReady && !cameraError && (
             <button

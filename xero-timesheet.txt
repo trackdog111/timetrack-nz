@@ -1,0 +1,35 @@
+
+          'Employee has no pay calendar assigned in Xero'
+        );
+      }
+  
+      // Build timesheet lines from shifts
+>     const timesheetLines = [{
+        earningsRateID: null,
+        numberOfUnits: totalHours
+      }];
+  
+      // Create timesheet in Xero
+      const timesheetPayload = {
+        payrollCalendarID: payCalendarId,
+        employeeID: xeroEmployeeId,
+        startDate: weekStart,
+        endDate: new Date(new Date(weekStart).getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        status: 'Draft',
+>       timesheetLines: timesheetLines
+      };
+  
+      try {
+        const response = await axios.post(
+          'https://api.xero.com/payroll.xro/2.0/Timesheets',
+          { timesheets: [timesheetPayload] },
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Xero-tenant-id': connection.tenantId,
+              'Content-Type': 'application/json',
+              'Accept': 'application/json'
+            }
+          }
+        );
+

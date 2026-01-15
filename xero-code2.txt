@@ -1,0 +1,156 @@
+        }
+      }
+    );
+
+    const employees = response.data.employees || [];
+    
+    return {
+      employees: employees.map((emp: any) => ({
+        xeroId: emp.employeeID,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        email: emp.email
+      }))
+    };
+  });
+
+/**
+ * Export timesheet to Xero
+ */
+export const xeroExportTimesheet = functions
+  .region('australia-southeast1')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { companyId, employeeId, weekStart, shifts, totalHours, xeroEmployeeId } = data;
+    
+    if (!companyId || !employeeId || !weekStart || !shifts || !xeroEmployeeId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    const connectionDoc = await db.collection('xeroConnections').doc(companyId).get();
+    if (!connectionDoc.exists) {
+      throw new functions.https.HttpsError('failed-precondition', 'Xero not connected');
+    }
+
+    const connection = connectionDoc.data()!;
+    const accessToken = await refreshXeroToken(companyId);
+
+    // Get employee's pay calendar from Xero
+    const employeeResponse = await axios.get(
+      `https://api.xero.com/payroll.xro/2.0/Employees/${xeroEmployeeId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Xero-tenant-id': connection.tenantId,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    const xeroEmployee = employeeResponse.data.employee;
+    const payCalendarId = xeroEmployee?.payrollCalendarID;
+
+    if (!payCalendarId) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Employee has no pay calendar assigned in Xero'
+      );
+    }
+
+    // Build timesheet lines from shifts
+    // Group hours by earnings rate (ordinary time)
+    const timesheetLines = [{
+      earningsRateID: null, // Will use default ordinary earnings
+      numberOfUnits: totalHours,
+      // Alternatively, break down by day:
+      // numberOfUnits: shifts.reduce((acc: number, shift: any) => acc + shift.hours, 0)
+    }];
+
+    // Create timesheet in Xero
+    const timesheetPayload = {
+      payrollCalendarID: payCalendarId,
+      employeeID: xeroEmployeeId,
+      startDate: weekStart,
+      endDate: new Date(new Date(weekStart).getTime() + 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      status: 'Draft', // Create as draft so admin can review
+      timesheetLines: timesheetLines
+    };
+
+    try {
+      const response = await axios.post(
+        'https://api.xero.com/payroll.xro/2.0/Timesheets',
+        { timesheets: [timesheetPayload] },
+        {
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+            'Xero-tenant-id': connection.tenantId,
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          }
+        }
+      );
+
+      const createdTimesheet = response.data.timesheets?.[0];
+
+      // Record the export in Firestore
+      await db.collection('xeroExports').add({
+        companyId,
+        employeeId,
+        weekStart,
+        xeroTimesheetId: createdTimesheet?.timesheetID,
+        totalHours,
+        exportedBy: context.auth.uid,
+        exportedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      return {
+        success: true,
+        timesheetId: createdTimesheet?.timesheetID,
+        status: createdTimesheet?.status
+      };
+
+    } catch (error: any) {
+      console.error('Xero timesheet creation error:', error.response?.data || error.message);
+      
+      // Handle specific Xero errors
+      const xeroError = error.response?.data?.problem || error.response?.data?.Message;
+      throw new functions.https.HttpsError(
+        'internal',
+        xeroError || 'Failed to create timesheet in Xero'
+      );
+    }
+  });
+
+/**
+ * Check if timesheet was already exported
+ */
+export const xeroCheckExported = functions
+  .region('australia-southeast1')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { companyId, employeeId, weekStart } = data;
+    
+    const exports = await db.collection('xeroExports')
+      .where('companyId', '==', companyId)
+      .where('employeeId', '==', employeeId)
+      .where('weekStart', '==', weekStart)
+      .limit(1)
+      .get();
+
+    if (exports.empty) {
+      return { exported: false };
+    }
+
+    const exportData = exports.docs[0].data();
+    return {
+      exported: true,
+      exportedAt: exportData.exportedAt?.toDate?.()?.toISOString() || null,
+      xeroTimesheetId: exportData.xeroTimesheetId
+    };
+  });

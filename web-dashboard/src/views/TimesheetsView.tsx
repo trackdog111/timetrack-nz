@@ -1,5 +1,7 @@
+import { useState, useEffect } from 'react';
 import { Shift, Theme, CompanySettings, Location, Expense } from '../shared/types';
 import { getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, fmtDateShort, fmtWeekEnding, getJobLogField, weekDayNames } from '../shared/utils';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 
 interface GroupedWeek {
   weekEnd: Date;
@@ -19,6 +21,7 @@ interface TimesheetsViewProps {
   theme: Theme;
   isMobile: boolean;
   companySettings: CompanySettings;
+  companyId: string;
   timesheetFilterStart: string;
   setTimesheetFilterStart: (v: string) => void;
   timesheetFilterEnd: string;
@@ -57,6 +60,7 @@ export function TimesheetsView({
   theme,
   isMobile,
   companySettings,
+  companyId,
   timesheetFilterStart,
   setTimesheetFilterStart,
   timesheetFilterEnd,
@@ -93,6 +97,53 @@ export function TimesheetsView({
   const styles = {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
     input: { padding: '10px 12px', borderRadius: '8px', border: `1px solid ${theme.inputBorder}`, background: theme.input, color: theme.text, fontSize: '14px', width: '100%', boxSizing: 'border-box' as const }
+  };
+
+  // Xero state
+  const [xeroConnected, setXeroConnected] = useState(false);
+  const [xeroExporting, setXeroExporting] = useState<string | null>(null);
+  const [xeroExported, setXeroExported] = useState<Set<string>>(new Set());
+
+  const functions = getFunctions(undefined, 'australia-southeast1');
+
+  // Check Xero connection status
+  useEffect(() => {
+    async function checkXeroStatus() {
+      if (!companyId) return;
+      try {
+        const xeroGetStatus = httpsCallable<{ companyId: string }, { connected: boolean }>(functions, 'xeroGetStatus');
+        const result = await xeroGetStatus({ companyId });
+        setXeroConnected(result.data.connected);
+      } catch (err) {
+        console.error('Error checking Xero status:', err);
+      }
+    }
+    checkXeroStatus();
+  }, [companyId]);
+
+  // Export to Xero
+  const handleXeroExport = async (empId: string, empEmail: string, weekKey: string, weekEnd: Date, shifts: Shift[], totalMinutes: number) => {
+    const exportKey = `${empEmail}-${weekKey}`;
+    setXeroExporting(exportKey);
+    try {
+      const weekStartDate = new Date(weekEnd);
+      weekStartDate.setDate(weekStartDate.getDate() - 6);
+      
+      const xeroExportTimesheet = httpsCallable<any, { success: boolean }>(functions, 'xeroExportTimesheet');
+      await xeroExportTimesheet({
+        companyId,
+        employeeEmail: empEmail,
+        weekStart: weekStartDate.toISOString().split('T')[0],
+        shifts,
+        totalHours: totalMinutes / 60
+      });
+      setXeroExported(prev => new Set(prev).add(exportKey));
+    } catch (err) {
+      console.error('Xero export error:', err);
+      alert('Failed to export to Xero. Check console for details.');
+    } finally {
+      setXeroExporting(null);
+    }
   };
 
   // Export finalized week as PDF
@@ -351,15 +402,29 @@ export function TimesheetsView({
                               {finalized && <span style={{ fontSize: '11px', color: theme.success }}>✓ Finalized</span>}
                             </div>
                           </div>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <p style={{ color: theme.primary, fontWeight: '700', fontSize: '16px', margin: 0 }}>{fmtDur(totalMinutes)}</p>
                             {finalized && (
-                              <button 
-                                onClick={(e) => { e.stopPropagation(); exportWeekPDF(name, email, weekEnd, shifts); }}
-                                style={{ padding: '6px 12px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
-                              >
-                                Export
-                              </button>
+                              <>
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); exportWeekPDF(name, email, weekEnd, shifts); }}
+                                  style={{ padding: '6px 12px', borderRadius: '6px', background: '#2563eb', color: 'white', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}
+                                >
+                                  Export
+                                </button>
+                                {xeroConnected && !xeroExported.has(`${email}-${weekKey}`) && (
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleXeroExport(empId, email, weekKey, weekEnd, shifts, totalMinutes); }}
+                                    disabled={xeroExporting === `${email}-${weekKey}`}
+                                    style={{ padding: '6px 12px', borderRadius: '6px', background: '#13B5EA', color: 'white', border: 'none', cursor: xeroExporting === `${email}-${weekKey}` ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: '600', opacity: xeroExporting === `${email}-${weekKey}` ? 0.7 : 1 }}
+                                  >
+                                    {xeroExporting === `${email}-${weekKey}` ? '...' : 'Xero'}
+                                  </button>
+                                )}
+                                {xeroExported.has(`${email}-${weekKey}`) && (
+                                  <span style={{ padding: '6px 10px', borderRadius: '6px', background: '#dcfce7', color: '#166534', fontSize: '11px', fontWeight: '600' }}>✓ Xero</span>
+                                )}
+                              </>
                             )}
                             {!finalized && (
                               <button 

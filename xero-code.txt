@@ -1,0 +1,350 @@
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import axios from 'axios';
+
+// Initialize Firebase Admin if not already done
+if (!admin.apps.length) {
+  admin.initializeApp();
+}
+
+const db = admin.firestore();
+
+// Xero credentials - store these in Firebase environment config
+const XERO_CLIENT_ID = '7E18E534BCF5478CA63E6DFCAB04B2D1';
+const XERO_CLIENT_SECRET = 'KD2y9ClwmpsC5xvpBDexCP6okIL4eK39xp2RO3PCOr2aWnF7';
+const XERO_REDIRECT_URI = 'https://timetrack-nz.web.app/xero/callback';
+
+// Xero OAuth scopes
+const XERO_SCOPES = [
+  'openid',
+  'profile',
+  'email',
+  'accounting.transactions',
+  'payroll.employees',
+  'payroll.timesheets',
+  'payroll.settings',
+  'offline_access' // Required for refresh tokens
+].join(' ');
+
+/**
+ * Generate Xero OAuth authorization URL
+ * Called from dashboard to initiate connection
+ */
+export const xeroGetAuthUrl = functions
+  .region('australia-southeast1')
+  .https.onCall(async (data, context) => {
+    // Verify user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { companyId } = data;
+    if (!companyId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Company ID required');
+    }
+
+    // Generate state token for security (prevents CSRF)
+    const state = Buffer.from(JSON.stringify({
+      companyId,
+      userId: context.auth.uid,
+      timestamp: Date.now()
+    })).toString('base64');
+
+    // Store state temporarily for validation on callback
+    await db.collection('xeroAuthStates').doc(state).set({
+      companyId,
+      userId: context.auth.uid,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000) // 10 min expiry
+    });
+
+    // Build authorization URL
+    const authUrl = new URL('https://login.xero.com/identity/connect/authorize');
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('client_id', XERO_CLIENT_ID);
+    authUrl.searchParams.set('redirect_uri', XERO_REDIRECT_URI);
+    authUrl.searchParams.set('scope', XERO_SCOPES);
+    authUrl.searchParams.set('state', state);
+
+    return { authUrl: authUrl.toString() };
+  });
+
+/**
+ * Handle Xero OAuth callback
+ * Exchange authorization code for tokens
+ */
+export const xeroCallback = functions
+  .region('australia-southeast1')
+  .https.onRequest(async (req, res) => {
+    try {
+      const { code, state, error } = req.query;
+
+      // Handle OAuth errors
+      if (error) {
+        console.error('Xero OAuth error:', error);
+        res.redirect(`https://timetrack-nz.web.app/settings?xero_error=${error}`);
+        return;
+      }
+
+      if (!code || !state) {
+        res.redirect('https://timetrack-nz.web.app/settings?xero_error=missing_params');
+        return;
+      }
+
+      // Validate state token
+      const stateDoc = await db.collection('xeroAuthStates').doc(state as string).get();
+      if (!stateDoc.exists) {
+        res.redirect('https://timetrack-nz.web.app/settings?xero_error=invalid_state');
+        return;
+      }
+
+      const stateData = stateDoc.data()!;
+      const { companyId, userId } = stateData;
+
+      // Delete used state token
+      await stateDoc.ref.delete();
+
+      // Exchange code for tokens
+      const tokenResponse = await axios.post(
+        'https://identity.xero.com/connect/token',
+        new URLSearchParams({
+          grant_type: 'authorization_code',
+          code: code as string,
+          redirect_uri: XERO_REDIRECT_URI
+        }).toString(),
+        {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Authorization': `Basic ${Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString('base64')}`
+          }
+        }
+      );
+
+      const { access_token, refresh_token, expires_in } = tokenResponse.data;
+
+      // Get Xero tenant (organization) ID
+      const connectionsResponse = await axios.get('https://api.xero.com/connections', {
+        headers: { 'Authorization': `Bearer ${access_token}` }
+      });
+
+      const connections = connectionsResponse.data;
+      if (!connections || connections.length === 0) {
+        res.redirect('https://timetrack-nz.web.app/settings?xero_error=no_organisation');
+        return;
+      }
+
+      // Use the first connected organization (typically their main one)
+      const xeroTenant = connections[0];
+
+      // Store tokens in Firestore
+      await db.collection('xeroConnections').doc(companyId).set({
+        accessToken: access_token,
+        refreshToken: refresh_token,
+        expiresAt: new Date(Date.now() + expires_in * 1000),
+        tenantId: xeroTenant.tenantId,
+        tenantName: xeroTenant.tenantName,
+        tenantType: xeroTenant.tenantType,
+        connectedBy: userId,
+        connectedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      });
+
+      // Redirect back to dashboard with success
+      res.redirect(`https://timetrack-nz.web.app/settings?xero_connected=true&org=${encodeURIComponent(xeroTenant.tenantName)}`);
+
+    } catch (error: any) {
+      console.error('Xero callback error:', error.response?.data || error.message);
+      res.redirect(`https://timetrack-nz.web.app/settings?xero_error=token_exchange_failed`);
+    }
+  });
+
+/**
+ * Refresh Xero access token
+ * Called automatically when token is about to expire
+ */
+async function refreshXeroToken(companyId: string): Promise<string> {
+  const connectionDoc = await db.collection('xeroConnections').doc(companyId).get();
+  
+  if (!connectionDoc.exists) {
+    throw new Error('No Xero connection found');
+  }
+
+  const connection = connectionDoc.data()!;
+  
+  // Check if token needs refresh (within 5 min of expiry)
+  const expiresAt = connection.expiresAt.toDate();
+  const needsRefresh = expiresAt.getTime() - Date.now() < 5 * 60 * 1000;
+
+  if (!needsRefresh) {
+    return connection.accessToken;
+  }
+
+  // Refresh the token
+  const tokenResponse = await axios.post(
+    'https://identity.xero.com/connect/token',
+    new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: connection.refreshToken
+    }).toString(),
+    {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${Buffer.from(`${XERO_CLIENT_ID}:${XERO_CLIENT_SECRET}`).toString('base64')}`
+      }
+    }
+  );
+
+  const { access_token, refresh_token, expires_in } = tokenResponse.data;
+
+  // Update stored tokens
+  await connectionDoc.ref.update({
+    accessToken: access_token,
+    refreshToken: refresh_token,
+    expiresAt: new Date(Date.now() + expires_in * 1000),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp()
+  });
+
+  return access_token;
+}
+
+/**
+ * Get Xero connection status for a company
+ */
+export const xeroGetStatus = functions
+  .region('australia-southeast1')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { companyId } = data;
+    if (!companyId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Company ID required');
+    }
+
+    const connectionDoc = await db.collection('xeroConnections').doc(companyId).get();
+    
+    if (!connectionDoc.exists) {
+      return { connected: false };
+    }
+
+    const connection = connectionDoc.data()!;
+    
+    return {
+      connected: true,
+      tenantName: connection.tenantName,
+      connectedAt: connection.connectedAt?.toDate?.()?.toISOString() || null
+    };
+  });
+
+/**
+ * Disconnect Xero from a company
+ */
+export const xeroDisconnect = functions
+  .region('australia-southeast1')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { companyId } = data;
+    if (!companyId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Company ID required');
+    }
+
+    await db.collection('xeroConnections').doc(companyId).delete();
+    
+    return { success: true };
+  });
+
+/**
+ * Get Xero employees for mapping
+ */
+export const xeroGetEmployees = functions
+  .region('australia-southeast1')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { companyId } = data;
+    if (!companyId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Company ID required');
+    }
+
+    const connectionDoc = await db.collection('xeroConnections').doc(companyId).get();
+    if (!connectionDoc.exists) {
+      throw new functions.https.HttpsError('failed-precondition', 'Xero not connected');
+    }
+
+    const connection = connectionDoc.data()!;
+    const accessToken = await refreshXeroToken(companyId);
+
+    // Get employees from Xero Payroll NZ API
+    const response = await axios.get(
+      'https://api.xero.com/payroll.xro/2.0/Employees',
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Xero-tenant-id': connection.tenantId,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    const employees = response.data.employees || [];
+    
+    return {
+      employees: employees.map((emp: any) => ({
+        xeroId: emp.employeeID,
+        firstName: emp.firstName,
+        lastName: emp.lastName,
+        email: emp.email
+      }))
+    };
+  });
+
+/**
+ * Export timesheet to Xero
+ */
+export const xeroExportTimesheet = functions
+  .region('australia-southeast1')
+  .https.onCall(async (data, context) => {
+    if (!context.auth) {
+      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+
+    const { companyId, employeeId, weekStart, shifts, totalHours, xeroEmployeeId } = data;
+    
+    if (!companyId || !employeeId || !weekStart || !shifts || !xeroEmployeeId) {
+      throw new functions.https.HttpsError('invalid-argument', 'Missing required fields');
+    }
+
+    const connectionDoc = await db.collection('xeroConnections').doc(companyId).get();
+    if (!connectionDoc.exists) {
+      throw new functions.https.HttpsError('failed-precondition', 'Xero not connected');
+    }
+
+    const connection = connectionDoc.data()!;
+    const accessToken = await refreshXeroToken(companyId);
+
+    // Get employee's pay calendar from Xero
+    const employeeResponse = await axios.get(
+      `https://api.xero.com/payroll.xro/2.0/Employees/${xeroEmployeeId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+          'Xero-tenant-id': connection.tenantId,
+          'Accept': 'application/json'
+        }
+      }
+    );
+
+    const xeroEmployee = employeeResponse.data.employee;
+    const payCalendarId = xeroEmployee?.payrollCalendarID;
+
+    if (!payCalendarId) {
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Employee has no pay calendar assigned in Xero'
+      );

@@ -33,7 +33,7 @@ export function ChatView({
 
   if (!chatEnabled) {
     return (
-      <div style={{ padding: '16px' }}>
+      <div>
         <div style={{ ...styles.card, textAlign: 'center' }}>
           <p style={{ color: theme.textMuted }}>Chat is disabled for your account</p>
         </div>
@@ -48,7 +48,7 @@ export function ChatView({
   );
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 140px)', padding: '16px', paddingBottom: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100%' }}>
       {/* Tab switcher */}
       <div style={{
         display: 'flex',
@@ -91,7 +91,7 @@ export function ChatView({
       </div>
 
       {/* Messages area */}
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: '200px', marginBottom: '16px' }}>
         {filteredMessages.length === 0 ? (
           <div style={{ textAlign: 'center', color: theme.textLight, marginTop: '40px' }}>
             No messages yet. Start the conversation!
@@ -141,14 +141,10 @@ export function ChatView({
 
       {/* Input area */}
       <div style={{
-        padding: '16px 0',
-        paddingBottom: '90px',
-        background: theme.nav,
-        borderTop: `1px solid ${theme.navBorder}`,
-        marginLeft: '-16px',
-        marginRight: '-16px',
-        paddingLeft: '16px',
-        paddingRight: '16px'
+        padding: '16px',
+        background: theme.card,
+        borderRadius: '12px',
+        border: `1px solid ${theme.cardBorder}`
       }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           {newMessage.trim() && (

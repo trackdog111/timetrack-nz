@@ -1,0 +1,5 @@
+2026-01-15T02:08:29.264228251Z D xeroExportTimesheet: Function execution took 5 ms, finished with status code: 204
+2026-01-15T02:08:29.306007045Z D xeroExportTimesheet: Function execution started
+2026-01-15T02:08:29.342150Z D xeroExportTimesheet: {"verifications":{"app":"MISSING","auth":"VALID"},"message":"Callable request verification passed"}
+2026-01-15T02:08:30.234469Z ? xeroExportTimesheet: Employee detail: undefined
+2026-01-15T02:08:30.238138765Z D xeroExportTimesheet: Function execution took 932 ms, finished with status code: 400

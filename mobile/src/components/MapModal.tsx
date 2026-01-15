@@ -192,11 +192,14 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       right: 0, 
       bottom: 0, 
       background: theme.bg, 
-      zIndex: 1000, 
+      zIndex: 2000,
       display: 'flex', 
-      flexDirection: 'column'
+      flexDirection: 'column',
+      overflow: 'hidden',
+      width: '100%',
+      maxWidth: '100vw'
     }}>
-      {/* Safe area spacer */}
+      {/* Safe area spacer - fixed 59px */}
       <div style={{ 
         height: '59px', 
         minHeight: '59px', 
@@ -206,13 +209,12 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       {/* Header */}
       <div style={{ 
         background: theme.card,
-        borderBottom: `1px solid ${theme.cardBorder}`
+        borderBottom: `1px solid ${theme.cardBorder}`,
+        flexShrink: 0
       }}>
         {/* Title + Buttons Row */}
         <div style={{ 
           padding: '12px 16px',
-          paddingLeft: 'max(16px, env(safe-area-inset-left))',
-          paddingRight: 'max(16px, env(safe-area-inset-right))',
           display: 'flex', 
           justifyContent: 'space-between',
           alignItems: 'center'
@@ -255,8 +257,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         {/* Legend Row */}
         <div style={{ 
           padding: '8px 16px 12px 16px',
-          paddingLeft: 'max(16px, env(safe-area-inset-left))',
-          paddingRight: 'max(16px, env(safe-area-inset-right))',
           display: 'flex', 
           gap: '12px', 
           flexWrap: 'wrap', 
@@ -304,7 +304,9 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       {showList && (
         <div style={{ 
           flex: 1,
-          overflowY: 'auto', 
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          WebkitOverflowScrolling: 'touch',
           background: theme.card, 
           borderTop: `1px solid ${theme.cardBorder}` 
         }}>
@@ -317,8 +319,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
                 justifyContent: 'space-between', 
                 alignItems: 'center',
                 padding: '10px 16px',
-                paddingLeft: 'max(16px, env(safe-area-inset-left))',
-                paddingRight: 'max(16px, env(safe-area-inset-right))',
                 background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
                 cursor: 'pointer',
                 borderBottom: `1px solid ${theme.cardBorder}`

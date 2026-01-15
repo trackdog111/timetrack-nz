@@ -272,7 +272,10 @@ function MapModal({
         background: theme.bg, 
         display: 'flex', 
         flexDirection: 'column',
-        zIndex: 1000
+        zIndex: 2000,
+        overflow: 'hidden',
+        width: '100%',
+        maxWidth: '100vw'
       }}
     >
       {/* Safe area spacer */}
@@ -373,7 +376,9 @@ function MapModal({
       {showList && (
         <div style={{ 
           flex: 1,
-          overflowY: 'auto', 
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          WebkitOverflowScrolling: 'touch',
           background: theme.card,
           borderTop: '1px solid ' + theme.cardBorder
         }}>
