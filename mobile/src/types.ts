@@ -143,27 +143,25 @@ export interface Expense {
 }
 
 export type ExpenseCategory = 
-  | 'Mileage'
-  | 'Parking'
   | 'Fuel'
-  | 'Meals'
-  | 'Accommodation'
-  | 'Tools'
+  | 'Mileage'
   | 'Materials'
-  | 'PPE/Safety Gear'
-  | 'Phone/Data'
+  | 'Equipment'
+  | 'Phone'
+  | 'Accommodation'
+  | 'Meals'
+  | 'Parking'
   | 'Other';
 
 export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
-  'Mileage',
-  'Parking',
   'Fuel',
-  'Meals',
-  'Accommodation',
-  'Tools',
+  'Mileage',
   'Materials',
-  'PPE/Safety Gear',
-  'Phone/Data',
+  'Equipment',
+  'Phone',
+  'Accommodation',
+  'Meals',
+  'Parking',
   'Other'
 ];
 
