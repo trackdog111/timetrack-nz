@@ -76,7 +76,7 @@ export function SettingsView({
   const [mappingsError, setMappingsError] = useState<string | null>(null);
 
   // Trackable expense categories
-  const trackableCategories = ['Fuel', 'Mileage', 'Equipment', 'Materials', 'Other'];
+  const trackableCategories = ['Fuel', 'Mileage', 'Materials', 'Equipment', 'Phone', 'Other'];
 
   const functions = getFunctions(undefined, 'australia-southeast1');
 
