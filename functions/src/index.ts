@@ -5,8 +5,5 @@ export {
   xeroDisconnect,
   xeroGetEmployees,
   xeroExportTimesheet,
-  xeroCheckExported,
-  xeroGetReimbursementTypes,
-  xeroSaveExpenseMappings,
-  xeroGetExpenseMappings
+  xeroCheckExported
 } from './xero';

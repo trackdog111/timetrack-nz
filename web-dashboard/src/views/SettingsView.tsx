@@ -29,11 +29,6 @@ interface XeroStatus {
   connectedAt?: string;
 }
 
-interface ReimbursementType {
-  id: string;
-  name: string;
-}
-
 export function SettingsView({
   theme,
   isMobile,
@@ -67,17 +62,6 @@ export function SettingsView({
   const [xeroDisconnecting, setXeroDisconnecting] = useState(false);
   const [xeroError, setXeroError] = useState<string | null>(null);
 
-  // Expense mapping state
-  const [reimbursementTypes, setReimbursementTypes] = useState<ReimbursementType[]>([]);
-  const [expenseMappings, setExpenseMappings] = useState<Record<string, string>>({});
-  const [mappingsLoading, setMappingsLoading] = useState(false);
-  const [mappingsSaving, setMappingsSaving] = useState(false);
-  const [mappingsSuccess, setMappingsSuccess] = useState(false);
-  const [mappingsError, setMappingsError] = useState<string | null>(null);
-
-  // Trackable expense categories
-  const trackableCategories = ['Fuel', 'Mileage', 'Materials', 'Equipment', 'Phone', 'Accommodation', 'Meals', 'Parking', 'Other'];
-
   const functions = getFunctions(undefined, 'australia-southeast1');
 
   // Check for OAuth callback results in URL
@@ -110,11 +94,6 @@ export function SettingsView({
       const xeroGetStatus = httpsCallable<{ companyId: string }, XeroStatus>(functions, 'xeroGetStatus');
       const result = await xeroGetStatus({ companyId });
       setXeroStatus(result.data);
-      
-      // If connected, fetch expense mappings
-      if (result.data.connected) {
-        fetchExpenseMappings();
-      }
     } catch (err: any) {
       console.error('Error fetching Xero status:', err);
     } finally {
@@ -125,71 +104,6 @@ export function SettingsView({
   useEffect(() => {
     fetchXeroStatus();
   }, [companyId]);
-
-  // Fetch expense mappings and reimbursement types
-  const fetchExpenseMappings = async () => {
-    setMappingsLoading(true);
-    setMappingsError(null);
-    try {
-      const xeroGetExpenseMappings = httpsCallable<{ companyId: string }, { mappings: Record<string, string>, reimbursementTypes: ReimbursementType[] }>(functions, 'xeroGetExpenseMappings');
-      const result = await xeroGetExpenseMappings({ companyId });
-      setExpenseMappings(result.data.mappings || {});
-      setReimbursementTypes(result.data.reimbursementTypes || []);
-    } catch (err: any) {
-      console.error('Error fetching expense mappings:', err);
-      setMappingsError('Failed to load expense mappings');
-    } finally {
-      setMappingsLoading(false);
-    }
-  };
-
-  // Refresh reimbursement types from Xero
-  const refreshReimbursementTypes = async () => {
-    setMappingsLoading(true);
-    setMappingsError(null);
-    try {
-      const xeroGetReimbursementTypes = httpsCallable<{ companyId: string }, { reimbursementTypes: ReimbursementType[] }>(functions, 'xeroGetReimbursementTypes');
-      const result = await xeroGetReimbursementTypes({ companyId });
-      setReimbursementTypes(result.data.reimbursementTypes || []);
-    } catch (err: any) {
-      console.error('Error fetching reimbursement types:', err);
-      setMappingsError('Failed to fetch reimbursement types from Xero. Make sure you have reimbursement types configured in Xero Payroll > Pay Items > Reimbursements');
-    } finally {
-      setMappingsLoading(false);
-    }
-  };
-
-  // Save expense mappings
-  const saveExpenseMappings = async () => {
-    setMappingsSaving(true);
-    setMappingsError(null);
-    setMappingsSuccess(false);
-    try {
-      // Remove empty mappings
-      const cleanMappings = Object.fromEntries(
-        Object.entries(expenseMappings).filter(([_, v]) => v)
-      );
-      
-      const xeroSaveExpenseMappings = httpsCallable<{ companyId: string, mappings: Record<string, string> }, { success: boolean }>(functions, 'xeroSaveExpenseMappings');
-      await xeroSaveExpenseMappings({ companyId, mappings: cleanMappings });
-      setMappingsSuccess(true);
-      setTimeout(() => setMappingsSuccess(false), 3000);
-    } catch (err: any) {
-      console.error('Error saving expense mappings:', err);
-      setMappingsError('Failed to save expense mappings');
-    } finally {
-      setMappingsSaving(false);
-    }
-  };
-
-  // Handle mapping change
-  const handleMappingChange = (category: string, xeroTypeId: string) => {
-    setExpenseMappings(prev => ({
-      ...prev,
-      [category]: xeroTypeId
-    }));
-    setMappingsSuccess(false);
-  };
 
   // Connect to Xero
   const handleXeroConnect = async () => {
@@ -215,8 +129,6 @@ export function SettingsView({
       const xeroDisconnect = httpsCallable<{ companyId: string }, { success: boolean }>(functions, 'xeroDisconnect');
       await xeroDisconnect({ companyId });
       setXeroStatus({ connected: false });
-      setReimbursementTypes([]);
-      setExpenseMappings({});
     } catch (err: any) {
       console.error('Error disconnecting Xero:', err);
       setXeroError('Failed to disconnect Xero');
@@ -404,73 +316,6 @@ export function SettingsView({
                   </p>
                 </div>
               </div>
-            </div>
-
-            {/* Expense Category Mapping Section */}
-            <div style={{ marginBottom: '20px', padding: '16px', background: theme.cardAlt, borderRadius: '8px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                <h4 style={{ color: theme.text, fontSize: '14px', margin: 0, fontWeight: '600' }}>💰 Expense Category Mapping</h4>
-                <button
-                  onClick={refreshReimbursementTypes}
-                  disabled={mappingsLoading}
-                  style={{ padding: '6px 12px', borderRadius: '6px', background: 'transparent', color: theme.primary, border: `1px solid ${theme.primary}`, cursor: mappingsLoading ? 'not-allowed' : 'pointer', fontSize: '12px', fontWeight: '500', opacity: mappingsLoading ? 0.7 : 1 }}
-                >
-                  {mappingsLoading ? 'Loading...' : 'Refresh from Xero'}
-                </button>
-              </div>
-              
-              <p style={{ color: theme.textMuted, fontSize: '12px', marginBottom: '12px' }}>
-                Map your Trackable expense categories to Xero reimbursement types. Unmapped categories will be skipped during export.
-              </p>
-
-              {mappingsError && (
-                <div style={{ marginBottom: '12px', padding: '10px', background: theme.dangerBg, borderRadius: '6px' }}>
-                  <p style={{ color: theme.danger, fontSize: '12px', margin: 0 }}>{mappingsError}</p>
-                </div>
-              )}
-
-              {mappingsSuccess && (
-                <div style={{ marginBottom: '12px', padding: '10px', background: theme.successBg, borderRadius: '6px' }}>
-                  <p style={{ color: theme.success, fontSize: '12px', margin: 0 }}>Mappings saved successfully!</p>
-                </div>
-              )}
-
-              {reimbursementTypes.length === 0 ? (
-                <div style={{ padding: '12px', background: '#fff8e0', borderRadius: '6px', marginBottom: '12px' }}>
-                  <p style={{ color: '#92600c', fontSize: '12px', margin: 0 }}>
-                    <strong>No reimbursement types found in Xero.</strong><br />
-                    Set them up in Xero: Payroll → Pay Items → Reimbursements → Add
-                  </p>
-                </div>
-              ) : (
-                <div style={{ marginBottom: '12px' }}>
-                  {trackableCategories.map(category => (
-                    <div key={category} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                      <span style={{ color: theme.text, fontSize: '13px', width: '80px', flexShrink: 0 }}>{category}</span>
-                      <select
-                        value={expenseMappings[category] || ''}
-                        onChange={(e) => handleMappingChange(category, e.target.value)}
-                        style={{ ...styles.input, flex: 1, fontSize: '13px', padding: '8px 10px' }}
-                      >
-                        <option value="">-- Not mapped --</option>
-                        {reimbursementTypes.map(type => (
-                          <option key={type.id} value={type.id}>{type.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {reimbursementTypes.length > 0 && (
-                <button
-                  onClick={saveExpenseMappings}
-                  disabled={mappingsSaving}
-                  style={{ ...styles.btn, fontSize: '13px', padding: '8px 16px', opacity: mappingsSaving ? 0.7 : 1 }}
-                >
-                  {mappingsSaving ? 'Saving...' : 'Save Mappings'}
-                </button>
-              )}
             </div>
 
             <p style={{ color: theme.textMuted, fontSize: '13px', marginBottom: '16px' }}>

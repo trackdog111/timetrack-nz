@@ -268,126 +268,7 @@ export const xeroGetEmployees = functions
   });
 
 // ============================================================
-// NEW: Fetch Reimbursement Types from Xero
-// ============================================================
-export const xeroGetReimbursementTypes = functions
-  .region('australia-southeast1')
-  .https.onCall(async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
-    }
-
-    const { companyId } = data;
-    if (!companyId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Company ID required');
-    }
-
-    const connectionDoc = await db.collection('xeroConnections').doc(companyId).get();
-    if (!connectionDoc.exists) {
-      throw new functions.https.HttpsError('failed-precondition', 'Xero not connected');
-    }
-
-    const connection = connectionDoc.data()!;
-    const accessToken = await refreshXeroToken(companyId);
-
-    try {
-      const response = await axios.get(
-        'https://api.xero.com/payroll.xro/2.0/Reimbursements',
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Xero-tenant-id': connection.tenantId,
-            'Accept': 'application/json'
-          }
-        }
-      );
-
-      const reimbursementTypes = response.data.reimbursements || [];
-      
-      // Store in Firestore for reference
-      await db.collection('xeroConnections').doc(companyId).update({
-        reimbursementTypes: reimbursementTypes.map((r: any) => ({
-          id: r.reimbursementID,
-          name: r.name,
-          accountID: r.expenseAccountID
-        })),
-        reimbursementTypesUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      return {
-        reimbursementTypes: reimbursementTypes.map((r: any) => ({
-          id: r.reimbursementID,
-          name: r.name
-        }))
-      };
-
-    } catch (error: any) {
-      console.error('Error fetching reimbursement types:', error.response?.data || error.message);
-      throw new functions.https.HttpsError(
-        'internal',
-        'Failed to fetch reimbursement types from Xero. Make sure you have reimbursement types configured in Xero Payroll > Pay Items > Reimbursements'
-      );
-    }
-  });
-
-// ============================================================
-// NEW: Save Expense Category Mappings
-// ============================================================
-export const xeroSaveExpenseMappings = functions
-  .region('australia-southeast1')
-  .https.onCall(async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
-    }
-
-    const { companyId, mappings } = data;
-    if (!companyId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Company ID required');
-    }
-
-    if (!mappings || typeof mappings !== 'object') {
-      throw new functions.https.HttpsError('invalid-argument', 'Mappings object required');
-    }
-
-    // mappings format: { "Fuel": "uuid-from-xero", "Mileage": "uuid-from-xero" }
-    await db.collection('xeroConnections').doc(companyId).update({
-      expenseMappings: mappings,
-      expenseMappingsUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    return { success: true };
-  });
-
-// ============================================================
-// NEW: Get Expense Category Mappings
-// ============================================================
-export const xeroGetExpenseMappings = functions
-  .region('australia-southeast1')
-  .https.onCall(async (data, context) => {
-    if (!context.auth) {
-      throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
-    }
-
-    const { companyId } = data;
-    if (!companyId) {
-      throw new functions.https.HttpsError('invalid-argument', 'Company ID required');
-    }
-
-    const connectionDoc = await db.collection('xeroConnections').doc(companyId).get();
-    if (!connectionDoc.exists) {
-      return { mappings: {}, reimbursementTypes: [] };
-    }
-
-    const connection = connectionDoc.data()!;
-    
-    return {
-      mappings: connection.expenseMappings || {},
-      reimbursementTypes: connection.reimbursementTypes || []
-    };
-  });
-
-// ============================================================
-// UPDATED: Export Timesheet with Proper Expense Mapping
+// Export Timesheet to Xero
 // ============================================================
 export const xeroExportTimesheet = functions
   .region('australia-southeast1')
@@ -409,9 +290,6 @@ export const xeroExportTimesheet = functions
 
     const connection = connectionDoc.data()!;
     const accessToken = await refreshXeroToken(companyId);
-
-    // Get expense mappings from connection doc
-    const expenseMappings = connection.expenseMappings || {};
 
     // Get all employees and find by email
     const employeesResponse = await axios.get(
@@ -528,194 +406,13 @@ export const xeroExportTimesheet = functions
 
       const createdTimesheet = response.data.timesheets?.[0] || response.data.timesheet;
 
-      // Query approved expenses for this employee within the week
-      const weekEndDate = new Date(endDate);
-      weekEndDate.setHours(23, 59, 59, 999);
-      
-      const expensesSnapshot = await db.collection('expenses')
-        .where('companyId', '==', companyId)
-        .where('odEmail', '==', employeeEmail)
-        .where('status', '==', 'approved')
-        .get();
-
-      // Filter expenses that fall within this week
-      const weekExpenses = expensesSnapshot.docs.filter(doc => {
-        const expense = doc.data();
-        const expenseDate = expense.date?.toDate?.();
-        if (!expenseDate) return false;
-        return expenseDate >= startDateObj && expenseDate <= weekEndDate;
-      });
-
-      let expensesExported = 0;
-      let expensesTotal = 0;
-      let expensesSkipped = 0;
-      const skippedCategories: string[] = [];
-
-      if (weekExpenses.length > 0) {
-        // Check if we have any mappings configured
-        const hasMappings = Object.keys(expenseMappings).length > 0;
-        
-        if (!hasMappings) {
-          console.log('No expense mappings configured - skipping expense export');
-          expensesSkipped = weekExpenses.length;
-        } else {
-          // Find a Draft PayRun for this pay period to add reimbursements
-          try {
-            const payRunsResponse = await axios.get(
-              'https://api.xero.com/payroll.xro/2.0/PayRuns?status=Draft',
-              {
-                headers: {
-                  'Authorization': `Bearer ${accessToken}`,
-                  'Xero-tenant-id': connection.tenantId,
-                  'Accept': 'application/json'
-                }
-              }
-            );
-
-            const payRuns = payRunsResponse.data.payRuns || [];
-            
-            // Find a draft pay run for this calendar
-            let targetPayRun = payRuns.find((pr: any) => 
-              pr.payrollCalendarID === payCalendarId && 
-              pr.payRunStatus === 'Draft'
-            );
-
-            if (targetPayRun) {
-              console.log('Found draft PayRun:', targetPayRun.payRunID);
-              
-              // Get payslips for this pay run
-              const paySlipsResponse = await axios.get(
-                `https://api.xero.com/payroll.xro/2.0/PaySlips?PayRunID=${targetPayRun.payRunID}`,
-                {
-                  headers: {
-                    'Authorization': `Bearer ${accessToken}`,
-                    'Xero-tenant-id': connection.tenantId,
-                    'Accept': 'application/json'
-                  }
-                }
-              );
-
-              const paySlips = paySlipsResponse.data.paySlips || [];
-              
-              // Find the payslip for this employee
-              const employeePaySlip = paySlips.find((ps: any) => 
-                ps.employeeID === xeroEmployeeId
-              );
-
-              if (employeePaySlip) {
-                console.log('Found employee PaySlip:', employeePaySlip.paySlipID);
-
-                // Get full payslip details
-                const paySlipDetailResponse = await axios.get(
-                  `https://api.xero.com/payroll.xro/2.0/PaySlips/${employeePaySlip.paySlipID}`,
-                  {
-                    headers: {
-                      'Authorization': `Bearer ${accessToken}`,
-                      'Xero-tenant-id': connection.tenantId,
-                      'Accept': 'application/json'
-                    }
-                  }
-                );
-
-                const fullPaySlip = paySlipDetailResponse.data.paySlip || paySlipDetailResponse.data.paySlips?.[0];
-                const existingReimbursementLines = fullPaySlip?.reimbursementLines || [];
-
-                // Build reimbursement lines for expenses that have mappings
-                const newReimbursementLines: any[] = [];
-                
-                for (const expenseDoc of weekExpenses) {
-                  const expense = expenseDoc.data();
-                  const category = expense.category || 'Other';
-                  const mappedReimbursementId = expenseMappings[category];
-                  
-                  if (mappedReimbursementId) {
-                    newReimbursementLines.push({
-                      reimbursementTypeID: mappedReimbursementId,
-                      description: `${category}: ${expense.note || 'Reimbursement'}`,
-                      amount: expense.amount || 0
-                    });
-                  } else {
-                    // No mapping for this category
-                    expensesSkipped++;
-                    if (!skippedCategories.includes(category)) {
-                      skippedCategories.push(category);
-                    }
-                    console.log(`Skipping expense - no mapping for category: ${category}`);
-                  }
-                }
-
-                if (newReimbursementLines.length > 0) {
-                  // Combine existing and new reimbursement lines
-                  const allReimbursementLines = [
-                    ...existingReimbursementLines,
-                    ...newReimbursementLines
-                  ];
-
-                  // Update the payslip with reimbursement lines
-                  try {
-                    await axios.put(
-                      `https://api.xero.com/payroll.xro/2.0/PaySlips/${employeePaySlip.paySlipID}`,
-                      {
-                        reimbursementLines: allReimbursementLines
-                      },
-                      {
-                        headers: {
-                          'Authorization': `Bearer ${accessToken}`,
-                          'Xero-tenant-id': connection.tenantId,
-                          'Content-Type': 'application/json',
-                          'Accept': 'application/json'
-                        }
-                      }
-                    );
-
-                    console.log('Successfully added reimbursements to payslip');
-
-                    // Mark exported expenses
-                    for (const expenseDoc of weekExpenses) {
-                      const expense = expenseDoc.data();
-                      const category = expense.category || 'Other';
-                      
-                      // Only mark as exported if it had a mapping
-                      if (expenseMappings[category]) {
-                        expensesExported++;
-                        expensesTotal += expense.amount || 0;
-
-                        await expenseDoc.ref.update({
-                          xeroExported: true,
-                          xeroExportedAt: admin.firestore.FieldValue.serverTimestamp(),
-                          xeroExportedWeek: weekStart,
-                          xeroPaySlipID: employeePaySlip.paySlipID
-                        });
-                      }
-                    }
-
-                  } catch (paySlipError: any) {
-                    console.error('Error updating payslip with reimbursements:', 
-                      paySlipError.response?.data || paySlipError.message);
-                  }
-                }
-              } else {
-                console.log('No payslip found for employee in this PayRun');
-              }
-            } else {
-              console.log('No draft PayRun found for this pay calendar - expenses will need to be added manually or when a PayRun is created');
-            }
-          } catch (reimbError: any) {
-            console.error('Error processing expenses:', reimbError.response?.data || reimbError.message);
-          }
-        }
-      }
-
+      // Log export record
       await db.collection('xeroExports').add({
         companyId,
         employeeEmail,
         weekStart,
         xeroTimesheetId: createdTimesheet?.timesheetID,
         totalHours: roundedHours,
-        expensesExported,
-        expensesTotal,
-        expensesSkipped,
-        skippedCategories,
         exportedBy: context.auth.uid,
         exportedAt: admin.firestore.FieldValue.serverTimestamp()
       });
@@ -723,11 +420,7 @@ export const xeroExportTimesheet = functions
       return {
         success: true,
         timesheetId: createdTimesheet?.timesheetID,
-        status: createdTimesheet?.status,
-        expensesExported,
-        expensesTotal,
-        expensesSkipped,
-        skippedCategories: skippedCategories.length > 0 ? skippedCategories : undefined
+        status: createdTimesheet?.status
       };
 
     } catch (error: any) {
