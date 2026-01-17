@@ -28,6 +28,7 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [signupName, setSignupName] = useState('');
   const [companyName, setCompanyName] = useState('');  // NEW: For signup
+  const [selectedPlan, setSelectedPlan] = useState('starter');  // From URL ?plan=
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [view, setView] = useState('live');
@@ -113,6 +114,16 @@ export default function App() {
 
   useEffect(() => { const handleResize = () => setIsMobile(window.innerWidth < 768); window.addEventListener('resize', handleResize); return () => window.removeEventListener('resize', handleResize); }, []);
   
+  // Read plan from URL ?plan=starter|team|business
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const plan = params.get('plan');
+    if (plan && ['starter', 'team', 'business'].includes(plan)) {
+      setSelectedPlan(plan);
+      setAuthMode('signup');  // Auto-switch to signup if coming from landing page
+    }
+  }, []);
+
   // Auth state listener
   useEffect(() => { return onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); }); }, []);
 
@@ -257,13 +268,19 @@ export default function App() {
     try { 
       const cred = await createUserWithEmailAndPassword(auth, email, password); 
       
+      // Calculate trial end date (30 days from now)
+      const trialEndsAt = new Date();
+      trialEndsAt.setDate(trialEndsAt.getDate() + 30);
+      
       // Create company document first
       const companyRef = await addDoc(collection(db, 'companies'), {
         name: companyName.trim(),
         ownerId: cred.user.uid,
         ownerEmail: email,
         createdAt: Timestamp.now(),
-        plan: 'free',
+        plan: selectedPlan,  // starter, team, or business
+        status: 'trial',
+        trialEndsAt: Timestamp.fromDate(trialEndsAt),
         settings: defaultCompanySettings
       });
       
@@ -279,6 +296,9 @@ export default function App() {
 
       // Set local state
       setCompanyId(companyRef.id);
+      
+      // Clear URL params
+      window.history.replaceState({}, '', window.location.pathname);
     } catch (err: any) { setError(err.message); } 
   };
 
@@ -464,6 +484,7 @@ export default function App() {
         <h1 style={{ color: theme.text, textAlign: 'center', marginBottom: '8px' }}>Trackable NZ</h1>
         <p style={{ color: theme.textMuted, textAlign: 'center', marginBottom: '24px' }}>Manager Dashboard</p>
         {authMode !== 'reset' && (<div style={{ display: 'flex', marginBottom: '24px', background: theme.cardAlt, borderRadius: '8px', padding: '4px' }}><button onClick={() => { setAuthMode('signin'); setError(''); }} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: '600', background: authMode === 'signin' ? theme.primary : 'transparent', color: authMode === 'signin' ? 'white' : theme.text }}>Sign In</button><button onClick={() => { setAuthMode('signup'); setError(''); }} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: '600', background: authMode === 'signup' ? theme.primary : 'transparent', color: authMode === 'signup' ? 'white' : theme.text }}>Sign Up</button></div>)}
+        {authMode === 'signup' && <div style={{ background: theme.successBg, color: theme.success, padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', textAlign: 'center' }}>🎉 30-day free trial • No credit card required<br/><span style={{ fontSize: '12px', opacity: 0.8 }}>{selectedPlan.charAt(0).toUpperCase() + selectedPlan.slice(1)} plan selected</span></div>}
         {error && <p style={{ color: theme.danger, marginBottom: '16px', fontSize: '14px' }}>{error}</p>}
         {success && <p style={{ color: theme.success, marginBottom: '16px', fontSize: '14px' }}>{success}</p>}
         <form onSubmit={authMode === 'signin' ? handleLogin : authMode === 'signup' ? handleSignUp : handleResetPassword}>
@@ -471,7 +492,7 @@ export default function App() {
           {authMode === 'signup' && <input placeholder="Your Name" value={signupName} onChange={e => setSignupName(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />}
           <input placeholder="Email" type="email" value={email} onChange={e => setEmail(e.target.value)} style={{ ...styles.input, marginBottom: '12px' }} />
           {authMode !== 'reset' && <input placeholder="Password" type="password" value={password} onChange={e => setPassword(e.target.value)} style={{ ...styles.input, marginBottom: '16px' }} />}
-          <button type="submit" style={{ ...styles.btn, width: '100%' }}>{authMode === 'signin' ? 'Sign In' : authMode === 'signup' ? 'Create Account' : 'Send Reset Email'}</button>
+          <button type="submit" style={{ ...styles.btn, width: '100%' }}>{authMode === 'signin' ? 'Sign In' : authMode === 'signup' ? 'Start Free Trial' : 'Send Reset Email'}</button>
         </form>
         {authMode === 'signin' && <button onClick={() => setAuthMode('reset')} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', marginTop: '16px', display: 'block', width: '100%', textAlign: 'center' }}>Forgot password?</button>}
         {authMode === 'reset' && <button onClick={() => setAuthMode('signin')} style={{ background: 'none', border: 'none', color: theme.primary, cursor: 'pointer', fontSize: '14px', marginTop: '16px', display: 'block', width: '100%', textAlign: 'center' }}>← Back</button>}
