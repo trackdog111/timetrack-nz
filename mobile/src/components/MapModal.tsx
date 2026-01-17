@@ -42,7 +42,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     breakEnd: 'Break End'
   };
   
-  // Build all points array with display coordinates
   const allPoints: { loc: Location, type: string, displayLat: number, displayLng: number }[] = [];
   
   if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
@@ -59,10 +58,8 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     allPoints.push({ loc: clockOutLocation, type: 'clockOut', displayLat: clockOutLocation.latitude, displayLng: clockOutLocation.longitude });
   }
   
-  // Sort by timestamp
   allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
   
-  // Offset overlapping points for visibility
   const offsetAmount = 0.00002;
   for (let i = 1; i < allPoints.length; i++) {
     for (let j = 0; j < i; j++) {
@@ -78,7 +75,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     }
   }
   
-  // Load Leaflet library
   useEffect(() => {
     const injectCustomCSS = () => {
       if (!document.getElementById('mobile-marker-css')) {
@@ -112,7 +108,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     document.head.appendChild(script);
   }, []);
   
-  // Initialize map when Leaflet is loaded
   useEffect(() => {
     if (!leafletLoaded || !mapRef.current || allPoints.length === 0) return;
     
@@ -123,7 +118,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       mapInstanceRef.current.remove();
     }
     
-    // Calculate bounds
     const lats = allPoints.map(p => p.displayLat);
     const lngs = allPoints.map(p => p.displayLng);
     const minLat = Math.min(...lats);
@@ -138,12 +132,10 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     
     mapInstanceRef.current = map;
     
-    // Add tile layer
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '© OSM'
     }).addTo(map);
     
-    // Draw path line connecting all points
     if (allPoints.length > 1) {
       const pathCoords = allPoints.map(p => [p.loc.latitude, p.loc.longitude]);
       L.polyline(pathCoords, { 
@@ -154,7 +146,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       }).addTo(map);
     }
     
-    // Add markers for each point
     allPoints.forEach((point, index) => {
       const color = markerColors[point.type] || markerColors.tracking;
       const label = markerLabels[point.type] || 'Location';
@@ -172,7 +163,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         .bindPopup(`<b>${label}</b><br>${time}`);
     });
     
-    // Cleanup on unmount
     return () => {
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
@@ -183,13 +173,10 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
   
   if (allPoints.length === 0) return null;
   
-  // Get unique point types for legend
   const uniqueTypes = [...new Set(allPoints.map(p => p.type))];
   
-  // Use React Portal to render outside normal DOM hierarchy - bulletproof for iOS WebView
   const modalContent = (
     <>
-      {/* Inject body styles to prevent background scroll */}
       <style>{`
         body.modal-open {
           overflow: hidden !important;
@@ -199,7 +186,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         }
       `}</style>
       
-      {/* Main modal container - flexbox column, full viewport */}
       <div style={{ 
         display: 'flex',
         flexDirection: 'column',
@@ -212,7 +198,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
         zIndex: 9999,
         overflow: 'hidden'
       }}>
-        {/* STICKY Header with safe area */}
         <header style={{ 
           position: 'sticky',
           top: 0,
@@ -222,7 +207,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
           paddingTop: 'env(safe-area-inset-top, 47px)',
           borderBottom: `1px solid ${theme.cardBorder}`
         }}>
-          {/* Header content with title and buttons */}
           <div style={{ 
             padding: '12px 16px',
             display: 'flex', 
@@ -264,7 +248,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
             </div>
           </div>
           
-          {/* Legend Row */}
           <div style={{ 
             padding: '8px 16px 12px 16px',
             display: 'flex', 
@@ -288,7 +271,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
           </div>
         </header>
         
-        {/* Map Container - flex:1 takes remaining space */}
         <div 
           ref={mapRef} 
           style={{ 
@@ -310,7 +292,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
           )}
         </div>
         
-        {/* Location List (toggleable) - scrollable section */}
         {showList && (
           <div style={{ 
             flex: 1,
@@ -363,7 +344,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     </>
   );
 
-  // Add/remove body class when modal opens/closes
   useEffect(() => {
     document.body.classList.add('modal-open');
     return () => {
@@ -371,6 +351,5 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     };
   }, []);
 
-  // Render via Portal to document.body - bypasses parent z-index stacking context
   return createPortal(modalContent, document.body);
 }

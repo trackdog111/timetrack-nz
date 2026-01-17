@@ -1,5 +1,5 @@
 // Trackable NZ - Main App Component
-// UPDATED: Fixed header with env(safe-area-inset-top) - header and nav stay locked, only content scrolls
+// BUILD 33: Flexbox/sticky pattern for iOS Capacitor - NO position:fixed/absolute on layout elements
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
@@ -232,304 +232,287 @@ export default function App() {
     );
   }
 
-  // Fixed height for bottom nav
-  const NAV_HEIGHT = 72;
-
-  // Main app with fixed header and nav
+  // Main app with flexbox/sticky layout (iOS Capacitor safe)
   return (
-    <div style={{ 
-      position: 'fixed',
-      top: 0,
-      left: 0,
-      right: 0,
-      bottom: 0,
-      background: theme.bg,
-      overflow: 'hidden',
-      width: '100%',
-      maxWidth: '100vw'
-    }}>
-      {/* Toast notification */}
-      {toast && (
-        <div style={{
-          position: 'fixed',
-          top: '120px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          background: theme.success,
-          color: 'white',
-          padding: '12px 24px',
-          borderRadius: '12px',
-          fontWeight: '600',
-          fontSize: '14px',
-          zIndex: 1001,
-          boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
-        }}>
-          {toast}
-        </div>
-      )}
+    <>
+      {/* Global styles for body - prevents rubber banding */}
+      <style>{`
+        html, body, #root {
+          margin: 0;
+          padding: 0;
+          height: 100%;
+          overflow: hidden;
+          position: fixed;
+          width: 100%;
+        }
+      `}</style>
 
-      {/* FIXED Header - uses spacer div for reliable positioning */}
-      <header style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        background: theme.nav,
-        zIndex: 1000,
+      {/* Main container - flexbox column, full viewport height */}
+      <div style={{ 
         display: 'flex',
-        flexDirection: 'column'
-      }}>
-        {/* Safe area spacer - uses env() for dynamic safe area */}
-        <div style={{ 
-          height: 'env(safe-area-inset-top, 59px)', 
-          minHeight: 'env(safe-area-inset-top, 59px)', 
-          background: theme.nav,
-          flexShrink: 0
-        }} />
-        {/* Header content */}
-        <div style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          paddingLeft: '16px',
-          paddingRight: '16px',
-          paddingTop: '8px',
-          paddingBottom: '12px',
-          borderBottom: `1px solid ${theme.navBorder}`
-        }}>
-          <h1 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>
-            Trackable NZ
-          </h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <button
-              onClick={() => setDark(!dark)}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: theme.textMuted,
-                cursor: 'pointer',
-                fontSize: '18px',
-                padding: '4px'
-              }}
-            >
-              {dark ? '☀️' : '🌙'}
-            </button>
-            <button
-              onClick={() => signOut(auth)}
-              style={{
-                color: theme.textMuted,
-                fontSize: '14px',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer'
-              }}
-            >
-              Sign Out
-            </button>
-          </div>
-        </div>
-      </header>
-
-      {/* Scrollable content area - positioned between header and nav */}
-      <main style={{
-        position: 'absolute',
-        top: 'calc(env(safe-area-inset-top, 59px) + 49px)',
-        left: 0,
-        right: 0,
-        bottom: `${NAV_HEIGHT}px`,
-        overflowY: 'auto',
-        overflowX: 'hidden',
-        WebkitOverflowScrolling: 'touch',
+        flexDirection: 'column',
+        height: '100dvh',
+        width: '100%',
         background: theme.bg,
-        paddingLeft: '16px',
-        paddingRight: '16px',
-        paddingTop: '16px',
-        paddingBottom: '16px'
+        overflow: 'hidden'
       }}>
-        {/* Error banner */}
-        {error && (
+        {/* Toast notification - this CAN be position:fixed as it's an overlay */}
+        {toast && (
           <div style={{
-            marginBottom: '16px',
-            padding: '12px 16px',
-            background: theme.dangerBg,
-            border: `1px solid ${theme.danger}`,
-            borderRadius: '12px'
+            position: 'fixed',
+            top: 'calc(env(safe-area-inset-top, 47px) + 70px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            background: theme.success,
+            color: 'white',
+            padding: '12px 24px',
+            borderRadius: '12px',
+            fontWeight: '600',
+            fontSize: '14px',
+            zIndex: 9999,
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)'
           }}>
-            <p style={{ color: theme.danger, fontSize: '14px', margin: 0 }}>{error}</p>
-            <button
-              onClick={() => setError('')}
-              style={{
-                color: theme.danger,
-                fontSize: '12px',
-                background: 'none',
-                border: 'none',
-                textDecoration: 'underline',
-                cursor: 'pointer',
-                marginTop: '4px'
-              }}
-            >
-              Dismiss
-            </button>
+            {toast}
           </div>
         )}
 
-        {/* Views */}
-        {view === 'clock' && (
-          <ClockView
-            theme={theme}
-            currentShift={currentShift}
-            currentLocation={currentLocation}
-            locationHistory={currentShift?.locationHistory || []}
-            onBreak={onBreak}
-            currentBreakStart={currentBreakStart}
-            traveling={traveling}
-            currentTravelStart={currentTravelStart}
-            settings={settings}
-            paidRestMinutes={labels.paidRestMinutes}
-            photoVerification={settings.photoVerification || false}
-            onClockIn={clockIn}
-            clockingIn={clockingIn}
-            onClockOut={handleClockOut}
-            onStartBreak={startBreak}
-            onEndBreak={endBreak}
-            onStartTravel={startTravel}
-            onEndTravel={endTravel}
-            onAddPresetBreak={addPresetBreak}
-            onDeleteBreak={deleteBreak}
-            onAddManualShift={addManualShift}
-            showToast={showToast}
-            autoTravelEnabled={settings.autoTravel || false}
-            autoTravelActive={autoTravelActive}
-            field1={field1}
-            field2={field2}
-            field3={field3}
-            setField1={setField1}
-            setField2={setField2}
-            setField3={setField3}
-            onSaveFields={saveFields}
-            labels={labels}
-          />
-        )}
-
-        {view === 'joblog' && (
-          <JobLogView
-            theme={theme}
-            currentShift={currentShift}
-            field1={field1}
-            field2={field2}
-            field3={field3}
-            setField1={setField1}
-            setField2={setField2}
-            setField3={setField3}
-            onSave={saveFields}
-            onShareToChat={sendJobUpdate}
-            labels={labels}
-            requireNotes={settings.requireNotes}
-            showToast={showToast}
-          />
-        )}
-
-        {view === 'chat' && (
-          <ChatView
-            theme={theme}
-            messages={messages}
-            newMessage={newMessage}
-            setNewMessage={setNewMessage}
-            chatTab={chatTab}
-            setChatTab={setChatTab}
-            onSendMessage={sendMessage}
-            userId={user.uid}
-            chatEnabled={settings.chatEnabled}
-            labels={labels}
-          />
-        )}
-
-        {view === 'history' && (
-          <HistoryView
-            theme={theme}
-            shiftHistory={shiftHistory}
-            onAddTravelToShift={addTravelToShift}
-            onAddBreakToShift={addBreakToShift}
-            onDeleteBreakFromShift={deleteBreakFromShift}
-            onDeleteTravelFromShift={deleteTravelFromShift}
-            onEditShift={editShift}
-            onDeleteShift={deleteShift}
-            showToast={showToast}
-            paidRestMinutes={labels.paidRestMinutes}
-            payWeekEndDay={labels.payWeekEndDay}
-          />
-        )}
-
-        {/* Expenses View */}
-        {view === 'expenses' && (
-          <ExpensesView
-            theme={theme}
-            expenses={expenses}
-            loading={expensesLoading}
-            submitting={expenseSubmitting}
-            onSubmitExpense={submitExpense}
-            onUpdateExpense={updateExpense}
-            onDeleteExpense={deleteExpense}
-            showToast={showToast}
-          />
-        )}
-      </main>
-
-      {/* FIXED Bottom navigation */}
-      <nav style={{
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: `${NAV_HEIGHT}px`,
-        background: theme.nav,
-        borderTop: `1px solid ${theme.navBorder}`,
-        zIndex: 1000,
-        display: 'flex',
-        flexDirection: 'column'
-      }}>
-        {/* Nav buttons */}
-        <div style={{ display: 'flex', flex: 1 }}>
-          {[
-            { id: 'clock', label: 'Clock', icon: '⏱️' },
-            ...(settings.chatEnabled ? [{ id: 'chat', label: 'Chat', icon: '💬' }] : []),
-            { id: 'expenses', label: 'Expenses', icon: '🧾' },
-            { id: 'history', label: 'History', icon: '📋' }
-          ].map(item => (
-            <button
-              key={item.id}
-              onClick={() => setView(item.id as ViewType)}
-              style={{
-                flex: 1,
-                padding: '8px 0',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                gap: '2px'
-              }}
-            >
-              <span style={{ fontSize: '20px' }}>{item.icon}</span>
-              <span style={{
-                fontSize: '11px',
-                color: view === item.id ? theme.primary : theme.textMuted,
-                fontWeight: view === item.id ? '600' : '400'
-              }}>
-                {item.label}
-              </span>
-            </button>
-          ))}
-        </div>
-        {/* Bottom safe area spacer */}
-        <div style={{ 
-          height: 'env(safe-area-inset-bottom, 20px)', 
-          minHeight: 'env(safe-area-inset-bottom, 20px)',
+        {/* STICKY Header */}
+        <header style={{
+          position: 'sticky',
+          top: 0,
           background: theme.nav,
-          flexShrink: 0
-        }} />
-      </nav>
-    </div>
+          zIndex: 100,
+          flexShrink: 0,
+          paddingTop: 'env(safe-area-inset-top, 47px)'
+        }}>
+          {/* Header content */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            paddingLeft: '16px',
+            paddingRight: '16px',
+            paddingTop: '8px',
+            paddingBottom: '12px',
+            borderBottom: `1px solid ${theme.navBorder}`
+          }}>
+            <h1 style={{ color: theme.text, fontSize: '18px', fontWeight: '600', margin: 0 }}>
+              Trackable NZ
+            </h1>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <button
+                onClick={() => setDark(!dark)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: theme.textMuted,
+                  cursor: 'pointer',
+                  fontSize: '18px',
+                  padding: '4px'
+                }}
+              >
+                {dark ? '☀️' : '🌙'}
+              </button>
+              <button
+                onClick={() => signOut(auth)}
+                style={{
+                  color: theme.textMuted,
+                  fontSize: '14px',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer'
+                }}
+              >
+                Sign Out
+              </button>
+            </div>
+          </div>
+        </header>
+
+        {/* Scrollable content area - flex:1 takes remaining space */}
+        <main style={{
+          flex: 1,
+          overflowY: 'auto',
+          overflowX: 'hidden',
+          WebkitOverflowScrolling: 'touch',
+          background: theme.bg,
+          padding: '16px'
+        }}>
+          {/* Error banner */}
+          {error && (
+            <div style={{
+              marginBottom: '16px',
+              padding: '12px 16px',
+              background: theme.dangerBg,
+              border: `1px solid ${theme.danger}`,
+              borderRadius: '12px'
+            }}>
+              <p style={{ color: theme.danger, fontSize: '14px', margin: 0 }}>{error}</p>
+              <button
+                onClick={() => setError('')}
+                style={{
+                  color: theme.danger,
+                  fontSize: '12px',
+                  background: 'none',
+                  border: 'none',
+                  textDecoration: 'underline',
+                  cursor: 'pointer',
+                  marginTop: '4px'
+                }}
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
+          {/* Views */}
+          {view === 'clock' && (
+            <ClockView
+              theme={theme}
+              currentShift={currentShift}
+              currentLocation={currentLocation}
+              locationHistory={currentShift?.locationHistory || []}
+              onBreak={onBreak}
+              currentBreakStart={currentBreakStart}
+              traveling={traveling}
+              currentTravelStart={currentTravelStart}
+              settings={settings}
+              paidRestMinutes={labels.paidRestMinutes}
+              photoVerification={settings.photoVerification || false}
+              onClockIn={clockIn}
+              clockingIn={clockingIn}
+              onClockOut={handleClockOut}
+              onStartBreak={startBreak}
+              onEndBreak={endBreak}
+              onStartTravel={startTravel}
+              onEndTravel={endTravel}
+              onAddPresetBreak={addPresetBreak}
+              onDeleteBreak={deleteBreak}
+              onAddManualShift={addManualShift}
+              showToast={showToast}
+              autoTravelEnabled={settings.autoTravel || false}
+              autoTravelActive={autoTravelActive}
+              field1={field1}
+              field2={field2}
+              field3={field3}
+              setField1={setField1}
+              setField2={setField2}
+              setField3={setField3}
+              onSaveFields={saveFields}
+              labels={labels}
+            />
+          )}
+
+          {view === 'joblog' && (
+            <JobLogView
+              theme={theme}
+              currentShift={currentShift}
+              field1={field1}
+              field2={field2}
+              field3={field3}
+              setField1={setField1}
+              setField2={setField2}
+              setField3={setField3}
+              onSave={saveFields}
+              onShareToChat={sendJobUpdate}
+              labels={labels}
+              requireNotes={settings.requireNotes}
+              showToast={showToast}
+            />
+          )}
+
+          {view === 'chat' && (
+            <ChatView
+              theme={theme}
+              messages={messages}
+              newMessage={newMessage}
+              setNewMessage={setNewMessage}
+              chatTab={chatTab}
+              setChatTab={setChatTab}
+              onSendMessage={sendMessage}
+              userId={user.uid}
+              chatEnabled={settings.chatEnabled}
+              labels={labels}
+            />
+          )}
+
+          {view === 'history' && (
+            <HistoryView
+              theme={theme}
+              shiftHistory={shiftHistory}
+              onAddTravelToShift={addTravelToShift}
+              onAddBreakToShift={addBreakToShift}
+              onDeleteBreakFromShift={deleteBreakFromShift}
+              onDeleteTravelFromShift={deleteTravelFromShift}
+              onEditShift={editShift}
+              onDeleteShift={deleteShift}
+              showToast={showToast}
+              paidRestMinutes={labels.paidRestMinutes}
+              payWeekEndDay={labels.payWeekEndDay}
+            />
+          )}
+
+          {/* Expenses View */}
+          {view === 'expenses' && (
+            <ExpensesView
+              theme={theme}
+              expenses={expenses}
+              loading={expensesLoading}
+              submitting={expenseSubmitting}
+              onSubmitExpense={submitExpense}
+              onUpdateExpense={updateExpense}
+              onDeleteExpense={deleteExpense}
+              showToast={showToast}
+            />
+          )}
+        </main>
+
+        {/* STICKY Bottom navigation */}
+        <nav style={{
+          position: 'sticky',
+          bottom: 0,
+          background: theme.nav,
+          borderTop: `1px solid ${theme.navBorder}`,
+          zIndex: 100,
+          flexShrink: 0,
+          paddingBottom: 'env(safe-area-inset-bottom, 20px)'
+        }}>
+          {/* Nav buttons */}
+          <div style={{ display: 'flex' }}>
+            {[
+              { id: 'clock', label: 'Clock', icon: '⏱️' },
+              ...(settings.chatEnabled ? [{ id: 'chat', label: 'Chat', icon: '💬' }] : []),
+              { id: 'expenses', label: 'Expenses', icon: '🧾' },
+              { id: 'history', label: 'History', icon: '📋' }
+            ].map(item => (
+              <button
+                key={item.id}
+                onClick={() => setView(item.id as ViewType)}
+                style={{
+                  flex: 1,
+                  padding: '8px 0',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '2px'
+                }}
+              >
+                <span style={{ fontSize: '20px' }}>{item.icon}</span>
+                <span style={{
+                  fontSize: '11px',
+                  color: view === item.id ? theme.primary : theme.textMuted,
+                  fontWeight: view === item.id ? '600' : '400'
+                }}>
+                  {item.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        </nav>
+      </div>
+    </>
   );
 }
