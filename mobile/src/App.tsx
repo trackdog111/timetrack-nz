@@ -1,5 +1,5 @@
 // Trackable NZ - Main App Component
-// UPDATED: Fixed header with 59px spacer div - header and nav stay locked, only content scrolls
+// UPDATED: Fixed header with env(safe-area-inset-top) - header and nav stay locked, only content scrolls
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
@@ -232,8 +232,7 @@ export default function App() {
     );
   }
 
-  // Fixed heights - 59px for iPhone safe area (Dynamic Island), 72px for bottom nav
-  const HEADER_HEIGHT = 59;
+  // Fixed height for bottom nav
   const NAV_HEIGHT = 72;
 
   // Main app with fixed header and nav
@@ -280,10 +279,10 @@ export default function App() {
         display: 'flex',
         flexDirection: 'column'
       }}>
-        {/* Safe area spacer - fixed 59px, never changes */}
+        {/* Safe area spacer - uses env() for dynamic safe area */}
         <div style={{ 
-          height: `${HEADER_HEIGHT}px`, 
-          minHeight: `${HEADER_HEIGHT}px`, 
+          height: 'env(safe-area-inset-top, 59px)', 
+          minHeight: 'env(safe-area-inset-top, 59px)', 
           background: theme.nav,
           flexShrink: 0
         }} />
@@ -334,7 +333,7 @@ export default function App() {
       {/* Scrollable content area - positioned between header and nav */}
       <main style={{
         position: 'absolute',
-        top: `${HEADER_HEIGHT + 49}px`,
+        top: 'calc(env(safe-area-inset-top, 59px) + 49px)',
         left: 0,
         right: 0,
         bottom: `${NAV_HEIGHT}px`,
@@ -523,10 +522,10 @@ export default function App() {
             </button>
           ))}
         </div>
-        {/* Bottom safe area spacer - fixed 20px */}
+        {/* Bottom safe area spacer */}
         <div style={{ 
-          height: '20px', 
-          minHeight: '20px',
+          height: 'env(safe-area-inset-bottom, 20px)', 
+          minHeight: 'env(safe-area-inset-bottom, 20px)',
           background: theme.nav,
           flexShrink: 0
         }} />
