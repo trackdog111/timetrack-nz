@@ -1,3 +1,4 @@
+// Xero integration functions
 export {
   xeroGetAuthUrl,
   xeroCallback,
@@ -7,3 +8,9 @@ export {
   xeroExportTimesheet,
   xeroCheckExported
 } from './xero';
+
+// Stripe billing functions
+export {
+  stripeCreateCheckout,
+  stripeWebhook
+} from './stripe';

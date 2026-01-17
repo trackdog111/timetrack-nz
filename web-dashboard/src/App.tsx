@@ -18,6 +18,13 @@ const ChatView = lazy(() => import('./views/ChatView').then(m => ({ default: m.C
 const SettingsView = lazy(() => import('./views/SettingsView').then(m => ({ default: m.SettingsView })));
 const ExpensesView = lazy(() => import('./views/ExpensesView').then(m => ({ default: m.ExpensesView })));
 
+// Stripe Price IDs (Sandbox)
+const STRIPE_PRICES: Record<string, string> = {
+  starter: 'price_1SgOk9GhfEWT71HcsjwPtwLl',
+  team: 'price_1SgOlCGhfEWT71HcePBlIBnX',
+  business: 'price_1SgOmmGhfEWT71HcwAGqz1QA'
+};
+
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -28,7 +35,8 @@ export default function App() {
   const [authMode, setAuthMode] = useState<'signin' | 'signup' | 'reset'>('signin');
   const [signupName, setSignupName] = useState('');
   const [companyName, setCompanyName] = useState('');  // NEW: For signup
-  const [selectedPlan, setSelectedPlan] = useState('starter');  // From URL ?plan=
+  const [selectedPlan, setSelectedPlan] = useState('starter');  // From URL ?plan=oh hopefully i havent fucked something should i send this too you to make sure
+  
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [view, setView] = useState('live');
@@ -105,9 +113,15 @@ export default function App() {
   const [timesheetDeleteConfirmId, setTimesheetDeleteConfirmId] = useState<string | null>(null);
   const [deletingTimesheetShift, setDeletingTimesheetShift] = useState(false);
 
-  // NEW: Multi-tenant state
+  // Multi-tenant state
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [loadingCompany, setLoadingCompany] = useState(false);
+  
+  // NEW: Subscription state
+  const [subscriptionStatus, setSubscriptionStatus] = useState<'trial' | 'active' | 'past_due' | 'canceled'>('trial');
+  const [trialEndsAt, setTrialEndsAt] = useState<Date | null>(null);
+  const [companyPlan, setCompanyPlan] = useState<string>('starter');
+  const [redirectingToStripe, setRedirectingToStripe] = useState(false);
 
   const theme = dark ? darkTheme : lightTheme;
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
@@ -122,12 +136,21 @@ export default function App() {
       setSelectedPlan(plan);
       setAuthMode('signup');  // Auto-switch to signup if coming from landing page
     }
+    // Check for Stripe success/cancel
+    const stripeStatus = params.get('stripe');
+    if (stripeStatus === 'success') {
+      setSuccess('Payment successful! Your account is now active.');
+      window.history.replaceState({}, '', window.location.pathname);
+    } else if (stripeStatus === 'cancel') {
+      setError('Payment cancelled. Your trial continues.');
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   // Auth state listener
   useEffect(() => { return onAuthStateChanged(auth, (u) => { setUser(u); setLoading(false); }); }, []);
 
-  // NEW: Load companyId - check both companies (owner) and employees
+  // Load companyId - check both companies (owner) and employees
   useEffect(() => {
     if (!user) {
       setCompanyId(null);
@@ -162,7 +185,7 @@ export default function App() {
     loadCompanyId();
   }, [user]);
 
-  // UPDATED: All Firestore listeners now filter by companyId
+  // All Firestore listeners now filter by companyId
   useEffect(() => { 
     if (!user || !companyId) return; 
     return onSnapshot(
@@ -203,7 +226,7 @@ export default function App() {
     ); 
   }, [user, companyId]);
 
-  // NEW: Expenses listener
+  // Expenses listener
   useEffect(() => { 
     if (!user || !companyId) return; 
     return onSnapshot(
@@ -212,7 +235,7 @@ export default function App() {
     ); 
   }, [user, companyId]);
 
-  // UPDATED: Company settings now stored in companies/{companyId}
+  // UPDATED: Company settings + subscription status listener
   useEffect(() => { 
     if (!user || !companyId) return; 
     return onSnapshot(doc(db, 'companies', companyId), (snap) => { 
@@ -221,6 +244,13 @@ export default function App() {
         const settings = data.settings as CompanySettings || defaultCompanySettings;
         setCompanySettings({ ...defaultCompanySettings, ...settings }); 
         setEditingCompanySettings({ ...defaultCompanySettings, ...settings }); 
+        
+        // Load subscription data
+        setSubscriptionStatus(data.status || 'trial');
+        setCompanyPlan(data.plan || 'starter');
+        if (data.trialEndsAt?.toDate) {
+          setTrialEndsAt(data.trialEndsAt.toDate());
+        }
       } 
     }); 
   }, [user, companyId]);
@@ -237,6 +267,57 @@ export default function App() {
     gpsIntervalRef.current = setInterval(trackLocation, 10 * 60 * 1000);
     return () => { if (gpsIntervalRef.current) { clearInterval(gpsIntervalRef.current); gpsIntervalRef.current = null; } };
   }, [user, myShift?.id]);
+
+  // Calculate trial days remaining
+  const getTrialDaysRemaining = (): number => {
+    if (!trialEndsAt) return 0;
+    const now = new Date();
+    const diff = trialEndsAt.getTime() - now.getTime();
+    return Math.max(0, Math.ceil(diff / (1000 * 60 * 60 * 24)));
+  };
+
+  // Check if trial is expired
+  const isTrialExpired = (): boolean => {
+    if (subscriptionStatus !== 'trial') return false;
+    if (!trialEndsAt) return false;
+    return new Date() > trialEndsAt;
+  };
+
+  // Redirect to Stripe Checkout
+  const handleAddPayment = async () => {
+    if (!companyId || !user) return;
+    setRedirectingToStripe(true);
+    
+    try {
+      const priceId = STRIPE_PRICES[companyPlan] || STRIPE_PRICES.starter;
+      
+      // Call Firebase Function to create Stripe Checkout session
+      const response = await fetch('https://australia-southeast1-timetrack-nz.cloudfunctions.net/stripeCreateCheckout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          priceId,
+          companyId,
+          customerEmail: user.email,
+          successUrl: `${window.location.origin}?stripe=success`,
+          cancelUrl: `${window.location.origin}?stripe=cancel`
+        })
+      });
+      
+      const data = await response.json();
+      
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        setError('Failed to create checkout session');
+        setRedirectingToStripe(false);
+      }
+    } catch (err: any) {
+      console.error('Stripe redirect error:', err);
+      setError('Failed to redirect to payment');
+      setRedirectingToStripe(false);
+    }
+  };
 
   const getMyCurrentLocation = (): Promise<Location | null> => {
     return new Promise((resolve) => {
@@ -258,7 +339,7 @@ export default function App() {
 
   const handleLogin = async (e: React.FormEvent) => { e.preventDefault(); try { await signInWithEmailAndPassword(auth, email, password); } catch (err: any) { setError(err.message); } };
   
-  // UPDATED: Signup now creates a company first, then employee with companyId
+  // Signup now creates a company first, then employee with companyId
   const handleSignUp = async (e: React.FormEvent) => { 
     e.preventDefault(); 
     if (!companyName.trim()) {
@@ -286,7 +367,7 @@ export default function App() {
       
       // Create employee with companyId
       await setDoc(doc(db, 'employees', cred.user.uid), { 
-        companyId: companyRef.id,  // NEW: Link to company
+        companyId: companyRef.id,
         email, 
         name: signupName, 
         role: 'manager', 
@@ -307,7 +388,7 @@ export default function App() {
 
   const updateSettings = async (empId: string, updates: Partial<EmployeeSettings>) => { const ref = doc(db, 'employees', empId); const snap = await getDoc(ref); await updateDoc(ref, { settings: { ...(snap.data()?.settings || defaultSettings), ...updates } }); setSuccess('Updated!'); setTimeout(() => setSuccess(''), 2000); };
   
-  // UPDATED: Save to companies/{companyId} instead of company/settings
+  // Save to companies/{companyId} instead of company/settings
   const saveCompanySettings = async () => { 
     if (!companyId) return;
     setSavingCompanySettings(true); 
@@ -319,12 +400,12 @@ export default function App() {
     finally { setSavingCompanySettings(false); } 
   };
 
-  // UPDATED: Include companyId in invite
+  // Include companyId in invite
   const inviteEmployee = async (e: React.FormEvent) => { 
     e.preventDefault(); 
     if (!newEmpEmail || !companyId) return; 
     await addDoc(collection(db, 'invites'), { 
-      companyId,  // NEW
+      companyId,
       email: newEmpEmail.toLowerCase(), 
       name: newEmpName, 
       status: 'pending', 
@@ -351,7 +432,7 @@ export default function App() {
   const exportCSV = () => { if (!reportData.length) return; const rows = [['Date','Employee','In','Out','Worked','Paid','Unpaid','Travel']]; reportData.forEach(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const t = calcTravel(sh.travelSegments || []); rows.push([fmtDateShort(sh.clockIn), getEmployeeName(sh.userId, sh.userEmail), fmtTime(sh.clockIn), sh.clockOut ? fmtTime(sh.clockOut) : '-', fmtDur((h*60)-b.unpaid), b.paid+'m', b.unpaid+'m', t+'m']); }); const csv = rows.map(r => r.join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `timetrack-${reportStart}-${reportEnd}.csv`; a.click(); };
   const exportPDF = () => { if (!reportData.length) return; let total = 0, tPaid = 0, tUnpaid = 0; const rows = reportData.map(sh => { const h = getHours(sh.clockIn, sh.clockOut); const b = calcBreaks(sh.breaks || [], h, companySettings.paidRestMinutes); const worked = (h*60) - b.unpaid; total += worked; tPaid += b.paid; tUnpaid += b.unpaid; return `<tr><td>${fmtDateShort(sh.clockIn)}</td><td>${getEmployeeName(sh.userId, sh.userEmail)}</td><td>${fmtTime(sh.clockIn)}</td><td>${sh.clockOut ? fmtTime(sh.clockOut) : '-'}</td><td>${fmtDur(worked)}</td><td>${b.paid}m</td><td>${b.unpaid}m</td></tr>`; }).join(''); const html = `<!DOCTYPE html><html><head><style>body{font-family:Arial;padding:20px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px}th{background:#1e40af;color:white}</style></head><body><h1>TimeTrack Report</h1><p>${reportStart} to ${reportEnd}</p><table><tr><th>Date</th><th>Employee</th><th>In</th><th>Out</th><th>Worked</th><th>Paid</th><th>Unpaid</th></tr>${rows}</table><h3>Total: ${fmtDur(total)}, ${tPaid}m paid, ${tUnpaid}m unpaid</h3></body></html>`; const w = window.open('', '_blank'); if (w) { w.document.write(html); w.document.close(); w.print(); } };
 
-  // NEW: Expense functions
+  // Expense functions
   const approveExpense = async (expenseId: string) => {
     if (!user) return;
     setApprovingExpense(expenseId);
@@ -426,17 +507,33 @@ export default function App() {
   const saveMyField2 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field2': myField2 }); setSuccess('Saved!'); setTimeout(() => setSuccess(''), 1500); };
   const saveMyField3 = async () => { if (!myShift) return; await updateDoc(doc(db, 'shifts', myShift.id), { 'jobLog.field3': myField3 }); setSuccess('Saved!'); setTimeout(() => setSuccess(''), 1500); };
 
-  const myAddManualShift = async () => { if (!user || !companyId) return; setAddingManualShift(true); try { const startH = parseInt(manualStartHour) + (manualStartAmPm === 'PM' && parseInt(manualStartHour) !== 12 ? 12 : 0) - (manualStartAmPm === 'AM' && parseInt(manualStartHour) === 12 ? 12 : 0); const endH = parseInt(manualEndHour) + (manualEndAmPm === 'PM' && parseInt(manualEndHour) !== 12 ? 12 : 0) - (manualEndAmPm === 'AM' && parseInt(manualEndHour) === 12 ? 12 : 0); const startDate = new Date(manualDate); startDate.setHours(startH, parseInt(manualStartMinute), 0, 0); const endDate = new Date(manualDate); endDate.setHours(endH, parseInt(manualEndMinute), 0, 0); if (endDate <= startDate) endDate.setDate(endDate.getDate() + 1); const breaksArr = manualBreaks.map(mins => ({ startTime: Timestamp.fromDate(startDate), endTime: Timestamp.fromDate(startDate), durationMinutes: mins, manualEntry: true })); const travelArr = manualTravel.map(mins => ({ startTime: Timestamp.fromDate(startDate), endTime: Timestamp.fromDate(startDate), durationMinutes: mins })); await addDoc(collection(db, 'shifts'), { companyId, userId: user.uid, userEmail: user.email, clockIn: Timestamp.fromDate(startDate), clockOut: Timestamp.fromDate(endDate), status: 'completed', breaks: breaksArr, travelSegments: travelArr, locationHistory: [], manualEntry: true, jobLog: { field1: manualNotes, field2: '', field3: '' } }); setShowAddManualShift(false); setManualBreaks([]); setManualTravel([]); setManualNotes(''); setSuccess('Shift added!'); } catch (err: any) { setError(err.message); } setAddingManualShift(false); };
-  const myAddBreakToShift = async (shiftId: string, mins: number) => { setAddingBreakToShift(true); try { const now = Timestamp.now(); await updateDoc(doc(db, 'shifts', shiftId), { breaks: arrayUnion({ startTime: now, endTime: now, durationMinutes: mins, manualEntry: true }) }); setSuccess(`${mins}m break added`); setTimeout(() => setSuccess(''), 2000); } catch (err: any) { setError(err.message); } setAddingBreakToShift(false); };
-  const myAddTravelToShift = async (shiftId: string) => { if (!user) return; setAddingTravelToShift(true); try { const startH = parseInt(addTravelStartHour) + (addTravelStartAmPm === 'PM' && parseInt(addTravelStartHour) !== 12 ? 12 : 0) - (addTravelStartAmPm === 'AM' && parseInt(addTravelStartHour) === 12 ? 12 : 0); const endH = parseInt(addTravelEndHour) + (addTravelEndAmPm === 'PM' && parseInt(addTravelEndHour) !== 12 ? 12 : 0) - (addTravelEndAmPm === 'AM' && parseInt(addTravelEndHour) === 12 ? 12 : 0); const startDate = new Date(); startDate.setHours(startH, parseInt(addTravelStartMinute), 0, 0); const endDate = new Date(); endDate.setHours(endH, parseInt(addTravelEndMinute), 0, 0); if (endDate <= startDate) endDate.setDate(endDate.getDate() + 1); const mins = Math.round((endDate.getTime() - startDate.getTime()) / 60000); await updateDoc(doc(db, 'shifts', shiftId), { travelSegments: arrayUnion({ startTime: Timestamp.fromDate(startDate), endTime: Timestamp.fromDate(endDate), durationMinutes: mins }) }); setSuccess(`${mins}m travel added`); setTimeout(() => setSuccess(''), 2000); setEditingMyShift(null); setMyEditMode(null); } catch (err: any) { setError(err.message); } setAddingTravelToShift(false); };
-  const myDeleteBreakFromShift = async (shiftId: string, breakIndex: number) => { const shift = myShiftHistory.find(s => s.id === shiftId); if (!shift) return; const breaks = [...(shift.breaks || [])]; breaks.splice(breakIndex, 1); await updateDoc(doc(db, 'shifts', shiftId), { breaks }); setSuccess('Break removed'); setTimeout(() => setSuccess(''), 2000); };
-  const myDeleteTravelFromShift = async (shiftId: string, travelIndex: number) => { const shift = myShiftHistory.find(s => s.id === shiftId); if (!shift) return; const segs = [...(shift.travelSegments || [])]; segs.splice(travelIndex, 1); await updateDoc(doc(db, 'shifts', shiftId), { travelSegments: segs }); setSuccess('Travel removed'); setTimeout(() => setSuccess(''), 2000); };
-  const myDeleteShift = async (shiftId: string) => { await deleteDoc(doc(db, 'shifts', shiftId)); setSuccess('Shift deleted'); setTimeout(() => setSuccess(''), 2000); };
-  const toggleMyShift = (id: string) => { const n = new Set(expandedMyShifts); n.has(id) ? n.delete(id) : n.add(id); setExpandedMyShifts(n); };
+  const toggleMyShift = (id: string) => { setExpandedMyShifts(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
+  const toggleEmployee = (email: string) => { setExpandedEmployees(prev => { const next = new Set(prev); if (next.has(email)) next.delete(email); else next.add(email); return next; }); };
+  const toggleWeek = (key: string) => { setExpandedWeeks(prev => { const next = new Set(prev); if (next.has(key)) next.delete(key); else next.add(key); return next; }); };
   const closeMyEditPanel = () => { setEditingMyShift(null); setMyEditMode(null); };
 
-  const toggleEmployee = (id: string) => { const n = new Set(expandedEmployees); n.has(id) ? n.delete(id) : n.add(id); setExpandedEmployees(n); };
-  const toggleWeek = (k: string) => { const n = new Set(expandedWeeks); n.has(k) ? n.delete(k) : n.add(k); setExpandedWeeks(n); };
+  const myAddManualShift = async () => {
+    if (!user || !companyId) return;
+    setAddingManualShift(true);
+    try {
+      const startHour24 = manualStartAmPm === 'PM' && manualStartHour !== '12' ? parseInt(manualStartHour) + 12 : (manualStartAmPm === 'AM' && manualStartHour === '12' ? 0 : parseInt(manualStartHour));
+      const endHour24 = manualEndAmPm === 'PM' && manualEndHour !== '12' ? parseInt(manualEndHour) + 12 : (manualEndAmPm === 'AM' && manualEndHour === '12' ? 0 : parseInt(manualEndHour));
+      const clockIn = new Date(manualDate); clockIn.setHours(startHour24, parseInt(manualStartMinute), 0, 0);
+      const clockOut = new Date(manualDate); clockOut.setHours(endHour24, parseInt(manualEndMinute), 0, 0);
+      if (clockOut <= clockIn) clockOut.setDate(clockOut.getDate() + 1);
+      const breaks = manualBreaks.map(mins => ({ startTime: Timestamp.fromDate(clockIn), endTime: Timestamp.fromDate(clockIn), durationMinutes: mins, manualEntry: true }));
+      const travelSegments = manualTravel.map(mins => ({ startTime: Timestamp.fromDate(clockIn), endTime: Timestamp.fromDate(clockIn), durationMinutes: mins }));
+      await addDoc(collection(db, 'shifts'), { companyId, userId: user.uid, userEmail: user.email, clockIn: Timestamp.fromDate(clockIn), clockOut: Timestamp.fromDate(clockOut), status: 'completed', breaks, travelSegments, locationHistory: [], manualEntry: true, notes: manualNotes || null, jobLog: { field1: '', field2: '', field3: '' } });
+      setShowAddManualShift(false); setManualBreaks([]); setManualTravel([]); setManualNotes(''); setSuccess('Shift added!');
+    } catch (err: any) { setError(err.message); }
+    setAddingManualShift(false);
+  };
+
+  const myAddBreakToShift = async (shiftId: string, mins: number) => { setAddingBreakToShift(true); try { const shiftRef = doc(db, 'shifts', shiftId); const now = Timestamp.now(); await updateDoc(shiftRef, { breaks: arrayUnion({ startTime: now, endTime: now, durationMinutes: mins, manualEntry: true }) }); setSuccess(`${mins}m break added`); setTimeout(() => setSuccess(''), 2000); } catch (err: any) { setError(err.message); } setAddingBreakToShift(false); };
+  const myAddTravelToShift = async (shiftId: string) => { setAddingTravelToShift(true); try { const startHour24 = addTravelStartAmPm === 'PM' && addTravelStartHour !== '12' ? parseInt(addTravelStartHour) + 12 : (addTravelStartAmPm === 'AM' && addTravelStartHour === '12' ? 0 : parseInt(addTravelStartHour)); const endHour24 = addTravelEndAmPm === 'PM' && addTravelEndHour !== '12' ? parseInt(addTravelEndHour) + 12 : (addTravelEndAmPm === 'AM' && addTravelEndHour === '12' ? 0 : parseInt(addTravelEndHour)); const startTime = new Date(); startTime.setHours(startHour24, parseInt(addTravelStartMinute), 0, 0); const endTime = new Date(); endTime.setHours(endHour24, parseInt(addTravelEndMinute), 0, 0); if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1); const mins = Math.round((endTime.getTime() - startTime.getTime()) / 60000); const shiftRef = doc(db, 'shifts', shiftId); await updateDoc(shiftRef, { travelSegments: arrayUnion({ startTime: Timestamp.fromDate(startTime), endTime: Timestamp.fromDate(endTime), durationMinutes: mins }) }); setSuccess(`${mins}m travel added`); setTimeout(() => setSuccess(''), 2000); } catch (err: any) { setError(err.message); } setAddingTravelToShift(false); };
+  const myDeleteBreakFromShift = async (shiftId: string, breakIndex: number) => { const shift = myShiftHistory.find(s => s.id === shiftId); if (!shift) return; const breaks = [...(shift.breaks || [])]; breaks.splice(breakIndex, 1); await updateDoc(doc(db, 'shifts', shiftId), { breaks }); setSuccess('Break deleted'); setTimeout(() => setSuccess(''), 2000); };
+  const myDeleteTravelFromShift = async (shiftId: string, travelIndex: number) => { const shift = myShiftHistory.find(s => s.id === shiftId); if (!shift) return; const segs = [...(shift.travelSegments || [])]; segs.splice(travelIndex, 1); await updateDoc(doc(db, 'shifts', shiftId), { travelSegments: segs }); setSuccess('Travel deleted'); setTimeout(() => setSuccess(''), 2000); };
+  const myDeleteShift = async (shiftId: string) => { await deleteDoc(doc(db, 'shifts', shiftId)); setSuccess('Shift deleted'); setTimeout(() => setSuccess(''), 2000); closeMyEditPanel(); };
 
   const setThisWeek = () => { const now = new Date(); const day = now.getDay(); const diff = now.getDate() - day + (day === 0 ? -6 : 1); const monday = new Date(now.setDate(diff)); monday.setHours(0,0,0,0); const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); setTimesheetFilterStart(monday.toISOString().split('T')[0]); setTimesheetFilterEnd(sunday.toISOString().split('T')[0]); };
   const setLastWeek = () => { const now = new Date(); const day = now.getDay(); const diff = now.getDate() - day + (day === 0 ? -6 : 1) - 7; const monday = new Date(now.setDate(diff)); monday.setHours(0,0,0,0); const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); setTimesheetFilterStart(monday.toISOString().split('T')[0]); setTimesheetFilterEnd(sunday.toISOString().split('T')[0]); };
@@ -474,10 +571,10 @@ export default function App() {
     card: { background: theme.card, padding: '20px', borderRadius: '12px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
   };
 
-  // UPDATED: Show loading while getting companyId
+  // Show loading while getting companyId
   if (loading || loadingCompany) return <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><p style={{ color: theme.text }}>Loading...</p></main>;
 
-  // UPDATED: Login screen with company name field for signup
+  // Login screen with company name field for signup
   if (!user) return (
     <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div style={{ ...styles.card, width: '100%', maxWidth: '400px' }}>
@@ -500,7 +597,7 @@ export default function App() {
     </main>
   );
 
-  // NEW: Show error if user has no company (edge case - shouldn't happen)
+  // Show error if user has no company (edge case - shouldn't happen)
   if (!companyId) return (
     <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
       <div style={{ ...styles.card, width: '100%', maxWidth: '400px', textAlign: 'center' }}>
@@ -510,6 +607,78 @@ export default function App() {
       </div>
     </main>
   );
+
+  // PAYWALL: Block access when trial expired
+  if (isTrialExpired()) return (
+    <main style={{ minHeight: '100vh', background: theme.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+      <div style={{ ...styles.card, width: '100%', maxWidth: '500px', textAlign: 'center' }}>
+        <div style={{ fontSize: '48px', marginBottom: '16px' }}>⏰</div>
+        <h2 style={{ color: theme.text, marginBottom: '8px' }}>Trial Expired</h2>
+        <p style={{ color: theme.textMuted, marginBottom: '24px' }}>
+          Your 30-day free trial has ended. Add a payment method to continue using Trackable NZ.
+        </p>
+        <div style={{ background: theme.cardAlt, padding: '16px', borderRadius: '8px', marginBottom: '24px' }}>
+          <p style={{ color: theme.text, margin: 0, fontWeight: '600' }}>
+            {companyPlan.charAt(0).toUpperCase() + companyPlan.slice(1)} Plan
+          </p>
+          <p style={{ color: theme.textMuted, margin: '4px 0 0', fontSize: '14px' }}>
+            ${companyPlan === 'starter' ? '14.95' : companyPlan === 'team' ? '29.95' : '49.95'}/month
+          </p>
+        </div>
+        <button 
+          onClick={handleAddPayment} 
+          disabled={redirectingToStripe}
+          style={{ ...styles.btn, width: '100%', marginBottom: '12px', opacity: redirectingToStripe ? 0.7 : 1 }}
+        >
+          {redirectingToStripe ? 'Redirecting...' : '💳 Add Payment Method'}
+        </button>
+        <button onClick={() => signOut(auth)} style={{ background: 'none', border: 'none', color: theme.textMuted, cursor: 'pointer', fontSize: '14px' }}>Sign Out</button>
+      </div>
+    </main>
+  );
+
+  // Trial banner component
+  const TrialBanner = () => {
+    if (subscriptionStatus !== 'trial' || !trialEndsAt) return null;
+    const daysRemaining = getTrialDaysRemaining();
+    const isUrgent = daysRemaining <= 5;
+    
+    return (
+      <div style={{ 
+        background: isUrgent ? theme.dangerBg : theme.warningBg || '#FEF3C7', 
+        color: isUrgent ? theme.danger : theme.warning || '#92400E',
+        padding: '12px 16px', 
+        borderRadius: '8px', 
+        marginBottom: '16px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        flexWrap: 'wrap',
+        gap: '12px'
+      }}>
+        <span style={{ fontWeight: '500' }}>
+          {isUrgent ? '⚠️' : '🎉'} {daysRemaining === 0 ? 'Trial ends today!' : `${daysRemaining} day${daysRemaining !== 1 ? 's' : ''} left in your free trial`}
+        </span>
+        <button 
+          onClick={handleAddPayment}
+          disabled={redirectingToStripe}
+          style={{ 
+            padding: '8px 16px', 
+            borderRadius: '6px', 
+            background: isUrgent ? theme.danger : theme.primary, 
+            color: 'white', 
+            border: 'none', 
+            cursor: 'pointer', 
+            fontWeight: '600',
+            fontSize: '13px',
+            opacity: redirectingToStripe ? 0.7 : 1
+          }}
+        >
+          {redirectingToStripe ? 'Redirecting...' : 'Add Payment'}
+        </button>
+      </div>
+    );
+  };
 
   const navItems = [{ id: 'live', label: '🟢 Live View' }, { id: 'mysheet', label: '⏱️ My Timesheet' }, { id: 'employees', label: '👥 Employees' }, { id: 'timesheets', label: '📋 Timesheets' }, { id: 'expenses', label: '🧾 Expenses' }, { id: 'reports', label: '📊 Reports' }, { id: 'chat', label: '💬 Chat' }, { id: 'settings', label: '⚙️ Settings' }];
 
@@ -527,6 +696,7 @@ export default function App() {
       </div>
 
       <div style={{ marginLeft: isMobile ? 0 : '260px', padding: isMobile ? '96px 16px max(80px, env(safe-area-inset-bottom))' : '24px 32px' }}>
+        <TrialBanner />
         {error && <div style={{ background: theme.dangerBg, color: theme.danger, padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}><span>{error}</span><button onClick={() => setError('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.danger }}>×</button></div>}
         {success && <div style={{ background: theme.successBg, color: theme.success, padding: '12px 16px', borderRadius: '8px', marginBottom: '16px', display: 'flex', justifyContent: 'space-between' }}><span>{success}</span><button onClick={() => setSuccess('')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: theme.success }}>×</button></div>}
         {mapModal && <MapModal locations={mapModal.locations} onClose={() => setMapModal(null)} title={mapModal.title} theme={theme} clockInLocation={mapModal.clockInLocation} clockOutLocation={mapModal.clockOutLocation} />}
