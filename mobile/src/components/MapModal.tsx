@@ -1,7 +1,8 @@
 // Trackable NZ - Mobile Map Modal Component
-// FIXED: iOS WebView position fixed issue - using inset: 0 instead
+// REFACTORED: Flexbox/sticky pattern for iOS Capacitor - NO position:fixed on layout elements
 
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { Theme } from '../theme';
 import { Location } from '../types';
 
@@ -185,169 +186,191 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
   // Get unique point types for legend
   const uniqueTypes = [...new Set(allPoints.map(p => p.type))];
   
-  return (
-    <div style={{ 
-      position: 'fixed', 
-      top: 0, 
-      left: 0, 
-      right: 0, 
-      bottom: 0,
-      width: '100vw',
-      height: '100vh',
-      background: theme.bg, 
-      zIndex: 9999,
-      display: 'flex', 
-      flexDirection: 'column',
-      overflow: 'hidden'
-    }}>
-      {/* Safe area spacer */}
-      <div style={{ 
-        height: 'env(safe-area-inset-top, 59px)', 
-        minHeight: 'env(safe-area-inset-top, 59px)', 
-        background: theme.card,
-        flexShrink: 0
-      }} />
+  // Use React Portal to render outside normal DOM hierarchy - bulletproof for iOS WebView
+  const modalContent = (
+    <>
+      {/* Inject body styles to prevent background scroll */}
+      <style>{`
+        body.modal-open {
+          overflow: hidden !important;
+          position: fixed !important;
+          width: 100% !important;
+          height: 100% !important;
+        }
+      `}</style>
       
-      {/* Header with title and buttons */}
+      {/* Main modal container - flexbox column, full viewport */}
       <div style={{ 
-        background: theme.card,
-        borderBottom: `1px solid ${theme.cardBorder}`,
-        flexShrink: 0,
-        padding: '12px 16px',
-        display: 'flex', 
-        justifyContent: 'space-between',
-        alignItems: 'center'
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100dvh',
+        width: '100vw',
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        background: theme.bg, 
+        zIndex: 9999,
+        overflow: 'hidden'
       }}>
-        <h2 style={{ color: theme.text, margin: 0, fontSize: '17px', fontWeight: '600' }}>{title}</h2>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button
-            onClick={() => setShowList(!showList)}
-            style={{
-              background: showList ? theme.primary : theme.cardAlt,
-              color: showList ? 'white' : theme.text,
-              border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
-              padding: '8px 12px',
-              borderRadius: '6px',
-              fontSize: '13px',
-              fontWeight: '600',
-              cursor: 'pointer'
-            }}
-          >
-            {showList ? 'Hide List' : 'Show List'}
-          </button>
-          <button 
-            onClick={onClose} 
-            style={{ 
-              background: theme.primary, 
-              border: 'none', 
-              fontSize: '13px', 
-              cursor: 'pointer', 
-              color: 'white', 
-              padding: '8px 16px', 
-              borderRadius: '6px', 
-              fontWeight: '600' 
-            }}
-          >
-            Close
-          </button>
-        </div>
-      </div>
-      
-      {/* Legend Row */}
-      <div style={{ 
-        background: theme.card,
-        padding: '8px 16px 12px 16px',
-        display: 'flex', 
-        gap: '12px', 
-        flexWrap: 'wrap', 
-        alignItems: 'center',
-        flexShrink: 0
-      }}>
-        {uniqueTypes.map(type => (
-          <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-            <span style={{ 
-              width: '10px', 
-              height: '10px', 
-              borderRadius: '50%', 
-              background: markerColors[type] || markerColors.tracking 
-            }}></span>
-            <span style={{ color: theme.textMuted, fontSize: '11px' }}>
-              {markerLabels[type] || 'Location'}
-            </span>
-          </div>
-        ))}
-      </div>
-      
-      {/* Map Container */}
-      <div 
-        ref={mapRef} 
-        style={{ 
-          flex: showList ? '0 0 50%' : 1, 
-          minHeight: '200px', 
-          background: '#e5e7eb' 
-        }} 
-      >
-        {!leafletLoaded && (
+        {/* STICKY Header with safe area */}
+        <header style={{ 
+          position: 'sticky',
+          top: 0,
+          background: theme.card,
+          zIndex: 100,
+          flexShrink: 0,
+          paddingTop: 'env(safe-area-inset-top, 47px)',
+          borderBottom: `1px solid ${theme.cardBorder}`
+        }}>
+          {/* Header content with title and buttons */}
           <div style={{ 
-            height: '100%', 
+            padding: '12px 16px',
             display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            color: theme.textMuted 
+            justifyContent: 'space-between',
+            alignItems: 'center'
           }}>
-            Loading map...
+            <h2 style={{ color: theme.text, margin: 0, fontSize: '17px', fontWeight: '600' }}>{title}</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button
+                onClick={() => setShowList(!showList)}
+                style={{
+                  background: showList ? theme.primary : theme.cardAlt,
+                  color: showList ? 'white' : theme.text,
+                  border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
+                  padding: '8px 12px',
+                  borderRadius: '6px',
+                  fontSize: '13px',
+                  fontWeight: '600',
+                  cursor: 'pointer'
+                }}
+              >
+                {showList ? 'Hide List' : 'Show List'}
+              </button>
+              <button 
+                onClick={onClose} 
+                style={{ 
+                  background: theme.primary, 
+                  border: 'none', 
+                  fontSize: '13px', 
+                  cursor: 'pointer', 
+                  color: 'white', 
+                  padding: '8px 16px', 
+                  borderRadius: '6px', 
+                  fontWeight: '600' 
+                }}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+          
+          {/* Legend Row */}
+          <div style={{ 
+            padding: '8px 16px 12px 16px',
+            display: 'flex', 
+            gap: '12px', 
+            flexWrap: 'wrap', 
+            alignItems: 'center'
+          }}>
+            {uniqueTypes.map(type => (
+              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ 
+                  width: '10px', 
+                  height: '10px', 
+                  borderRadius: '50%', 
+                  background: markerColors[type] || markerColors.tracking 
+                }}></span>
+                <span style={{ color: theme.textMuted, fontSize: '11px' }}>
+                  {markerLabels[type] || 'Location'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </header>
+        
+        {/* Map Container - flex:1 takes remaining space */}
+        <div 
+          ref={mapRef} 
+          style={{ 
+            flex: showList ? '0 0 50%' : 1, 
+            minHeight: '200px', 
+            background: '#e5e7eb' 
+          }} 
+        >
+          {!leafletLoaded && (
+            <div style={{ 
+              height: '100%', 
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center', 
+              color: theme.textMuted 
+            }}>
+              Loading map...
+            </div>
+          )}
+        </div>
+        
+        {/* Location List (toggleable) - scrollable section */}
+        {showList && (
+          <div style={{ 
+            flex: 1,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+            WebkitOverflowScrolling: 'touch',
+            background: theme.card, 
+            borderTop: `1px solid ${theme.cardBorder}`,
+            paddingBottom: 'env(safe-area-inset-bottom, 20px)'
+          }}>
+            {allPoints.map((point, i) => (
+              <div 
+                key={i} 
+                onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
+                style={{ 
+                  display: 'flex', 
+                  justifyContent: 'space-between', 
+                  alignItems: 'center',
+                  padding: '10px 16px',
+                  background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
+                  cursor: 'pointer',
+                  borderBottom: `1px solid ${theme.cardBorder}`
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ 
+                    width: '22px', 
+                    height: '22px', 
+                    borderRadius: '50%', 
+                    background: markerColors[point.type] || markerColors.tracking, 
+                    color: 'white', 
+                    display: 'flex', 
+                    alignItems: 'center', 
+                    justifyContent: 'center', 
+                    fontSize: '10px',
+                    fontWeight: '600'
+                  }}>{i + 1}</span>
+                  <span style={{ color: theme.text, fontSize: '13px', fontWeight: '500' }}>
+                    {markerLabels[point.type] || 'Location'}
+                  </span>
+                </div>
+                <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+                  {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>
-      
-      {/* Location List (toggleable) */}
-      {showList && (
-        <div style={{ 
-          flex: 1,
-          overflowY: 'auto',
-          overflowX: 'hidden',
-          WebkitOverflowScrolling: 'touch',
-          background: theme.card, 
-          borderTop: `1px solid ${theme.cardBorder}` 
-        }}>
-          {allPoints.map((point, i) => (
-            <div 
-              key={i} 
-              onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
-              style={{ 
-                display: 'flex', 
-                justifyContent: 'space-between', 
-                alignItems: 'center',
-                padding: '10px 16px',
-                background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
-                cursor: 'pointer',
-                borderBottom: `1px solid ${theme.cardBorder}`
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ 
-                  width: '22px', 
-                  height: '22px', 
-                  borderRadius: '50%', 
-                  background: markerColors[point.type] || markerColors.tracking, 
-                  color: 'white', 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  justifyContent: 'center', 
-                  fontSize: '10px',
-                  fontWeight: '600'
-                }}>{i + 1}</span>
-                <span style={{ color: theme.text, fontSize: '13px', fontWeight: '500' }}>
-                  {markerLabels[point.type] || 'Location'}
-                </span>
-              </div>
-              <span style={{ color: theme.textMuted, fontSize: '12px' }}>
-                {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    </>
   );
+
+  // Add/remove body class when modal opens/closes
+  useEffect(() => {
+    document.body.classList.add('modal-open');
+    return () => {
+      document.body.classList.remove('modal-open');
+    };
+  }, []);
+
+  // Render via Portal to document.body - bypasses parent z-index stacking context
+  return createPortal(modalContent, document.body);
 }
