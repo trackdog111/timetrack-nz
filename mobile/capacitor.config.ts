@@ -7,6 +7,9 @@ const config: CapacitorConfig = {
   android: {
     // Required for background-geolocation to work properly
     useLegacyBridge: true
+  },
+  ios: {
+    contentInset: 'always'
   }
 };
 
