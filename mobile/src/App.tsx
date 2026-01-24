@@ -1,5 +1,5 @@
 // Trackable NZ - Main App Component
-// BUILD 33: Flexbox/sticky pattern for iOS Capacitor - NO position:fixed/absolute on layout elements
+// BUILD 34: Fixed Android bottom nav bar padding
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
@@ -467,7 +467,7 @@ export default function App() {
           )}
         </main>
 
-        {/* STICKY Bottom navigation */}
+        {/* STICKY Bottom navigation - Fixed for Android */}
         <nav style={{
           position: 'sticky',
           bottom: 0,
@@ -475,7 +475,7 @@ export default function App() {
           borderTop: `1px solid ${theme.navBorder}`,
           zIndex: 100,
           flexShrink: 0,
-          paddingBottom: 'env(safe-area-inset-bottom, 20px)'
+          paddingBottom: 'max(env(safe-area-inset-bottom, 0px), 24px)'
         }}>
           {/* Nav buttons */}
           <div style={{ display: 'flex' }}>
