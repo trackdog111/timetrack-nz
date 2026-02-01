@@ -453,7 +453,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
 
       // Add GPS to locationHistory for map tracking
       if (location) {
-        updateData.locationHistory = arrayUnion(location);
+        updateData.locationHistory = arrayUnion({ ...location, source: 'clockOut' });
       }
 
       await updateDoc(doc(db, 'shifts', currentShift.id), updateData);
