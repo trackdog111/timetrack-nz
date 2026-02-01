@@ -1,5 +1,6 @@
 // Trackable NZ - Mobile Map Modal Component
 // REFACTORED: Flexbox/sticky pattern for iOS Capacitor - NO position:fixed on layout elements
+// UPDATED: Removed tracking line - only show discrete location markers
 
 import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -136,15 +137,7 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       attribution: '© OSM'
     }).addTo(map);
     
-    if (allPoints.length > 1) {
-      const pathCoords = allPoints.map(p => [p.loc.latitude, p.loc.longitude]);
-      L.polyline(pathCoords, { 
-        color: '#6366f1', 
-        weight: 3, 
-        opacity: 0.7,
-        dashArray: '10, 10'
-      }).addTo(map);
-    }
+    // NO LINE - just markers for discrete location stamps
     
     allPoints.forEach((point, index) => {
       const color = markerColors[point.type] || markerColors.tracking;

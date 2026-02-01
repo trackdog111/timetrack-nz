@@ -1,5 +1,5 @@
 // Trackable NZ - Demo Data for App Store Review
-// This provides sample data so Apple reviewers can explore the app without signing up
+// NO BACKGROUND TRACKING - only discrete location stamps for actions
 
 import { Timestamp } from 'firebase/firestore';
 import { Employee, Shift, ChatMessage, Expense, EmployeeSettings, CompanyLabels, Location } from './types';
@@ -38,10 +38,10 @@ const hoursAgo = (hours: number): Timestamp => {
   return Timestamp.fromDate(new Date(Date.now() - hours * 60 * 60 * 1000));
 };
 
-const daysAgo = (days: number, hour: number = 8): Timestamp => {
+const daysAgo = (days: number, hour: number = 8, minute: number = 0): Timestamp => {
   const date = new Date();
   date.setDate(date.getDate() - days);
-  date.setHours(hour, 0, 0, 0);
+  date.setHours(hour, minute, 0, 0);
   return Timestamp.fromDate(date);
 };
 
@@ -54,27 +54,6 @@ const aucklandLocations = {
   parnell: { latitude: -36.8556, longitude: 174.7822 },
   greenlane: { latitude: -36.8906, longitude: 174.8031 },
   ellerslie: { latitude: -36.8983, longitude: 174.8167 },
-};
-
-// Generate GPS trail between two points
-const generateGpsTrail = (
-  start: { latitude: number; longitude: number },
-  end: { latitude: number; longitude: number },
-  startTime: number,
-  points: number = 5
-): Location[] => {
-  const trail: Location[] = [];
-  for (let i = 0; i <= points; i++) {
-    const ratio = i / points;
-    trail.push({
-      latitude: start.latitude + (end.latitude - start.latitude) * ratio + (Math.random() - 0.5) * 0.001,
-      longitude: start.longitude + (end.longitude - start.longitude) * ratio + (Math.random() - 0.5) * 0.001,
-      accuracy: 10 + Math.random() * 20,
-      timestamp: startTime + (i * 30 * 60 * 1000), // 30 min intervals
-      source: i === 0 ? 'clockIn' : i === points ? 'clockOut' : 'tracking'
-    });
-  }
-  return trail;
 };
 
 // Demo Employees
@@ -126,9 +105,9 @@ export const demoEmployees: Employee[] = [
   }
 ];
 
-// Demo Shifts - mix of completed and one active
+// Demo Shifts - NO TRACKING, only discrete location stamps
 export const demoShifts: Shift[] = [
-  // Today - Active shift for demo user
+  // Today - Active shift for demo user (no clock out yet)
   {
     id: 'demo-shift-active',
     companyId: DEMO_COMPANY_ID,
@@ -136,18 +115,37 @@ export const demoShifts: Shift[] = [
     userEmail: DEMO_USER_EMAIL,
     clockIn: hoursAgo(2),
     clockInLocation: {
-      ...aucklandLocations.newmarket,
+      latitude: aucklandLocations.newmarket.latitude,
+      longitude: aucklandLocations.newmarket.longitude,
       accuracy: 12,
       timestamp: Date.now() - 2 * 60 * 60 * 1000,
       source: 'clockIn'
     },
-    locationHistory: generateGpsTrail(
-      aucklandLocations.newmarket,
-      aucklandLocations.parnell,
-      Date.now() - 2 * 60 * 60 * 1000,
-      4
-    ),
-    breaks: [],
+    locationHistory: [
+      // Break start location
+      {
+        latitude: aucklandLocations.newmarket.latitude + 0.0003,
+        longitude: aucklandLocations.newmarket.longitude + 0.0002,
+        accuracy: 10,
+        timestamp: Date.now() - 1 * 60 * 60 * 1000,
+        source: 'breakStart'
+      },
+      // Break end location
+      {
+        latitude: aucklandLocations.newmarket.latitude + 0.0003,
+        longitude: aucklandLocations.newmarket.longitude + 0.0002,
+        accuracy: 10,
+        timestamp: Date.now() - 0.75 * 60 * 60 * 1000,
+        source: 'breakEnd'
+      }
+    ],
+    breaks: [
+      {
+        startTime: hoursAgo(1),
+        endTime: hoursAgo(0.75),
+        durationMinutes: 15
+      }
+    ],
     travelSegments: [],
     jobLog: {
       field1: 'Installing kitchen cabinets - Level 3',
@@ -156,41 +154,69 @@ export const demoShifts: Shift[] = [
     },
     status: 'active'
   },
-  // Yesterday - Completed shift
+  // Yesterday - Completed shift with breaks
   {
     id: 'demo-shift-1',
     companyId: DEMO_COMPANY_ID,
     userId: DEMO_USER_ID,
     userEmail: DEMO_USER_EMAIL,
-    clockIn: daysAgo(1, 7),
-    clockOut: daysAgo(1, 15),
+    clockIn: daysAgo(1, 7, 0),
+    clockOut: daysAgo(1, 15, 30),
     clockInLocation: {
-      ...aucklandLocations.cbd,
+      latitude: aucklandLocations.cbd.latitude,
+      longitude: aucklandLocations.cbd.longitude,
       accuracy: 15,
-      timestamp: daysAgo(1, 7).toMillis(),
+      timestamp: daysAgo(1, 7, 0).toMillis(),
       source: 'clockIn'
     },
     clockOutLocation: {
-      ...aucklandLocations.cbd,
+      latitude: aucklandLocations.cbd.latitude + 0.0005,
+      longitude: aucklandLocations.cbd.longitude + 0.0003,
       accuracy: 10,
-      timestamp: daysAgo(1, 15).toMillis(),
+      timestamp: daysAgo(1, 15, 30).toMillis(),
       source: 'clockOut'
     },
-    locationHistory: generateGpsTrail(
-      aucklandLocations.cbd,
-      aucklandLocations.ponsonby,
-      daysAgo(1, 7).toMillis(),
-      8
-    ),
+    locationHistory: [
+      // First break (15 min)
+      {
+        latitude: aucklandLocations.cbd.latitude + 0.001,
+        longitude: aucklandLocations.cbd.longitude + 0.0005,
+        accuracy: 12,
+        timestamp: daysAgo(1, 10, 0).toMillis(),
+        source: 'breakStart'
+      },
+      {
+        latitude: aucklandLocations.cbd.latitude + 0.001,
+        longitude: aucklandLocations.cbd.longitude + 0.0005,
+        accuracy: 12,
+        timestamp: daysAgo(1, 10, 15).toMillis(),
+        source: 'breakEnd'
+      },
+      // Lunch break (30 min)
+      {
+        latitude: aucklandLocations.cbd.latitude + 0.002,
+        longitude: aucklandLocations.cbd.longitude - 0.001,
+        accuracy: 10,
+        timestamp: daysAgo(1, 12, 30).toMillis(),
+        source: 'breakStart'
+      },
+      {
+        latitude: aucklandLocations.cbd.latitude + 0.002,
+        longitude: aucklandLocations.cbd.longitude - 0.001,
+        accuracy: 10,
+        timestamp: daysAgo(1, 13, 0).toMillis(),
+        source: 'breakEnd'
+      }
+    ],
     breaks: [
       {
-        startTime: daysAgo(1, 10),
-        endTime: daysAgo(1, 10.25),
+        startTime: daysAgo(1, 10, 0),
+        endTime: daysAgo(1, 10, 15),
         durationMinutes: 15
       },
       {
-        startTime: daysAgo(1, 12),
-        endTime: daysAgo(1, 12.5),
+        startTime: daysAgo(1, 12, 30),
+        endTime: daysAgo(1, 13, 0),
         durationMinutes: 30
       }
     ],
@@ -202,48 +228,90 @@ export const demoShifts: Shift[] = [
     },
     status: 'completed',
     finalized: true,
-    finalizedAt: daysAgo(1, 16),
+    finalizedAt: daysAgo(1, 16, 0),
     finalizedBy: 'demo-manager',
     finalizedByEmail: 'manager@demo.trackable.co.nz'
   },
-  // 2 days ago
+  // 2 days ago - with travel
   {
     id: 'demo-shift-2',
     companyId: DEMO_COMPANY_ID,
     userId: DEMO_USER_ID,
     userEmail: DEMO_USER_EMAIL,
-    clockIn: daysAgo(2, 6),
-    clockOut: daysAgo(2, 14),
+    clockIn: daysAgo(2, 6, 30),
+    clockOut: daysAgo(2, 14, 0),
     clockInLocation: {
-      ...aucklandLocations.greenlane,
+      latitude: aucklandLocations.greenlane.latitude,
+      longitude: aucklandLocations.greenlane.longitude,
       accuracy: 8,
-      timestamp: daysAgo(2, 6).toMillis(),
+      timestamp: daysAgo(2, 6, 30).toMillis(),
       source: 'clockIn'
     },
     clockOutLocation: {
-      ...aucklandLocations.greenlane,
+      latitude: aucklandLocations.ellerslie.latitude,
+      longitude: aucklandLocations.ellerslie.longitude,
       accuracy: 12,
-      timestamp: daysAgo(2, 14).toMillis(),
+      timestamp: daysAgo(2, 14, 0).toMillis(),
       source: 'clockOut'
     },
-    locationHistory: generateGpsTrail(
-      aucklandLocations.greenlane,
-      aucklandLocations.ellerslie,
-      daysAgo(2, 6).toMillis(),
-      6
-    ),
+    locationHistory: [
+      // Break
+      {
+        latitude: aucklandLocations.greenlane.latitude + 0.0005,
+        longitude: aucklandLocations.greenlane.longitude + 0.0003,
+        accuracy: 10,
+        timestamp: daysAgo(2, 9, 0).toMillis(),
+        source: 'breakStart'
+      },
+      {
+        latitude: aucklandLocations.greenlane.latitude + 0.0005,
+        longitude: aucklandLocations.greenlane.longitude + 0.0003,
+        accuracy: 10,
+        timestamp: daysAgo(2, 9, 15).toMillis(),
+        source: 'breakEnd'
+      },
+      // Travel
+      {
+        latitude: aucklandLocations.greenlane.latitude,
+        longitude: aucklandLocations.greenlane.longitude,
+        accuracy: 10,
+        timestamp: daysAgo(2, 11, 0).toMillis(),
+        source: 'travelStart'
+      },
+      {
+        latitude: aucklandLocations.ellerslie.latitude,
+        longitude: aucklandLocations.ellerslie.longitude,
+        accuracy: 10,
+        timestamp: daysAgo(2, 11, 30).toMillis(),
+        source: 'travelEnd'
+      }
+    ],
     breaks: [
       {
-        startTime: daysAgo(2, 9),
-        endTime: daysAgo(2, 9.25),
+        startTime: daysAgo(2, 9, 0),
+        endTime: daysAgo(2, 9, 15),
         durationMinutes: 15
       }
     ],
     travelSegments: [
       {
-        startTime: daysAgo(2, 11),
-        endTime: daysAgo(2, 11.5),
-        durationMinutes: 30
+        startTime: daysAgo(2, 11, 0),
+        endTime: daysAgo(2, 11, 30),
+        durationMinutes: 30,
+        startLocation: {
+          latitude: aucklandLocations.greenlane.latitude,
+          longitude: aucklandLocations.greenlane.longitude,
+          accuracy: 10,
+          timestamp: daysAgo(2, 11, 0).toMillis(),
+          source: 'travelStart'
+        },
+        endLocation: {
+          latitude: aucklandLocations.ellerslie.latitude,
+          longitude: aucklandLocations.ellerslie.longitude,
+          accuracy: 10,
+          timestamp: daysAgo(2, 11, 30).toMillis(),
+          source: 'travelEnd'
+        }
       }
     ],
     jobLog: {
@@ -259,35 +327,63 @@ export const demoShifts: Shift[] = [
     companyId: DEMO_COMPANY_ID,
     userId: DEMO_USER_ID,
     userEmail: DEMO_USER_EMAIL,
-    clockIn: daysAgo(3, 8),
-    clockOut: daysAgo(3, 17),
+    clockIn: daysAgo(3, 8, 0),
+    clockOut: daysAgo(3, 17, 0),
     clockInLocation: {
-      ...aucklandLocations.mtEden,
+      latitude: aucklandLocations.mtEden.latitude,
+      longitude: aucklandLocations.mtEden.longitude,
       accuracy: 10,
-      timestamp: daysAgo(3, 8).toMillis(),
+      timestamp: daysAgo(3, 8, 0).toMillis(),
       source: 'clockIn'
     },
     clockOutLocation: {
-      ...aucklandLocations.mtEden,
+      latitude: aucklandLocations.mtEden.latitude + 0.0005,
+      longitude: aucklandLocations.mtEden.longitude + 0.0005,
       accuracy: 15,
-      timestamp: daysAgo(3, 17).toMillis(),
+      timestamp: daysAgo(3, 17, 0).toMillis(),
       source: 'clockOut'
     },
-    locationHistory: generateGpsTrail(
-      aucklandLocations.mtEden,
-      aucklandLocations.newmarket,
-      daysAgo(3, 8).toMillis(),
-      10
-    ),
+    locationHistory: [
+      // Morning break
+      {
+        latitude: aucklandLocations.mtEden.latitude + 0.0008,
+        longitude: aucklandLocations.mtEden.longitude + 0.0003,
+        accuracy: 10,
+        timestamp: daysAgo(3, 10, 0).toMillis(),
+        source: 'breakStart'
+      },
+      {
+        latitude: aucklandLocations.mtEden.latitude + 0.0008,
+        longitude: aucklandLocations.mtEden.longitude + 0.0003,
+        accuracy: 10,
+        timestamp: daysAgo(3, 10, 15).toMillis(),
+        source: 'breakEnd'
+      },
+      // Lunch break
+      {
+        latitude: aucklandLocations.mtEden.latitude - 0.001,
+        longitude: aucklandLocations.mtEden.longitude + 0.0008,
+        accuracy: 12,
+        timestamp: daysAgo(3, 13, 0).toMillis(),
+        source: 'breakStart'
+      },
+      {
+        latitude: aucklandLocations.mtEden.latitude - 0.001,
+        longitude: aucklandLocations.mtEden.longitude + 0.0008,
+        accuracy: 12,
+        timestamp: daysAgo(3, 13, 30).toMillis(),
+        source: 'breakEnd'
+      }
+    ],
     breaks: [
       {
-        startTime: daysAgo(3, 10),
-        endTime: daysAgo(3, 10.25),
+        startTime: daysAgo(3, 10, 0),
+        endTime: daysAgo(3, 10, 15),
         durationMinutes: 15
       },
       {
-        startTime: daysAgo(3, 13),
-        endTime: daysAgo(3, 13.5),
+        startTime: daysAgo(3, 13, 0),
+        endTime: daysAgo(3, 13, 30),
         durationMinutes: 30
       }
     ],
@@ -299,7 +395,7 @@ export const demoShifts: Shift[] = [
     },
     status: 'completed',
     finalized: true,
-    finalizedAt: daysAgo(2, 9),
+    finalizedAt: daysAgo(2, 9, 0),
     finalizedBy: 'demo-manager',
     finalizedByEmail: 'manager@demo.trackable.co.nz'
   },
@@ -309,30 +405,43 @@ export const demoShifts: Shift[] = [
     companyId: DEMO_COMPANY_ID,
     userId: DEMO_USER_ID,
     userEmail: DEMO_USER_EMAIL,
-    clockIn: daysAgo(5, 7),
-    clockOut: daysAgo(5, 16),
+    clockIn: daysAgo(5, 7, 0),
+    clockOut: daysAgo(5, 16, 0),
     clockInLocation: {
-      ...aucklandLocations.ponsonby,
+      latitude: aucklandLocations.ponsonby.latitude,
+      longitude: aucklandLocations.ponsonby.longitude,
       accuracy: 18,
-      timestamp: daysAgo(5, 7).toMillis(),
+      timestamp: daysAgo(5, 7, 0).toMillis(),
       source: 'clockIn'
     },
     clockOutLocation: {
-      ...aucklandLocations.ponsonby,
+      latitude: aucklandLocations.ponsonby.latitude - 0.0005,
+      longitude: aucklandLocations.ponsonby.longitude + 0.0005,
       accuracy: 14,
-      timestamp: daysAgo(5, 16).toMillis(),
+      timestamp: daysAgo(5, 16, 0).toMillis(),
       source: 'clockOut'
     },
-    locationHistory: generateGpsTrail(
-      aucklandLocations.ponsonby,
-      aucklandLocations.cbd,
-      daysAgo(5, 7).toMillis(),
-      8
-    ),
+    locationHistory: [
+      // Lunch break only
+      {
+        latitude: aucklandLocations.ponsonby.latitude + 0.001,
+        longitude: aucklandLocations.ponsonby.longitude - 0.0005,
+        accuracy: 10,
+        timestamp: daysAgo(5, 12, 0).toMillis(),
+        source: 'breakStart'
+      },
+      {
+        latitude: aucklandLocations.ponsonby.latitude + 0.001,
+        longitude: aucklandLocations.ponsonby.longitude - 0.0005,
+        accuracy: 10,
+        timestamp: daysAgo(5, 12, 30).toMillis(),
+        source: 'breakEnd'
+      }
+    ],
     breaks: [
       {
-        startTime: daysAgo(5, 12),
-        endTime: daysAgo(5, 12.5),
+        startTime: daysAgo(5, 12, 0),
+        endTime: daysAgo(5, 12, 30),
         durationMinutes: 30
       }
     ],
