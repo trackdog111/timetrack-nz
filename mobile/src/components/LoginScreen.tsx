@@ -1,4 +1,5 @@
 // Trackable NZ - Login Screen Component
+// UPDATED: Added "Try Demo" button for App Store review
 
 import { useState } from 'react';
 import { Theme, createStyles } from '../theme';
@@ -10,6 +11,7 @@ interface LoginScreenProps {
   onCheckInvite: (email: string) => Promise<Invite | null>;
   onAcceptInvite: (email: string, password: string, invite: Invite) => Promise<void>;
   onResetPassword: (email: string) => Promise<void>;
+  onDemoLogin: () => void;  // NEW: Demo login handler
   error: string;
   setError: (error: string) => void;
   initialEmail?: string;
@@ -23,6 +25,7 @@ export function LoginScreen({
   onCheckInvite,
   onAcceptInvite,
   onResetPassword,
+  onDemoLogin,  // NEW
   error,
   setError,
   initialEmail = '',
@@ -136,7 +139,7 @@ export function LoginScreen({
   }
 
   return (
-    <div style={{ minHeight: '100vh', background: theme.bg, padding: '20px', paddingTop: '15vh', overflowY: 'auto' }}>
+    <div style={{ minHeight: '100vh', background: theme.bg, padding: '20px', paddingTop: '10vh', overflowY: 'auto' }}>
       <div style={{ background: theme.card, borderRadius: '24px', padding: '32px', width: '100%', maxWidth: '400px', border: `1px solid ${theme.cardBorder}` }}>
         <h1 style={{ color: theme.text, fontSize: '24px', fontWeight: '700', marginBottom: '8px', textAlign: 'center' }}>Trackable NZ</h1>
         <p style={{ color: theme.textMuted, textAlign: 'center', marginBottom: '24px' }}>Employee Time Tracking</p>
@@ -179,6 +182,29 @@ export function LoginScreen({
             <button type="submit" disabled={creatingAccount} style={{ ...styles.btn, width: '100%', background: theme.success, opacity: creatingAccount ? 0.7 : 1 }}>{creatingAccount ? 'Creating Account...' : 'Create Account & Sign In'}</button>
           </form>
         )}
+
+        {/* NEW: Try Demo Button */}
+        <div style={{ marginTop: '24px', paddingTop: '24px', borderTop: `1px solid ${theme.cardBorder}` }}>
+          <button
+            onClick={onDemoLogin}
+            style={{
+              width: '100%',
+              padding: '14px',
+              borderRadius: '12px',
+              border: `2px solid ${theme.primary}`,
+              background: 'transparent',
+              color: theme.primary,
+              fontSize: '16px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            Try Demo
+          </button>
+          <p style={{ color: theme.textMuted, fontSize: '12px', textAlign: 'center', marginTop: '8px', marginBottom: 0 }}>
+            Explore the app with sample data — no sign up required
+          </p>
+        </div>
       </div>
     </div>
   );

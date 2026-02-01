@@ -1,16 +1,28 @@
 // Trackable NZ - Main App Component
-// BUILD 34: Fixed Android bottom nav bar padding
+// BUILD 36: Added demo mode for App Store review
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import { lightTheme, darkTheme } from './theme';
-import { ViewType, Invite } from './types';
+import { ViewType, Invite, Shift } from './types';
 import { useAuth, useShift, useChat, useSettings, useExpenses } from './hooks';
 import { LoginScreen, ClockView, JobLogView, ChatView, HistoryView, ExpensesView } from './components';
+import { DemoProvider, useDemo } from './DemoContext';
 
+// Wrapper component that provides demo context
 export default function App() {
-  // Auth hook - NOW PROVIDES companyId
+  const authHook = useAuth();
+  
+  return (
+    <DemoProvider isDemoMode={authHook.isDemoMode}>
+      <AppContent authHook={authHook} />
+    </DemoProvider>
+  );
+}
+
+// Main app content
+function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
   const {
     user,
     loading,
@@ -18,14 +30,37 @@ export default function App() {
     setError: setAuthError,
     companyId,
     loadingCompany,
+    isDemoMode,
+    loginAsDemo,
     signIn,
+    signOut: authSignOut,
     resetPassword,
     checkInvite,
     acceptInvite
-  } = useAuth();
+  } = authHook;
 
-  // Settings hook
-  const { settings, labels } = useSettings(user, companyId);
+  // Demo context
+  const demo = useDemo();
+
+  // Settings hook - in demo mode, use demo settings
+  const { settings, labels } = useSettings(
+    isDemoMode ? null : user, 
+    isDemoMode ? null : companyId
+  );
+
+  // Use demo labels if in demo mode
+  const activeLabels = isDemoMode ? demo.getCompanyLabels() : labels;
+  const activeSettings = isDemoMode ? {
+    gpsTracking: true,
+    gpsInterval: 5,
+    requireNotes: false,
+    chatEnabled: true,
+    photoVerification: false,
+    field1Enabled: true,
+    field2Enabled: true,
+    field3Enabled: false,
+    autoTravel: false
+  } : settings;
 
   // UI state
   const [dark, setDark] = useState(false);
@@ -46,64 +81,79 @@ export default function App() {
     showToastRef.current(message);
   }, []);
 
-  // Shift hook
-  const {
-    currentShift,
-    shiftHistory,
-    currentLocation,
-    onBreak,
-    currentBreakStart,
-    traveling,
-    currentTravelStart,
-    field1,
-    field2,
-    field3,
-    setField1,
-    setField2,
-    setField3,
-    error: shiftError,
-    setError: setShiftError,
-    clockIn,
-    clockingIn,
-    clockOut,
-    startBreak,
-    endBreak,
-    addPresetBreak,
-    deleteBreak,
-    startTravel,
-    endTravel,
-    saveFields,
-    addTravelToShift,
-    addBreakToShift,
-    deleteBreakFromShift,
-    deleteTravelFromShift,
-    editShift,
-    addManualShift,
-    deleteShift,
-    autoTravelActive,
-    anchorLocation
-  } = useShift(user, settings, companyId, showToast);
+  // Demo-aware toast for restricted actions
+  const showDemoToast = useCallback((action: string): boolean => {
+    if (isDemoMode) {
+      showToast(`Demo Mode: ${action} disabled`);
+      return true;
+    }
+    return false;
+  }, [isDemoMode, showToast]);
+
+  // Shift hook - disabled in demo mode (we use static data)
+  const shiftHook = useShift(
+    isDemoMode ? null : user, 
+    activeSettings, 
+    isDemoMode ? null : companyId, 
+    showToast
+  );
+
+  // Get demo data if in demo mode
+  const demoShifts = isDemoMode ? demo.getShifts() : [];
+  const demoActiveShift = isDemoMode ? demo.getActiveShift() : null;
+
+  // Use demo or real data
+  const currentShift = isDemoMode ? demoActiveShift : shiftHook.currentShift;
+  const shiftHistory: Shift[] = isDemoMode ? demoShifts.filter((s: Shift) => s.status === 'completed') : shiftHook.shiftHistory;
 
   // Chat hook
   const {
-    messages,
+    messages: realMessages,
     newMessage,
     setNewMessage,
     chatTab,
     setChatTab,
-    sendMessage,
-    sendJobUpdate
-  } = useChat(user, settings.chatEnabled, companyId);
+    sendMessage: realSendMessage,
+    sendJobUpdate: realSendJobUpdate
+  } = useChat(isDemoMode ? null : user, activeSettings.chatEnabled, isDemoMode ? null : companyId);
 
-  // Expenses hook - UPDATED: Added updateExpense and deleteExpense
-  const {
-    expenses,
-    loading: expensesLoading,
-    submitting: expenseSubmitting,
-    submitExpense,
-    updateExpense,
-    deleteExpense
-  } = useExpenses(user, companyId);
+  // Use demo or real messages
+  const messages = isDemoMode ? demo.getChatMessages() : realMessages;
+  const sendMessage = isDemoMode 
+    ? async () => { showDemoToast('Sending messages'); return false; } 
+    : realSendMessage;
+  const sendJobUpdate = isDemoMode 
+    ? async (_text: string, _destination: 'team' | 'manager') => { showDemoToast('Sharing updates'); return false; } 
+    : realSendJobUpdate;
+
+  // Expenses hook
+  const expensesHook = useExpenses(isDemoMode ? null : user, isDemoMode ? null : companyId);
+  
+  // Use demo or real expenses
+  const expenses = isDemoMode ? demo.getExpenses() : expensesHook.expenses;
+  const expensesLoading = isDemoMode ? false : expensesHook.loading;
+  const expenseSubmitting = isDemoMode ? false : expensesHook.submitting;
+  const submitExpense = isDemoMode 
+    ? async (_amount: number, _category: any, _date: Date, _photoBase64?: string, _note?: string) => { showDemoToast('Submitting expenses'); return false; } 
+    : expensesHook.submitExpense;
+  const updateExpense = isDemoMode
+    ? async (_expenseId: string, _amount: number, _category: any, _date: Date, _note?: string) => { showDemoToast('Updating expenses'); return false; }
+    : expensesHook.updateExpense;
+  const deleteExpense = isDemoMode
+    ? async (_expenseId: string) => { showDemoToast('Deleting expenses'); return false; }
+    : expensesHook.deleteExpense;
+
+  // Job log fields - use state for demo mode
+  const [demoField1, setDemoField1] = useState(demoActiveShift?.jobLog?.field1 || '');
+  const [demoField2, setDemoField2] = useState(demoActiveShift?.jobLog?.field2 || '');
+  const [demoField3, setDemoField3] = useState(demoActiveShift?.jobLog?.field3 || '');
+
+  const field1 = isDemoMode ? demoField1 : shiftHook.field1;
+  const field2 = isDemoMode ? demoField2 : shiftHook.field2;
+  const field3 = isDemoMode ? demoField3 : shiftHook.field3;
+  const setField1 = isDemoMode ? setDemoField1 : shiftHook.setField1;
+  const setField2 = isDemoMode ? setDemoField2 : shiftHook.setField2;
+  const setField3 = isDemoMode ? setDemoField3 : shiftHook.setField3;
 
   // Invite URL handling
   const [initialEmail, setInitialEmail] = useState('');
@@ -142,19 +192,70 @@ export default function App() {
   const theme = dark ? darkTheme : lightTheme;
 
   // Combined error from both hooks
-  const error = authError || shiftError;
+  const error = authError || (isDemoMode ? '' : shiftHook.error);
   const setError = (err: string) => {
     setAuthError(err);
-    setShiftError(err);
+    if (!isDemoMode) shiftHook.setError(err);
   };
 
   // Handle clock out with notes requirement check
   const handleClockOut = async () => {
-    const success = await clockOut(settings.requireNotes);
-    if (!success && settings.requireNotes && !field1.trim()) {
+    if (isDemoMode) {
+      showDemoToast('Clocking out');
+      return;
+    }
+    const success = await shiftHook.clockOut(activeSettings.requireNotes);
+    if (!success && activeSettings.requireNotes && !field1.trim()) {
       setView('joblog');
     }
   };
+
+  // Demo-wrapped actions with correct return types
+  const clockIn = isDemoMode 
+    ? async (_photoBase64?: string) => { showDemoToast('Clocking in'); } 
+    : shiftHook.clockIn;
+  const startBreak = isDemoMode 
+    ? async () => { showDemoToast('Starting break'); } 
+    : shiftHook.startBreak;
+  const endBreak = isDemoMode 
+    ? async () => { showDemoToast('Ending break'); } 
+    : shiftHook.endBreak;
+  const startTravel = isDemoMode 
+    ? async () => { showDemoToast('Starting travel'); } 
+    : shiftHook.startTravel;
+  const endTravel = isDemoMode 
+    ? async () => { showDemoToast('Ending travel'); } 
+    : shiftHook.endTravel;
+  const addPresetBreak = isDemoMode 
+    ? async (_minutes: number) => { showDemoToast('Adding break'); return false; } 
+    : shiftHook.addPresetBreak;
+  const deleteBreak = isDemoMode 
+    ? async (_index: number) => { showDemoToast('Deleting break'); return false; } 
+    : shiftHook.deleteBreak;
+  const saveFields = isDemoMode 
+    ? async () => { showToast('Demo: Notes saved (view only)'); } 
+    : shiftHook.saveFields;
+  const addManualShift = isDemoMode 
+    ? async (_date: string, _startHour: string, _startMinute: string, _startAmPm: 'AM' | 'PM', _endHour: string, _endMinute: string, _endAmPm: 'AM' | 'PM', _breaks: number[], _travel: number[], _notes: string) => { showDemoToast('Adding shift'); return false; } 
+    : shiftHook.addManualShift;
+  const addTravelToShift = isDemoMode 
+    ? async (_shiftId: string, _shiftDate: Date, _startHour: string, _startMinute: string, _startAmPm: 'AM' | 'PM', _endHour: string, _endMinute: string, _endAmPm: 'AM' | 'PM') => { showDemoToast('Adding travel'); return false; } 
+    : shiftHook.addTravelToShift;
+  const addBreakToShift = isDemoMode 
+    ? async (_shiftId: string, _minutes: number) => { showDemoToast('Adding break'); return false; } 
+    : shiftHook.addBreakToShift;
+  const deleteBreakFromShift = isDemoMode 
+    ? async (_shiftId: string, _breakIndex: number) => { showDemoToast('Deleting break'); return false; } 
+    : shiftHook.deleteBreakFromShift;
+  const deleteTravelFromShift = isDemoMode 
+    ? async (_shiftId: string, _travelIndex: number) => { showDemoToast('Deleting travel'); return false; } 
+    : shiftHook.deleteTravelFromShift;
+  const editShift = isDemoMode 
+    ? async (_shiftId: string, _clockIn: Date, _clockOut: Date, _notes?: string) => { showDemoToast('Editing shift'); return false; } 
+    : shiftHook.editShift;
+  const deleteShift = isDemoMode 
+    ? async (_shiftId: string) => { showDemoToast('Deleting shift'); return false; } 
+    : shiftHook.deleteShift;
 
   // Loading state
   if (loading || loadingCompany) {
@@ -181,6 +282,7 @@ export default function App() {
           onCheckInvite={checkInvite}
           onAcceptInvite={acceptInvite}
           onResetPassword={resetPassword}
+          onDemoLogin={loginAsDemo}
           error={authError}
           setError={setAuthError}
           initialEmail={initialEmail}
@@ -191,8 +293,8 @@ export default function App() {
     );
   }
 
-  // Show error if user has no company
-  if (!companyId) {
+  // Show error if user has no company (skip in demo mode)
+  if (!companyId && !isDemoMode) {
     return (
       <main style={{ 
         minHeight: '100vh', 
@@ -256,11 +358,25 @@ export default function App() {
         background: theme.bg,
         overflow: 'hidden'
       }}>
+        {/* Demo Mode Banner */}
+        {isDemoMode && (
+          <div style={{
+            background: theme.warning || '#f59e0b',
+            color: '#000',
+            padding: '8px 16px',
+            textAlign: 'center',
+            fontSize: '13px',
+            fontWeight: '600'
+          }}>
+            🔍 Demo Mode — Explore with sample data (view only)
+          </div>
+        )}
+
         {/* Toast notification - this CAN be position:fixed as it's an overlay */}
         {toast && (
           <div style={{
             position: 'fixed',
-            top: 'calc(env(safe-area-inset-top, 47px) + 70px)',
+            top: isDemoMode ? 'calc(env(safe-area-inset-top, 47px) + 100px)' : 'calc(env(safe-area-inset-top, 47px) + 70px)',
             left: '50%',
             transform: 'translateX(-50%)',
             background: theme.success,
@@ -314,7 +430,7 @@ export default function App() {
                 {dark ? '☀️' : '🌙'}
               </button>
               <button
-                onClick={() => signOut(auth)}
+                onClick={() => authSignOut()}
                 style={{
                   color: theme.textMuted,
                   fontSize: '14px',
@@ -323,7 +439,7 @@ export default function App() {
                   cursor: 'pointer'
                 }}
               >
-                Sign Out
+                {isDemoMode ? 'Exit Demo' : 'Sign Out'}
               </button>
             </div>
           </div>
@@ -370,17 +486,17 @@ export default function App() {
             <ClockView
               theme={theme}
               currentShift={currentShift}
-              currentLocation={currentLocation}
+              currentLocation={isDemoMode ? null : shiftHook.currentLocation}
               locationHistory={currentShift?.locationHistory || []}
-              onBreak={onBreak}
-              currentBreakStart={currentBreakStart}
-              traveling={traveling}
-              currentTravelStart={currentTravelStart}
-              settings={settings}
-              paidRestMinutes={labels.paidRestMinutes}
-              photoVerification={settings.photoVerification || false}
+              onBreak={isDemoMode ? false : shiftHook.onBreak}
+              currentBreakStart={isDemoMode ? null : shiftHook.currentBreakStart}
+              traveling={isDemoMode ? false : shiftHook.traveling}
+              currentTravelStart={isDemoMode ? null : shiftHook.currentTravelStart}
+              settings={activeSettings}
+              paidRestMinutes={activeLabels.paidRestMinutes}
+              photoVerification={activeSettings.photoVerification || false}
               onClockIn={clockIn}
-              clockingIn={clockingIn}
+              clockingIn={isDemoMode ? false : shiftHook.clockingIn}
               onClockOut={handleClockOut}
               onStartBreak={startBreak}
               onEndBreak={endBreak}
@@ -390,8 +506,8 @@ export default function App() {
               onDeleteBreak={deleteBreak}
               onAddManualShift={addManualShift}
               showToast={showToast}
-              autoTravelEnabled={settings.autoTravel || false}
-              autoTravelActive={autoTravelActive}
+              autoTravelEnabled={activeSettings.autoTravel || false}
+              autoTravelActive={isDemoMode ? false : shiftHook.autoTravelActive}
               field1={field1}
               field2={field2}
               field3={field3}
@@ -399,7 +515,7 @@ export default function App() {
               setField2={setField2}
               setField3={setField3}
               onSaveFields={saveFields}
-              labels={labels}
+              labels={activeLabels}
             />
           )}
 
@@ -415,8 +531,8 @@ export default function App() {
               setField3={setField3}
               onSave={saveFields}
               onShareToChat={sendJobUpdate}
-              labels={labels}
-              requireNotes={settings.requireNotes}
+              labels={activeLabels}
+              requireNotes={activeSettings.requireNotes}
               showToast={showToast}
             />
           )}
@@ -430,9 +546,9 @@ export default function App() {
               chatTab={chatTab}
               setChatTab={setChatTab}
               onSendMessage={sendMessage}
-              userId={user.uid}
-              chatEnabled={settings.chatEnabled}
-              labels={labels}
+              userId={isDemoMode ? demo.demoUserId : user.uid}
+              chatEnabled={activeSettings.chatEnabled}
+              labels={activeLabels}
             />
           )}
 
@@ -447,8 +563,8 @@ export default function App() {
               onEditShift={editShift}
               onDeleteShift={deleteShift}
               showToast={showToast}
-              paidRestMinutes={labels.paidRestMinutes}
-              payWeekEndDay={labels.payWeekEndDay}
+              paidRestMinutes={activeLabels.paidRestMinutes}
+              payWeekEndDay={activeLabels.payWeekEndDay}
             />
           )}
 
@@ -481,7 +597,7 @@ export default function App() {
           <div style={{ display: 'flex' }}>
             {[
               { id: 'clock', label: 'Clock', icon: '⏱️' },
-              ...(settings.chatEnabled ? [{ id: 'chat', label: 'Chat', icon: '💬' }] : []),
+              ...(activeSettings.chatEnabled ? [{ id: 'chat', label: 'Chat', icon: '💬' }] : []),
               { id: 'expenses', label: 'Expenses', icon: '🧾' },
               { id: 'history', label: 'History', icon: '📋' }
             ].map(item => (

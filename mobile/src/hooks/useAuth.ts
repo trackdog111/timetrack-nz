@@ -1,5 +1,5 @@
 // Trackable NZ - Authentication Hook
-// UPDATED: Added companyId support for multi-tenant
+// UPDATED: Added demo mode for App Store review
 
 import { useState, useEffect } from 'react';
 import { 
@@ -24,24 +24,60 @@ import {
 import { auth, db } from '../firebase';
 import { EmployeeSettings, Invite } from '../types';
 import { defaultSettings } from '../utils';
+import { DEMO_COMPANY_ID, DEMO_USER_ID, DEMO_USER_EMAIL, DEMO_USER_NAME } from '../demoData';
+
+// Fake user object for demo mode
+const createDemoUser = (): User => ({
+  uid: DEMO_USER_ID,
+  email: DEMO_USER_EMAIL,
+  displayName: DEMO_USER_NAME,
+  emailVerified: true,
+  isAnonymous: false,
+  metadata: {},
+  providerData: [],
+  refreshToken: '',
+  tenantId: null,
+  phoneNumber: null,
+  photoURL: null,
+  providerId: 'demo',
+  delete: async () => {},
+  getIdToken: async () => 'demo-token',
+  getIdTokenResult: async () => ({} as any),
+  reload: async () => {},
+  toJSON: () => ({})
+} as User);
 
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [companyId, setCompanyId] = useState<string | null>(null);  // NEW
-  const [loadingCompany, setLoadingCompany] = useState(false);  // NEW
+  const [companyId, setCompanyId] = useState<string | null>(null);
+  const [loadingCompany, setLoadingCompany] = useState(false);
+  const [isDemoMode, setIsDemoMode] = useState(false);  // NEW: Demo mode flag
 
   useEffect(() => {
+    // Skip Firebase auth listener in demo mode
+    if (isDemoMode) {
+      setLoading(false);
+      return;
+    }
+
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setUser(user);
       setLoading(false);
     });
     return () => unsubscribe();
-  }, []);
+  }, [isDemoMode]);
 
-  // NEW: Load companyId when user changes - check both companies (owner) and employees
+  // Load companyId when user changes
   useEffect(() => {
+    // Demo mode - use demo company
+    if (isDemoMode) {
+      setCompanyId(DEMO_COMPANY_ID);
+      setLoadingCompany(false);
+      return;
+    }
+
     if (!user) {
       setCompanyId(null);
       return;
@@ -74,7 +110,17 @@ export function useAuth() {
       }
     };
     loadCompanyId();
-  }, [user]);
+  }, [user, isDemoMode]);
+
+  // NEW: Demo mode login - no Firebase, just set fake user
+  const loginAsDemo = () => {
+    setIsDemoMode(true);
+    setUser(createDemoUser());
+    setCompanyId(DEMO_COMPANY_ID);
+    setLoading(false);
+    setLoadingCompany(false);
+    setError('');
+  };
 
   const signIn = async (email: string, password: string) => {
     setError('');
@@ -87,7 +133,15 @@ export function useAuth() {
   };
 
   const signOut = async () => {
-    setCompanyId(null);  // Clear companyId on logout
+    // Handle demo mode logout
+    if (isDemoMode) {
+      setIsDemoMode(false);
+      setUser(null);
+      setCompanyId(null);
+      return;
+    }
+    
+    setCompanyId(null);
     await firebaseSignOut(auth);
   };
 
@@ -127,7 +181,6 @@ export function useAuth() {
     }
   };
 
-  // UPDATED: Include companyId from invite when creating employee
   const acceptInvite = async (
     email: string, 
     password: string, 
@@ -137,9 +190,8 @@ export function useAuth() {
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
       
-      // Create employee with companyId from invite
       await setDoc(doc(db, 'employees', cred.user.uid), {
-        companyId: invite.companyId,  // NEW: Get companyId from invite
+        companyId: invite.companyId,
         email: email.toLowerCase(),
         name: invite.name || email.split('@')[0],
         role: 'employee',
@@ -153,7 +205,6 @@ export function useAuth() {
         userId: cred.user.uid
       });
 
-      // Set companyId state immediately
       setCompanyId(invite.companyId);
     } catch (err: any) {
       setError(err.message || 'Failed to create account');
@@ -166,8 +217,10 @@ export function useAuth() {
     loading,
     error,
     setError,
-    companyId,        // NEW: Export companyId
-    loadingCompany,   // NEW: Export loading state
+    companyId,
+    loadingCompany,
+    isDemoMode,      // NEW: Export demo mode flag
+    loginAsDemo,     // NEW: Export demo login function
     signIn,
     signOut,
     resetPassword,

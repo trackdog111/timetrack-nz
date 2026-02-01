@@ -53,9 +53,6 @@
 	<string>Trackable NZ needs background location access to track your work locations even when the app is closed. This ensures accurate GPS timesheets.</string>
 	<key>NSLocationAlwaysUsageDescription</key>
 	<string>Trackable NZ needs background location access to track travel time during your shift, even when the app is in the background.</string>
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>location</string>
-	</array>
+	
 </dict>
 </plist>
