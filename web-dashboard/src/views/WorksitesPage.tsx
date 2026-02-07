@@ -2,7 +2,7 @@
 // Worksite management (add/edit/archive) + hours-per-site analytics with pie chart
 
 import React, { useState, useMemo } from 'react';
-import { Theme, Shift, Worksite } from '../types';
+import { Theme, Shift, Worksite } from '../shared/types';
 
 interface WorksitesPageProps {
   theme: Theme;
