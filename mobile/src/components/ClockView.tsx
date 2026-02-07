@@ -2,7 +2,7 @@
 
 import { useState, useRef, useCallback } from 'react';
 import { Theme, createStyles } from '../theme';
-import { Shift, Location, EmployeeSettings } from '../types';
+import { Shift, Location, EmployeeSettings, Worksite } from '../types';
 import { fmtDur, fmtTime, getHours, calcBreaks, calcTravel, getBreakEntitlements } from '../utils';
 import { BreakRulesInfo } from './BreakRulesInfo';
 import { MapModal } from './MapModal';
@@ -21,7 +21,8 @@ interface ClockViewProps {
   photoVerification: boolean;
   autoTravelEnabled?: boolean;
   autoTravelActive?: boolean;
-  onClockIn: (photoBase64?: string) => void;
+  worksites?: Worksite[];
+  onClockIn: (photoBase64?: string, worksiteId?: string, worksiteName?: string) => void;
   clockingIn?: boolean;
   onClockOut: () => void;
   onStartBreak: () => void;
@@ -72,6 +73,7 @@ export function ClockView({
   settings,
   paidRestMinutes,
   photoVerification,
+  worksites = [],
   onClockIn,
   clockingIn,
   onClockOut,
@@ -98,6 +100,7 @@ export function ClockView({
   const [showManualEntry, setShowManualEntry] = useState(false);
   const [showMapModal, setShowMapModal] = useState(false);
   const [manualMinutes, setManualMinutes] = useState('');
+  const [selectedWorksiteId, setSelectedWorksiteId] = useState<string>('');
   
   // Camera state
   const [showCamera, setShowCamera] = useState(false);
@@ -213,15 +216,17 @@ export function ClockView({
 
   // Confirm and clock in with photo
   const confirmClockIn = useCallback(() => {
-    onClockIn(capturedPhoto || undefined);
+    const ws = worksites.find(w => w.id === selectedWorksiteId);
+    onClockIn(capturedPhoto || undefined, ws?.id, ws?.name);
     stopCamera();
-  }, [capturedPhoto, onClockIn, stopCamera]);
+  }, [capturedPhoto, onClockIn, stopCamera, selectedWorksiteId, worksites]);
 
   // Skip photo and clock in without
   const skipPhoto = useCallback(() => {
-    onClockIn();
+    const ws = worksites.find(w => w.id === selectedWorksiteId);
+    onClockIn(undefined, ws?.id, ws?.name);
     stopCamera();
-  }, [onClockIn, stopCamera]);
+  }, [onClockIn, stopCamera, selectedWorksiteId, worksites]);
 
   const handleAddPresetBreak = async (minutes: number) => {
     const success = await onAddPresetBreak(minutes);
@@ -459,8 +464,26 @@ export function ClockView({
             <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>
               Ready to start?
             </h2>
+            {worksites.length > 0 && (
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>Worksite</label>
+                <select
+                  value={selectedWorksiteId}
+                  onChange={e => setSelectedWorksiteId(e.target.value)}
+                  style={{ ...styles.input, appearance: 'auto' as any }}
+                >
+                  <option value="">— No worksite —</option>
+                  {worksites.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}{w.address ? ` (${w.address})` : ''}</option>
+                  ))}
+                </select>
+              </div>
+            )}
             <button 
-              onClick={photoVerification ? startCamera : () => onClockIn()} 
+              onClick={photoVerification ? startCamera : () => {
+                const ws = worksites.find(w => w.id === selectedWorksiteId);
+                onClockIn(undefined, ws?.id, ws?.name);
+              }} 
               disabled={clockingIn}
               style={{ ...styles.btn, width: '100%', padding: '20px', fontSize: '18px', background: clockingIn ? theme.textMuted : theme.success, opacity: clockingIn ? 0.7 : 1, cursor: clockingIn ? 'not-allowed' : 'pointer' }}
             >
@@ -481,6 +504,11 @@ export function ClockView({
               <p style={{ color: theme.success, fontSize: '16px', fontWeight: '600', marginTop: '8px' }}>
                 {fmtDur(shiftHours * 60)} worked
               </p>
+              {currentShift.worksiteName && (
+                <p style={{ color: theme.textMuted, fontSize: '13px', marginTop: '4px' }}>
+                  🏗️ {currentShift.worksiteName}
+                </p>
+              )}
               {currentShift.clockInPhotoUrl && (
                 <div style={{ marginTop: '12px' }}>
                   <img 

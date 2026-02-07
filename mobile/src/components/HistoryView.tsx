@@ -521,6 +521,11 @@ export function HistoryView({
                             <p style={{ color: theme.textMuted, fontSize: '13px', margin: '2px 0 0 0' }}>
                               {fmtTime(shift.clockIn)} - {fmtTime(shift.clockOut)}
                             </p>
+                            {shift.worksiteName && (
+                              <p style={{ color: theme.textMuted, fontSize: '12px', margin: '2px 0 0 0' }}>
+                                🏗️ {shift.worksiteName}
+                              </p>
+                            )}
                           </div>
                           <div style={{ textAlign: 'right' }}>
                             <p style={{ color: theme.text, fontWeight: '700', fontSize: '16px', margin: 0 }}>{fmtDur(workingMinutes)}</p>

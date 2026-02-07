@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { signInWithEmailAndPassword, signOut, onAuthStateChanged, User, createUserWithEmailAndPassword, deleteUser, sendPasswordResetEmail } from 'firebase/auth';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDoc, getDocs, setDoc, query, where, orderBy, onSnapshot, Timestamp, writeBatch, arrayUnion } from 'firebase/firestore';
 import { auth, db, MOBILE_APP_URL } from './shared/firebase';
-import { Location, Break, TravelSegment, Shift, Employee, EmployeeSettings, ChatMessage, CompanySettings, Invite, Theme, Company, Expense } from './shared/types';
+import { Location, Break, TravelSegment, Shift, Employee, EmployeeSettings, ChatMessage, CompanySettings, Invite, Theme, Company, Expense, Worksite } from './shared/types';
 import { lightTheme, darkTheme } from './shared/theme';
 import { defaultSettings, defaultCompanySettings, getHours, calcBreaks, calcTravel, fmtDur, fmtTime, fmtDate, fmtDateShort, getWeekEndingDate, getWeekEndingKey } from './shared/utils';
 import { MapModal, LocationMap } from './components/MapModal';
@@ -17,6 +17,7 @@ const ReportsView = lazy(() => import('./views/ReportsView').then(m => ({ defaul
 const ChatView = lazy(() => import('./views/ChatView').then(m => ({ default: m.ChatView })));
 const SettingsView = lazy(() => import('./views/SettingsView').then(m => ({ default: m.SettingsView })));
 const ExpensesView = lazy(() => import('./views/ExpensesView').then(m => ({ default: m.ExpensesView })));
+const WorksitesPage = lazy(() => import('./views/WorksitesPage'));
 
 // Stripe Price IDs (Sandbox)
 const STRIPE_PRICES: Record<string, string> = {
@@ -46,6 +47,7 @@ export default function App() {
   const [allShifts, setAllShifts] = useState<Shift[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [worksites, setWorksites] = useState<Worksite[]>([]);
   const [approvingExpense, setApprovingExpense] = useState<string | null>(null);
   const [deletingExpense, setDeletingExpense] = useState<string | null>(null);
   const [mapModal, setMapModal] = useState<{ locations: Location[], title: string, clockInLocation?: Location, clockOutLocation?: Location } | null>(null);
@@ -232,6 +234,15 @@ export default function App() {
     return onSnapshot(
       query(collection(db, 'expenses'), where('companyId', '==', companyId), orderBy('createdAt', 'desc')), 
       (snap) => { setExpenses(snap.docs.map(d => ({ id: d.id, ...d.data() } as Expense))); }
+    ); 
+  }, [user, companyId]);
+
+  // Worksites listener
+  useEffect(() => { 
+    if (!user || !companyId) return; 
+    return onSnapshot(
+      query(collection(db, 'worksites'), where('companyId', '==', companyId), orderBy('name', 'asc')), 
+      (snap) => { setWorksites(snap.docs.map(d => ({ id: d.id, ...d.data() } as Worksite))); }
     ); 
   }, [user, companyId]);
 
@@ -492,6 +503,66 @@ export default function App() {
     a.click();
   };
 
+  // Worksite functions
+  const addWorksite = async (name: string, address?: string): Promise<boolean> => {
+    if (!companyId || !name.trim()) return false;
+    try {
+      await addDoc(collection(db, 'worksites'), {
+        companyId,
+        name: name.trim(),
+        address: address?.trim() || '',
+        status: 'active',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+      setSuccess('Worksite added!');
+      setTimeout(() => setSuccess(''), 2000);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to add worksite');
+      return false;
+    }
+  };
+
+  const updateWorksite = async (worksiteId: string, data: { name?: string; address?: string }): Promise<boolean> => {
+    try {
+      const updateData: any = { updatedAt: Timestamp.now() };
+      if (data.name !== undefined) updateData.name = data.name.trim();
+      if (data.address !== undefined) updateData.address = data.address.trim();
+      await updateDoc(doc(db, 'worksites', worksiteId), updateData);
+      setSuccess('Worksite updated!');
+      setTimeout(() => setSuccess(''), 2000);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to update worksite');
+      return false;
+    }
+  };
+
+  const archiveWorksite = async (worksiteId: string): Promise<boolean> => {
+    try {
+      await updateDoc(doc(db, 'worksites', worksiteId), { status: 'archived', updatedAt: Timestamp.now() });
+      setSuccess('Worksite archived');
+      setTimeout(() => setSuccess(''), 2000);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to archive worksite');
+      return false;
+    }
+  };
+
+  const restoreWorksite = async (worksiteId: string): Promise<boolean> => {
+    try {
+      await updateDoc(doc(db, 'worksites', worksiteId), { status: 'active', updatedAt: Timestamp.now() });
+      setSuccess('Worksite restored');
+      setTimeout(() => setSuccess(''), 2000);
+      return true;
+    } catch (err: any) {
+      setError(err.message || 'Failed to restore worksite');
+      return false;
+    }
+  };
+
   const cleanup = async () => { if (!cleanupConfirm) return; const s = new Date(cleanupStart); const e = new Date(cleanupEnd); e.setHours(23,59,59); const toDelete = allShifts.filter(sh => { if (!sh.clockIn?.toDate) return false; const d = sh.clockIn.toDate(); return d >= s && d <= e && sh.status === 'completed'; }); const batch = writeBatch(db); toDelete.forEach(sh => batch.delete(doc(db, 'shifts', sh.id))); await batch.commit(); setCleanupConfirm(false); setCleanupStart(''); setCleanupEnd(''); setSuccess(`Deleted ${toDelete.length} shifts`); };
   const sendMsg = async (e: React.FormEvent) => { e.preventDefault(); if (!newMsg.trim() || !user || !companyId) return; await addDoc(collection(db, 'messages'), { companyId, text: newMsg.trim(), senderId: user.uid, senderEmail: user.email, timestamp: Timestamp.now(), target: chatTab === 'team' ? 'team' : undefined }); setNewMsg(''); };
 
@@ -680,7 +751,7 @@ export default function App() {
     );
   };
 
-  const navItems = [{ id: 'live', label: '🟢 Live View' }, { id: 'mysheet', label: '⏱️ My Timesheet' }, { id: 'employees', label: '👥 Employees' }, { id: 'timesheets', label: '📋 Timesheets' }, { id: 'expenses', label: '🧾 Expenses' }, { id: 'reports', label: '📊 Reports' }, { id: 'chat', label: '💬 Chat' }, { id: 'settings', label: '⚙️ Settings' }];
+  const navItems = [{ id: 'live', label: '🟢 Live View' }, { id: 'mysheet', label: '⏱️ My Timesheet' }, { id: 'employees', label: '👥 Employees' }, { id: 'timesheets', label: '📋 Timesheets' }, { id: 'expenses', label: '🧾 Expenses' }, { id: 'worksites', label: '🏗️ Worksites' }, { id: 'reports', label: '📊 Reports' }, { id: 'chat', label: '💬 Chat' }, { id: 'settings', label: '⚙️ Settings' }];
 
   return (
     <main style={{ minHeight: '100vh', background: theme.bg }}>
@@ -709,6 +780,7 @@ export default function App() {
           {view === 'employees' && <EmployeesView theme={theme} isMobile={isMobile} user={user ? { uid: user.uid } : null} employees={employees} invites={invites} newEmpEmail={newEmpEmail} setNewEmpEmail={setNewEmpEmail} newEmpName={newEmpName} setNewEmpName={setNewEmpName} inviteEmployee={inviteEmployee} cancelInvite={cancelInvite} sendInviteEmail={sendInviteEmail} copyInviteLink={copyInviteLink} sendingEmail={sendingEmail} updateSettings={updateSettings} setRemoveConfirm={setRemoveConfirm} />}
           {view === 'timesheets' && <TimesheetsView theme={theme} isMobile={isMobile} companySettings={companySettings} companyId={companyId || ''} timesheetFilterStart={timesheetFilterStart} setTimesheetFilterStart={setTimesheetFilterStart} timesheetFilterEnd={timesheetFilterEnd} setTimesheetFilterEnd={setTimesheetFilterEnd} setThisWeek={setThisWeek} setLastWeek={setLastWeek} setThisMonth={setThisMonth} setLastMonth={setLastMonth} clearTimesheetFilter={clearTimesheetFilter} getGroupedTimesheets={getGroupedTimesheets} expandedEmployees={expandedEmployees} toggleEmployee={toggleEmployee} expandedWeeks={expandedWeeks} toggleWeek={toggleWeek} finalizingWeek={finalizingWeek} finalizeWeek={finalizeWeek} timesheetEditingShiftId={timesheetEditingShiftId} setTimesheetEditingShiftId={setTimesheetEditingShiftId} timesheetEditMode={timesheetEditMode} setTimesheetEditMode={setTimesheetEditMode} timesheetDeleteConfirmId={timesheetDeleteConfirmId} setTimesheetDeleteConfirmId={setTimesheetDeleteConfirmId} deletingTimesheetShift={deletingTimesheetShift} addingBreakToShift={addingBreakToShift} addingTravelToShift={addingTravelToShift} handleTimesheetAddBreak={handleTimesheetAddBreak} handleTimesheetAddTravel={handleTimesheetAddTravel} handleTimesheetDeleteShift={handleTimesheetDeleteShift} closeTimesheetEditPanel={closeTimesheetEditPanel} setEditShiftModal={setEditShiftModal} setMapModal={setMapModal} expenses={expenses} />}
           {view === 'expenses' && <ExpensesView theme={theme} isMobile={isMobile} expenses={expenses} employees={employees} getEmployeeName={getEmployeeName} approveExpense={approveExpense} deleteExpense={deleteExpense} approvingExpense={approvingExpense} deletingExpense={deletingExpense} />}
+          {view === 'worksites' && <WorksitesPage theme={theme} worksites={worksites} activeWorksites={worksites.filter(w => w.status === 'active')} archivedWorksites={worksites.filter(w => w.status === 'archived')} shifts={allShifts} loading={false} error="" onAddWorksite={addWorksite} onUpdateWorksite={updateWorksite} onArchiveWorksite={archiveWorksite} onRestoreWorksite={restoreWorksite} />}
           {view === 'reports' && <ReportsView theme={theme} isMobile={isMobile} employees={employees} companySettings={companySettings} reportStart={reportStart} setReportStart={setReportStart} reportEnd={reportEnd} setReportEnd={setReportEnd} reportEmp={reportEmp} setReportEmp={setReportEmp} reportData={reportData} genReport={genReport} exportCSV={exportCSV} exportPDF={exportPDF} getEmployeeName={getEmployeeName} expenses={expenses} exportExpensesCSV={exportExpensesCSV} />}
           {view === 'chat' && <ChatView theme={theme} isMobile={isMobile} messages={messages} chatTab={chatTab} setChatTab={setChatTab} newMsg={newMsg} setNewMsg={setNewMsg} sendMsg={sendMsg} getEmployeeName={getEmployeeName} />}
           {view === 'settings' && <SettingsView theme={theme} isMobile={isMobile} allShifts={allShifts} employees={employees} messages={messages} editingCompanySettings={editingCompanySettings} setEditingCompanySettings={setEditingCompanySettings} saveCompanySettings={saveCompanySettings} savingCompanySettings={savingCompanySettings} cleanupStart={cleanupStart} setCleanupStart={setCleanupStart} cleanupEnd={cleanupEnd} setCleanupEnd={setCleanupEnd} cleanupConfirm={cleanupConfirm} setCleanupConfirm={setCleanupConfirm} cleanup={cleanup} companyId={companyId || ''} />}

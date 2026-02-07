@@ -6,7 +6,7 @@ import { signOut } from 'firebase/auth';
 import { auth } from './firebase';
 import { lightTheme, darkTheme } from './theme';
 import { ViewType, Invite, Shift } from './types';
-import { useAuth, useShift, useChat, useSettings, useExpenses } from './hooks';
+import { useAuth, useShift, useChat, useSettings, useExpenses, useWorksites } from './hooks';
 import { LoginScreen, ClockView, JobLogView, ChatView, HistoryView, ExpensesView } from './components';
 import { DemoProvider, useDemo } from './DemoContext';
 
@@ -128,6 +128,9 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
 
   // Expenses hook
   const expensesHook = useExpenses(isDemoMode ? null : user, isDemoMode ? null : companyId);
+
+  // Worksites hook
+  const { worksites } = useWorksites(isDemoMode ? null : companyId);
   
   // Use demo or real expenses
   const expenses = isDemoMode ? demo.getExpenses() : expensesHook.expenses;
@@ -212,7 +215,7 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
 
   // Demo-wrapped actions with correct return types
   const clockIn = isDemoMode 
-    ? async (_photoBase64?: string) => { showDemoToast('Clocking in'); } 
+    ? async (_photoBase64?: string, _worksiteId?: string, _worksiteName?: string) => { showDemoToast('Clocking in'); } 
     : shiftHook.clockIn;
   const startBreak = isDemoMode 
     ? async () => { showDemoToast('Starting break'); } 
@@ -495,6 +498,7 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
               settings={activeSettings}
               paidRestMinutes={activeLabels.paidRestMinutes}
               photoVerification={activeSettings.photoVerification || false}
+              worksites={worksites}
               onClockIn={clockIn}
               clockingIn={isDemoMode ? false : shiftHook.clockingIn}
               onClockOut={handleClockOut}

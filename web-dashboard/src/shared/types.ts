@@ -4,7 +4,7 @@ import { Timestamp } from 'firebase/firestore';
 export interface Company {
   id: string;
   name: string;
-  ownerId: string;  // userId of the manager who created the company
+  ownerId: string;
   ownerEmail: string;
   createdAt: Timestamp;
   plan?: 'free' | 'pro';
@@ -40,9 +40,23 @@ export interface JobLog {
   notes?: string;
 }
 
+// ==================== WORKSITE TYPES ====================
+
+export interface Worksite {
+  id: string;
+  companyId: string;
+  name: string;
+  address?: string;
+  status: 'active' | 'archived';
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+
+// ==================== SHIFT ====================
+
 export interface Shift {
   id: string;
-  companyId: string;  // NEW: Required for multi-tenant
+  companyId: string;
   userId: string;
   userEmail: string;
   clockIn: Timestamp;
@@ -56,6 +70,8 @@ export interface Shift {
   jobLog: JobLog;
   status: 'active' | 'completed';
   manualEntry?: boolean;
+  worksiteId?: string;       // NEW: Optional worksite reference
+  worksiteName?: string;     // NEW: Denormalized name for display
   editedAt?: Timestamp;
   editedBy?: string;
   editedByEmail?: string;
@@ -77,17 +93,17 @@ export interface EmployeeSettings {
 
 export interface Employee {
   id: string;
-  companyId: string;  // NEW: Required for multi-tenant
+  companyId: string;
   email: string;
   name: string;
-  role: 'manager' | 'employee';  // NEW: Explicit role types
+  role: 'manager' | 'employee';
   settings: EmployeeSettings;
   createdAt: Timestamp;
 }
 
 export interface ChatMessage {
   id: string;
-  companyId: string;  // NEW: Required for multi-tenant
+  companyId: string;
   type: string;
   senderId: string;
   senderEmail: string;
@@ -111,7 +127,7 @@ export interface CompanySettings {
 
 export interface Invite {
   id: string;
-  companyId: string;  // NEW: Required for multi-tenant
+  companyId: string;
   email: string;
   name: string;
   status: 'pending' | 'accepted' | 'cancelled';
@@ -182,16 +198,16 @@ export const EXPENSE_CATEGORIES: ExpenseCategory[] = [
 export interface Expense {
   id: string;
   companyId: string;
-  odId: string;           // User ID (employee)
-  odName: string;         // Employee display name
-  odEmail: string;        // Employee email
-  amount: number;         // Dollar amount
+  odId: string;
+  odName: string;
+  odEmail: string;
+  amount: number;
   category: ExpenseCategory;
-  photoUrl?: string;      // Firebase Storage URL (optional receipt)
-  note?: string;          // Description (optional)
-  date: Timestamp;        // Expense date
+  photoUrl?: string;
+  note?: string;
+  date: Timestamp;
   status: 'pending' | 'approved';
   createdAt: Timestamp;
-  approvedAt?: Timestamp; // When approved
-  approvedBy?: string;    // Manager email who approved
+  approvedAt?: Timestamp;
+  approvedBy?: string;
 }
