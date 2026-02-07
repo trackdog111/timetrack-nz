@@ -81,6 +81,19 @@ export interface Shift {
   finalizedByEmail?: string;
 }
 
+// ==================== EMPLOYEE COSTING ====================
+
+export interface EmployeeCosting {
+  hourlyRate?: number;
+  kiwiSaverOption?: 'none' | '3' | '3.5' | '4' | 'custom';
+  kiwiSaverCustom?: number;
+  holidayPayOption?: '8' | 'custom';
+  holidayPayCustom?: number;
+  accLevy?: number;
+}
+
+// ==================== EMPLOYEE ====================
+
 export interface EmployeeSettings {
   gpsTracking: boolean;
   gpsInterval: number;
@@ -98,6 +111,7 @@ export interface Employee {
   name: string;
   role: 'manager' | 'employee';
   settings: EmployeeSettings;
+  costing?: EmployeeCosting;
   createdAt: Timestamp;
 }
 
