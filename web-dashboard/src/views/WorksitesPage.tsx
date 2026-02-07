@@ -52,8 +52,8 @@ const WorksitesPage: React.FC<WorksitesPageProps> = ({
     let unassignedCount = 0;
 
     shifts.filter(s => s.status === 'completed' && s.clockOut).forEach(shift => {
-      const clockIn = shift.clockIn?.toDate?.() || new Date(shift.clockIn);
-      const clockOut = shift.clockOut?.toDate?.() || new Date(shift.clockOut);
+      const clockIn = shift.clockIn?.toDate ? shift.clockIn.toDate() : new Date(shift.clockIn as any);
+      const clockOut = shift.clockOut?.toDate ? shift.clockOut.toDate() : new Date(shift.clockOut as any);
       const hours = (clockOut.getTime() - clockIn.getTime()) / 3600000;
 
       if (shift.worksiteId && shift.worksiteName) {
@@ -451,3 +451,5 @@ const WorksitesPage: React.FC<WorksitesPageProps> = ({
 };
 
 export default WorksitesPage;
+
+
