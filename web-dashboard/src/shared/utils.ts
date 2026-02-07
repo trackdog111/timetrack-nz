@@ -23,14 +23,31 @@ export const defaultCompanySettings: CompanySettings = {
 
 export const weekDayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
+/**
+ * Calculate break entitlements based on NZ Employment Relations Act 2000 Section 69ZD
+ */
 export function getBreakEntitlements(hoursWorked: number, paidRestMinutes: number = 10) {
   let paid = 0, unpaid = 0;
-  if (hoursWorked >= 14) { paid = 5; unpaid = 2; }
-  else if (hoursWorked >= 12) { paid = 4; unpaid = 2; }
+  
+  if (hoursWorked >= 16) {
+    // Cycle resets every 8 hours
+    const cycles = Math.floor(hoursWorked / 8);
+    const remainder = hoursWorked % 8;
+    // Each 8h cycle: 2 paid rest + 1 unpaid meal
+    paid = cycles * 2;
+    unpaid = cycles;
+    // Add entitlements for remaining hours
+    if (remainder >= 6) { paid += 2; unpaid += 1; }
+    else if (remainder >= 4) { paid += 1; unpaid += 1; }
+    else if (remainder >= 2) { paid += 1; }
+  }
+  else if (hoursWorked >= 14) { paid = 4; unpaid = 2; }
+  else if (hoursWorked >= 12) { paid = 3; unpaid = 2; }
   else if (hoursWorked >= 10) { paid = 3; unpaid = 1; }
   else if (hoursWorked >= 6) { paid = 2; unpaid = 1; }
   else if (hoursWorked >= 4) { paid = 1; unpaid = 1; }
   else if (hoursWorked >= 2) { paid = 1; unpaid = 0; }
+  
   return { paidMinutes: paid * paidRestMinutes, unpaidMinutes: unpaid * 30 };
 }
 

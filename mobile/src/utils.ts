@@ -11,15 +11,27 @@ export const defaultSettings: EmployeeSettings = {
 };
 
 /**
- * Calculate break entitlements based on NZ Employment Relations Act 2000
+ * Calculate break entitlements based on NZ Employment Relations Act 2000 Section 69ZD
  * @param hoursWorked - Hours worked in the shift
  * @param paidRestMinutes - Minutes per paid rest break (default 10, can be increased by employer)
  */
 export function getBreakEntitlements(hoursWorked: number, paidRestMinutes: number = 10) {
   let paidBreaks = 0, unpaidBreaks = 0;
   
-  if (hoursWorked >= 14) { paidBreaks = 5; unpaidBreaks = 2; }
-  else if (hoursWorked >= 12) { paidBreaks = 4; unpaidBreaks = 2; }
+  if (hoursWorked >= 16) {
+    // Cycle resets every 8 hours
+    const cycles = Math.floor(hoursWorked / 8);
+    const remainder = hoursWorked % 8;
+    // Each 8h cycle: 2 paid rest + 1 unpaid meal
+    paidBreaks = cycles * 2;
+    unpaidBreaks = cycles;
+    // Add entitlements for remaining hours
+    if (remainder >= 6) { paidBreaks += 2; unpaidBreaks += 1; }
+    else if (remainder >= 4) { paidBreaks += 1; unpaidBreaks += 1; }
+    else if (remainder >= 2) { paidBreaks += 1; }
+  }
+  else if (hoursWorked >= 14) { paidBreaks = 4; unpaidBreaks = 2; }
+  else if (hoursWorked >= 12) { paidBreaks = 3; unpaidBreaks = 2; }
   else if (hoursWorked >= 10) { paidBreaks = 3; unpaidBreaks = 1; }
   else if (hoursWorked >= 6) { paidBreaks = 2; unpaidBreaks = 1; }
   else if (hoursWorked >= 4) { paidBreaks = 1; unpaidBreaks = 1; }

@@ -13,14 +13,15 @@ export function BreakRulesInfo({ isOpen, onToggle, theme, paidRestMinutes = 10 }
   // Check if employer offers more than minimum
   const isEnhanced = paidRestMinutes > 10;
   
-  // Generate table data based on company's paid rest duration
+  // Correct NZ Employment Relations Act 2000 Section 69ZD
   const breakRules = [
-    { hours: '2-4h', paidBreaks: 1, unpaidBreaks: 0 },
-    { hours: '4-6h', paidBreaks: 1, unpaidBreaks: 1 },
-    { hours: '6-10h', paidBreaks: 2, unpaidBreaks: 1 },
-    { hours: '10-12h', paidBreaks: 3, unpaidBreaks: 1 },
-    { hours: '12-14h', paidBreaks: 4, unpaidBreaks: 2 },
-    { hours: '14h+', paidBreaks: 5, unpaidBreaks: 2 }
+    { hours: '2-4h', paidBreaks: 1, unpaidBreaks: 0, note: '' },
+    { hours: '4-6h', paidBreaks: 1, unpaidBreaks: 1, note: '' },
+    { hours: '6-10h', paidBreaks: 2, unpaidBreaks: 1, note: '' },
+    { hours: '10-12h', paidBreaks: 3, unpaidBreaks: 1, note: '' },
+    { hours: '12-14h', paidBreaks: 3, unpaidBreaks: 2, note: '' },
+    { hours: '14-16h', paidBreaks: 4, unpaidBreaks: 2, note: '' },
+    { hours: '16h+', paidBreaks: 0, unpaidBreaks: 0, note: 'Cycle resets every 8h' }
   ];
 
   return (
@@ -95,16 +96,20 @@ export function BreakRulesInfo({ isOpen, onToggle, theme, paidRestMinutes = 10 }
                 {breakRules.map((rule, i) => (
                   <tr key={i} style={{ borderTop: `1px solid ${theme.cardBorder}` }}>
                     <td style={{ padding: '10px', color: theme.text }}>{rule.hours}</td>
-                    <td style={{ padding: '10px', color: theme.success }}>
-                      {rule.paidBreaks > 0 
-                        ? `${rule.paidBreaks} × ${paidRestMinutes}min` 
-                        : '—'}
+                    <td style={{ padding: '10px', color: rule.note ? theme.textMuted : theme.success }} colSpan={rule.note ? 2 : 1}>
+                      {rule.note 
+                        ? rule.note
+                        : rule.paidBreaks > 0 
+                          ? `${rule.paidBreaks} × ${paidRestMinutes}min` 
+                          : '—'}
                     </td>
-                    <td style={{ padding: '10px', color: theme.textLight }}>
-                      {rule.unpaidBreaks > 0 
-                        ? `${rule.unpaidBreaks} × 30min` 
-                        : '—'}
-                    </td>
+                    {!rule.note && (
+                      <td style={{ padding: '10px', color: theme.textLight }}>
+                        {rule.unpaidBreaks > 0 
+                          ? `${rule.unpaidBreaks} × 30min` 
+                          : '—'}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
