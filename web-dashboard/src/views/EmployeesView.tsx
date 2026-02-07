@@ -17,7 +17,7 @@ interface EmployeesViewProps {
   copyInviteLink: (inv: Invite) => void;
   sendingEmail: string | null;
   updateSettings: (empId: string, updates: Partial<EmployeeSettings>) => void;
-  updateCosting: (empId: string, costing: EmployeeCosting) => void;
+  updateCosting: (empId: string, Rates: EmployeeCosting) => void;
   setRemoveConfirm: (id: string | null) => void;
 }
 
@@ -40,7 +40,7 @@ export function EmployeesView({
   updateCosting,
   setRemoveConfirm
 }: EmployeesViewProps) {
-  const [expandedCosting, setExpandedCosting] = useState<string | null>(null);
+  const [expandedCosting, setexpandedCosting] = useState<string | null>(null);
 
   const styles = {
     card: { background: theme.card, borderRadius: '12px', padding: '20px', marginBottom: '16px', border: `1px solid ${theme.cardBorder}` },
@@ -109,30 +109,30 @@ export function EmployeesView({
     </button>
   );
 
-  const getKiwiSaverPercent = (costing?: EmployeeCosting): number => {
-    if (!costing || !costing.kiwiSaverOption || costing.kiwiSaverOption === 'none') return 0;
-    if (costing.kiwiSaverOption === 'custom') return costing.kiwiSaverCustom || 0;
-    return parseFloat(costing.kiwiSaverOption);
+  const getKiwiSaverPercent = (Rates?: EmployeeCosting): number => {
+    if (!Rates || !Rates.kiwiSaverOption || Rates.kiwiSaverOption === 'none') return 0;
+    if (Rates.kiwiSaverOption === 'custom') return Rates.kiwiSaverCustom || 0;
+    return parseFloat(Rates.kiwiSaverOption);
   };
 
-  const getHolidayPayPercent = (costing?: EmployeeCosting): number => {
-    if (!costing || !costing.holidayPayOption) return 8;
-    if (costing.holidayPayOption === 'custom') return costing.holidayPayCustom || 0;
+  const getHolidayPayPercent = (Rates?: EmployeeCosting): number => {
+    if (!Rates || !Rates.holidayPayOption) return 8;
+    if (Rates.holidayPayOption === 'custom') return Rates.holidayPayCustom || 0;
     return 8;
   };
 
-  const getCostSummary = (costing?: EmployeeCosting) => {
-    const rate = costing?.hourlyRate || 0;
+  const getCostSummary = (Rates?: EmployeeCosting) => {
+    const rate = Rates?.hourlyRate || 0;
     if (rate === 0) return null;
-    const ks = getKiwiSaverPercent(costing);
-    const hp = getHolidayPayPercent(costing);
-    const acc = costing?.accLevy || 0;
+    const ks = getKiwiSaverPercent(Rates);
+    const hp = getHolidayPayPercent(Rates);
+    const acc = Rates?.accLevy || 0;
     const totalPercent = ks + hp + acc;
     const totalCost = rate * (1 + totalPercent / 100);
     return { rate, ks, hp, acc, totalPercent, totalCost };
   };
 
-  const handleCostingChange = (empId: string, current: EmployeeCosting | undefined, updates: Partial<EmployeeCosting>) => {
+  const handleRatesChange = (empId: string, current: EmployeeCosting | undefined, updates: Partial<EmployeeCosting>) => {
     const merged: EmployeeCosting = { ...current, ...updates };
     updateCosting(empId, merged);
   };
@@ -207,8 +207,8 @@ export function EmployeesView({
       {/* Employee List */}
       {employees.map(emp => {
         const isExpanded = expandedCosting === emp.id;
-        const costing = emp.costing;
-        const summary = getCostSummary(costing);
+        const Rates = emp.costing;
+        const summary = getCostSummary(Rates);
 
         return (
           <div key={emp.id} style={styles.card}>
@@ -250,10 +250,10 @@ export function EmployeesView({
               </div>
             </div>
 
-            {/* Costing Section */}
+            {/* Rates Section */}
             <div style={{ marginTop: '12px' }}>
               <button
-                onClick={() => setExpandedCosting(isExpanded ? null : emp.id)}
+                onClick={() => setexpandedCosting(isExpanded ? null : emp.id)}
                 style={{
                   display: 'flex',
                   justifyContent: 'space-between',
@@ -268,7 +268,7 @@ export function EmployeesView({
                 }}
               >
                 <span style={{ fontSize: '14px', fontWeight: '600' }}>
-                  💰 Costing
+                  💰 Rates
                   {summary && (
                     <span style={{ fontWeight: '400', color: theme.textMuted, marginLeft: '12px', fontSize: '13px' }}>
                       ${summary.rate.toFixed(2)}/hr → ${summary.totalCost.toFixed(2)}/hr total
@@ -296,8 +296,8 @@ export function EmployeesView({
                       step="0.01"
                       min="0"
                       placeholder="0.00"
-                      value={costing?.hourlyRate || ''}
-                      onChange={(e) => handleCostingChange(emp.id, costing, {
+                      value={Rates?.hourlyRate || ''}
+                      onChange={(e) => handleRatesChange(emp.id, Rates, {
                         hourlyRate: e.target.value ? parseFloat(e.target.value) : undefined
                       })}
                       style={{ ...styles.input, maxWidth: '180px' }}
@@ -312,42 +312,42 @@ export function EmployeesView({
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
                       <RadioOption
                         label="Not enrolled"
-                        selected={!costing?.kiwiSaverOption || costing.kiwiSaverOption === 'none'}
-                        onClick={() => handleCostingChange(emp.id, costing, { kiwiSaverOption: 'none', kiwiSaverCustom: undefined })}
+                        selected={!Rates?.kiwiSaverOption || Rates.kiwiSaverOption === 'none'}
+                        onClick={() => handleRatesChange(emp.id, Rates, { kiwiSaverOption: 'none', kiwiSaverCustom: undefined })}
                       />
                       <RadioOption
                         label="3%"
                         sublabel="until 31 Mar 2026"
-                        selected={costing?.kiwiSaverOption === '3'}
-                        onClick={() => handleCostingChange(emp.id, costing, { kiwiSaverOption: '3', kiwiSaverCustom: undefined })}
+                        selected={Rates?.kiwiSaverOption === '3'}
+                        onClick={() => handleRatesChange(emp.id, Rates, { kiwiSaverOption: '3', kiwiSaverCustom: undefined })}
                       />
                       <RadioOption
                         label="3.5%"
                         sublabel="from 1 Apr 2026"
-                        selected={costing?.kiwiSaverOption === '3.5'}
-                        onClick={() => handleCostingChange(emp.id, costing, { kiwiSaverOption: '3.5', kiwiSaverCustom: undefined })}
+                        selected={Rates?.kiwiSaverOption === '3.5'}
+                        onClick={() => handleRatesChange(emp.id, Rates, { kiwiSaverOption: '3.5', kiwiSaverCustom: undefined })}
                       />
                       <RadioOption
                         label="4%"
                         sublabel="from 1 Apr 2028"
-                        selected={costing?.kiwiSaverOption === '4'}
-                        onClick={() => handleCostingChange(emp.id, costing, { kiwiSaverOption: '4', kiwiSaverCustom: undefined })}
+                        selected={Rates?.kiwiSaverOption === '4'}
+                        onClick={() => handleRatesChange(emp.id, Rates, { kiwiSaverOption: '4', kiwiSaverCustom: undefined })}
                       />
                       <RadioOption
                         label="Custom"
-                        selected={costing?.kiwiSaverOption === 'custom'}
-                        onClick={() => handleCostingChange(emp.id, costing, { kiwiSaverOption: 'custom' })}
+                        selected={Rates?.kiwiSaverOption === 'custom'}
+                        onClick={() => handleRatesChange(emp.id, Rates, { kiwiSaverOption: 'custom' })}
                       />
                     </div>
-                    {costing?.kiwiSaverOption === 'custom' && (
+                    {Rates?.kiwiSaverOption === 'custom' && (
                       <input
                         type="number"
                         step="0.1"
                         min="0"
                         max="100"
                         placeholder="e.g. 6"
-                        value={costing?.kiwiSaverCustom || ''}
-                        onChange={(e) => handleCostingChange(emp.id, costing, {
+                        value={Rates?.kiwiSaverCustom || ''}
+                        onChange={(e) => handleRatesChange(emp.id, Rates, {
                           kiwiSaverCustom: e.target.value ? parseFloat(e.target.value) : undefined
                         })}
                         style={{ ...styles.input, maxWidth: '120px' }}
@@ -364,24 +364,24 @@ export function EmployeesView({
                       <RadioOption
                         label="8%"
                         sublabel="standard"
-                        selected={!costing?.holidayPayOption || costing.holidayPayOption === '8'}
-                        onClick={() => handleCostingChange(emp.id, costing, { holidayPayOption: '8', holidayPayCustom: undefined })}
+                        selected={!Rates?.holidayPayOption || Rates.holidayPayOption === '8'}
+                        onClick={() => handleRatesChange(emp.id, Rates, { holidayPayOption: '8', holidayPayCustom: undefined })}
                       />
                       <RadioOption
                         label="Custom"
-                        selected={costing?.holidayPayOption === 'custom'}
-                        onClick={() => handleCostingChange(emp.id, costing, { holidayPayOption: 'custom' })}
+                        selected={Rates?.holidayPayOption === 'custom'}
+                        onClick={() => handleRatesChange(emp.id, Rates, { holidayPayOption: 'custom' })}
                       />
                     </div>
-                    {costing?.holidayPayOption === 'custom' && (
+                    {Rates?.holidayPayOption === 'custom' && (
                       <input
                         type="number"
                         step="0.1"
                         min="0"
                         max="100"
                         placeholder="e.g. 10"
-                        value={costing?.holidayPayCustom || ''}
-                        onChange={(e) => handleCostingChange(emp.id, costing, {
+                        value={Rates?.holidayPayCustom || ''}
+                        onChange={(e) => handleRatesChange(emp.id, Rates, {
                           holidayPayCustom: e.target.value ? parseFloat(e.target.value) : undefined
                         })}
                         style={{ ...styles.input, maxWidth: '120px' }}
@@ -400,8 +400,8 @@ export function EmployeesView({
                       min="0"
                       max="100"
                       placeholder="e.g. 1.39"
-                      value={costing?.accLevy || ''}
-                      onChange={(e) => handleCostingChange(emp.id, costing, {
+                      value={Rates?.accLevy || ''}
+                      onChange={(e) => handleRatesChange(emp.id, Rates, {
                         accLevy: e.target.value ? parseFloat(e.target.value) : undefined
                       })}
                       style={{ ...styles.input, maxWidth: '180px' }}
@@ -411,7 +411,7 @@ export function EmployeesView({
                     </p>
                   </div>
 
-                  {/* Cost Summary */}
+                  {/* Rate Summary */}
                   {summary && (
                     <div style={{
                       background: theme.card,
@@ -419,7 +419,7 @@ export function EmployeesView({
                       borderRadius: '8px',
                       padding: '12px',
                     }}>
-                      <p style={{ color: theme.text, fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>Cost Summary</p>
+                      <p style={{ color: theme.text, fontSize: '13px', fontWeight: '600', marginBottom: '8px' }}>Rate Summary</p>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '4px 16px', fontSize: '13px' }}>
                         <span style={{ color: theme.textMuted }}>Base rate:</span>
                         <span style={{ color: theme.text }}>${summary.rate.toFixed(2)}/hr</span>
@@ -447,3 +447,7 @@ export function EmployeesView({
     </div>
   );
 }
+
+
+
+
