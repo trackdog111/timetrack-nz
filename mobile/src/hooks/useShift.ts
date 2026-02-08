@@ -53,6 +53,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const [field3, setField3] = useState('');
   const [error, setError] = useState('');
   const [clockingIn, setClockingIn] = useState(false);
+  const [clockingOut, setClockingOut] = useState(false);
   
   // Auto-travel detection state
   const [anchorLocation, setAnchorLocation] = useState<Location | null>(null);
@@ -70,6 +71,16 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const GPS_MIN_SAVE_INTERVAL = 30000; // ms - minimum 30 seconds between saves to prevent duplicates
 
   const gpsIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Only return location if accuracy is acceptable for saving to locationHistory
+  const getAccurateLocation = (location: Location | null): Location | null => {
+    if (!location) return null;
+    if (location.accuracy && location.accuracy > GPS_MAX_ACCURACY) {
+      console.warn(`GPS rejected: accuracy ${location.accuracy}m exceeds ${GPS_MAX_ACCURACY}m threshold`);
+      return null;
+    }
+    return location;
+  };
   const storage = getStorage();
 
   // Get current GPS location - uses Capacitor on native, browser API on web
@@ -400,7 +411,8 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     setError('');
     
     try {
-      const location = await getCurrentLocation();
+      const rawLocation = await getCurrentLocation();
+      const location = getAccurateLocation(rawLocation);
       
       // Create shift first
       const shiftRef = await addDoc(collection(db, 'shifts'), {
@@ -408,7 +420,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
         userId: user.uid,
         userEmail: user.email,
         clockIn: Timestamp.now(),
-        clockInLocation: location,
+        clockInLocation: rawLocation,
         locationHistory: [],  // Don't duplicate clock-in location - it's already in clockInLocation
         breaks: [],
         travelSegments: [],
@@ -447,17 +459,17 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
       }
       
       // Set anchor location for auto-travel detection
-      if (location && settings.autoTravel) {
-        setAnchorLocation(location);
-        setLastKnownLocation(location);
-        lastRecordedLocationRef.current = location;
+      if (rawLocation && settings.autoTravel) {
+        setAnchorLocation(rawLocation);
+        setLastKnownLocation(rawLocation);
+        lastRecordedLocationRef.current = rawLocation;
         setAutoTravelActive(false);
         setStationaryStartTime(null);
       }
       
       // Set last recorded location even without auto-travel (for GPS filtering)
-      if (location) {
-        lastRecordedLocationRef.current = location;
+      if (rawLocation) {
+        lastRecordedLocationRef.current = rawLocation;
         lastSaveTimestampRef.current = Date.now(); // Prevent GPS from saving again immediately
       }
       
@@ -473,13 +485,17 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   // Clock out
   const clockOut = async (requireNotes: boolean) => {
     if (!currentShift) return;
+    if (clockingOut) return false; // Prevent double-clicks
     if (requireNotes && !field1.trim()) {
       setError('Please add notes before clocking out');
       return false;
     }
 
+    setClockingOut(true);
+
     try {
-      const location = await getCurrentLocation();
+      const rawLocation = await getCurrentLocation();
+      const location = getAccurateLocation(rawLocation);
       let updatedBreaks = [...(currentShift.breaks || [])];
       let updatedTravel = [...(currentShift.travelSegments || [])];
 
@@ -515,7 +531,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
 
       const updateData: any = {
         clockOut: Timestamp.now(),
-        clockOutLocation: location,
+        clockOutLocation: rawLocation,
         breaks: updatedBreaks,
         travelSegments: updatedTravel,
         'jobLog.field1': field1,
@@ -524,7 +540,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
         status: 'completed'
       };
 
-      // Add GPS to locationHistory for map tracking
+      // Add GPS to locationHistory for map tracking — only if accurate
       if (location) {
         updateData.locationHistory = arrayUnion({ ...location, source: 'clockOut' });
       }
@@ -535,9 +551,11 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
       setCurrentBreakStart(null);
       setTraveling(false);
       setCurrentTravelStart(null);
+      setClockingOut(false);
       return true;
     } catch (err: any) {
       setError(err.message);
+      setClockingOut(false);
       return false;
     }
   };
@@ -546,18 +564,19 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const startBreak = async () => {
     if (!currentShift) return;
     try {
-      const location = await getCurrentLocation();
+      const rawLocation = await getCurrentLocation();
+      const location = getAccurateLocation(rawLocation);
       const newBreak: any = { 
         startTime: Timestamp.now(), 
         manualEntry: false
       };
-      if (location) {
-        newBreak.startLocation = location;
+      if (rawLocation) {
+        newBreak.startLocation = rawLocation;
       }
       const updateData: any = {
         breaks: [...(currentShift.breaks || []), newBreak]
       };
-      // Add GPS to locationHistory for map tracking with source label
+      // Add GPS to locationHistory for map tracking — only if accurate
       if (location) {
         updateData.locationHistory = arrayUnion({ ...location, source: 'breakStart' });
       }
@@ -573,20 +592,21 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const endBreak = async () => {
     if (!currentShift || !currentBreakStart) return;
     try {
-      const location = await getCurrentLocation();
+      const rawLocation = await getCurrentLocation();
+      const location = getAccurateLocation(rawLocation);
       const durationMinutes = Math.round((new Date().getTime() - currentBreakStart.getTime()) / 60000);
       const updatedBreaks = currentShift.breaks.map((b, i) => {
         if (i === currentShift.breaks.length - 1 && !b.endTime && !b.manualEntry) {
           const updated: any = { ...b, endTime: Timestamp.now(), durationMinutes };
-          if (location) {
-            updated.endLocation = location;
+          if (rawLocation) {
+            updated.endLocation = rawLocation;
           }
           return updated;
         }
         return b;
       });
       const updateData: any = { breaks: updatedBreaks };
-      // Add GPS to locationHistory for map tracking with source label
+      // Add GPS to locationHistory for map tracking — only if accurate
       if (location) {
         updateData.locationHistory = arrayUnion({ ...location, source: 'breakEnd' });
       }
@@ -695,17 +715,18 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const startTravel = async () => {
     if (!currentShift) return;
     try {
-      const location = await getCurrentLocation();
+      const rawLocation = await getCurrentLocation();
+      const location = getAccurateLocation(rawLocation);
       const newTravelSegment: any = {
         startTime: Timestamp.now()
       };
-      if (location) {
-        newTravelSegment.startLocation = location;
+      if (rawLocation) {
+        newTravelSegment.startLocation = rawLocation;
       }
       const updateData: any = {
         travelSegments: [...(currentShift.travelSegments || []), newTravelSegment]
       };
-      // Add GPS to locationHistory for map tracking with source label
+      // Add GPS to locationHistory for map tracking — only if accurate
       if (location) {
         updateData.locationHistory = arrayUnion({ ...location, source: 'travelStart' });
       }
@@ -721,20 +742,21 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const endTravel = async () => {
     if (!currentShift || !currentTravelStart) return;
     try {
-      const location = await getCurrentLocation();
+      const rawLocation = await getCurrentLocation();
+      const location = getAccurateLocation(rawLocation);
       const durationMinutes = Math.round((new Date().getTime() - currentTravelStart.getTime()) / 60000);
       const updatedTravel = (currentShift.travelSegments || []).map((t, i) => {
         if (i === (currentShift.travelSegments || []).length - 1 && !t.endTime) {
           const updated: any = { ...t, endTime: Timestamp.now(), durationMinutes };
-          if (location) {
-            updated.endLocation = location;
+          if (rawLocation) {
+            updated.endLocation = rawLocation;
           }
           return updated;
         }
         return t;
       });
       const updateData: any = { travelSegments: updatedTravel };
-      // Add GPS to locationHistory for map tracking with source label
+      // Add GPS to locationHistory for map tracking — only if accurate
       if (location) {
         updateData.locationHistory = arrayUnion({ ...location, source: 'travelEnd' });
       }
@@ -986,6 +1008,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     setError,
     clockIn,
     clockingIn,
+    clockingOut,
     clockOut,
     startBreak,
     endBreak,
