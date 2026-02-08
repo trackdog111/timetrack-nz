@@ -367,6 +367,26 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
         ...(worksiteName ? { worksiteName } : {})
       });
 
+      // Auto-create worksite if custom name was typed (no worksiteId means it's new)
+      if (worksiteName && !worksiteId) {
+        try {
+          const wsRef = await addDoc(collection(db, 'worksites'), {
+            companyId,
+            name: worksiteName,
+            status: 'active',
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+            createdBy: user.uid,
+            autoCreated: true
+          });
+          // Update shift with the new worksite ID
+          await updateDoc(shiftRef, { worksiteId: wsRef.id });
+        } catch (wsErr) {
+          console.error('Error auto-creating worksite:', wsErr);
+          // Non-fatal — shift is already created
+        }
+      }
+
       // If photo provided, upload and update shift with URL
       if (photoBase64) {
         const photoUrl = await uploadClockInPhoto(photoBase64, shiftRef.id);
