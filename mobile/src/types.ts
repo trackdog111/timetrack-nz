@@ -97,6 +97,7 @@ export interface EmployeeSettings {
   requireNotes: boolean;
   chatEnabled: boolean;
   photoVerification?: boolean;
+  requireWorksite?: boolean;
   companyLabels?: CompanyLabels;
   autoTravel?: boolean;
   autoTravelInterval?: number;
