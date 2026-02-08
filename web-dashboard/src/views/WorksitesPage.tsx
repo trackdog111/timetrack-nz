@@ -16,6 +16,7 @@ interface WorksitesPageProps {
   onUpdateWorksite: (id: string, data: { name?: string; address?: string }) => Promise<boolean>;
   onArchiveWorksite: (id: string) => Promise<boolean>;
   onRestoreWorksite: (id: string) => Promise<boolean>;
+  onDeleteWorksite: (id: string) => Promise<boolean>;
 }
 
 // Pie chart colors
@@ -35,7 +36,8 @@ const WorksitesPage: React.FC<WorksitesPageProps> = ({
   onAddWorksite,
   onUpdateWorksite,
   onArchiveWorksite,
-  onRestoreWorksite
+  onRestoreWorksite,
+  onDeleteWorksite
 }) => {
   const [newName, setNewName] = useState('');
   const [newAddress, setNewAddress] = useState('');
@@ -378,6 +380,16 @@ const WorksitesPage: React.FC<WorksitesPageProps> = ({
                       >
                         Archive
                       </button>
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Permanently delete "${site.name}"? This cannot be undone.`)) {
+                            onDeleteWorksite(site.id);
+                          }
+                        }}
+                        style={{ ...btnSecondary, color: theme.danger }}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </>
                 )}
@@ -434,12 +446,24 @@ const WorksitesPage: React.FC<WorksitesPageProps> = ({
                       <div style={{ color: theme.textMuted, fontSize: 12, marginTop: 2 }}>{site.address}</div>
                     )}
                   </div>
-                  <button
-                    onClick={() => onRestoreWorksite(site.id)}
-                    style={{ ...btnSecondary, color: theme.success }}
-                  >
-                    Restore
-                  </button>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      onClick={() => onRestoreWorksite(site.id)}
+                      style={{ ...btnSecondary, color: theme.success }}
+                    >
+                      Restore
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`Permanently delete "${site.name}"? This cannot be undone.`)) {
+                          onDeleteWorksite(site.id);
+                        }
+                      }}
+                      style={{ ...btnSecondary, color: theme.danger }}
+                    >
+                      Delete
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
