@@ -511,8 +511,7 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
               onDeleteBreak={deleteBreak}
               onAddManualShift={addManualShift}
               showToast={showToast}
-              autoTravelEnabled={activeSettings.autoTravel || false}
-              autoTravelActive={isDemoMode ? false : shiftHook.autoTravelActive}
+              
               field1={field1}
               field2={field2}
               field3={field3}
