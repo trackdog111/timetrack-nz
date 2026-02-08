@@ -34,7 +34,7 @@ export function LiveView({ theme, isMobile, activeShifts, companySettings, getEm
         const clockInLng = shift.clockInLocation?.longitude || (shift.clockInLocation as any)?.lng;
         
         const sameAsClockIn = shift.clockInLocation && locLat === clockInLat && locLng === clockInLng;
-        const isEvent = loc.source && loc.source !== 'tracking' && loc.source !== 'clockIn';
+        const isEvent = loc.source && (loc.source as string) !== 'tracking' && (loc.source as string) !== 'clockIn';
         
         // Keep all events (break, travel etc) even if same location. Only skip tracking dupes.
         if (!sameAsClockIn || isEvent) {
