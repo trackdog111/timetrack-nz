@@ -368,7 +368,6 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
       setCurrentBreakStart(null);
       setTraveling(false);
       setCurrentTravelStart(null);
-      clockingOutRef.current = false;
       return true;
     } catch (err: any) {
       setError(err.message);
