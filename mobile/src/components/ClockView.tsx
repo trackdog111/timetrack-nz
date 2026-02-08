@@ -498,7 +498,7 @@ export function ClockView({
                     }}
                     style={{ ...styles.input, appearance: 'auto' as any }}
                   >
-                    <option value="">{requireWorksite ? '— Select a worksite —' : '— No worksite —'}</option>
+                    <option value="">— Select a worksite —</option>
                     {worksites.map(w => (
                       <option key={w.id} value={w.id}>{w.name}{w.address ? ` (${w.address})` : ''}</option>
                     ))}

@@ -499,7 +499,7 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
               paidRestMinutes={activeLabels.paidRestMinutes}
               photoVerification={activeSettings.photoVerification || false}
               worksites={worksites}
-              requireWorksite={(activeLabels as any).requireWorksite || false}
+              requireWorksite={activeSettings.requireWorksite || false}
               onClockIn={clockIn}
               clockingIn={isDemoMode ? false : shiftHook.clockingIn}
               onClockOut={handleClockOut}

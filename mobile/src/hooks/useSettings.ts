@@ -59,6 +59,7 @@ export function useSettings(user: User | null, companyId: string | null) {
             setSettings(prev => ({
               ...prev,
               photoVerification: companySettings.photoVerification || false,
+              requireWorksite: companySettings.requireWorksite || false,
               field1Enabled: companySettings.field1Enabled !== false,  // defaults to true
               field2Enabled: companySettings.field2Enabled === true,   // defaults to false
               field3Enabled: companySettings.field3Enabled === true    // defaults to false
@@ -91,6 +92,7 @@ export function useSettings(user: User | null, companyId: string | null) {
         setSettings(prev => ({ 
           ...prev, 
           photoVerification: companySettings.photoVerification || false,
+          requireWorksite: companySettings.requireWorksite || false,
           field1Enabled: companySettings.field1Enabled !== false,  // defaults to true
           field2Enabled: companySettings.field2Enabled === true,   // defaults to false
           field3Enabled: companySettings.field3Enabled === true    // defaults to false
