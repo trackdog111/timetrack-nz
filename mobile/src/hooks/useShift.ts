@@ -37,7 +37,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   const [field3, setField3] = useState('');
   const [error, setError] = useState('');
   const [clockingIn, setClockingIn] = useState(false);
-  const [clockingOut, setClockingOut] = useState(false);
+  const clockingOutRef = useRef(false);
 
   const storage = getStorage();
 
@@ -303,13 +303,13 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
   // Clock out
   const clockOut = async (requireNotes: boolean) => {
     if (!currentShift) return;
-    if (clockingOut) return false;
+    if (clockingOutRef.current) return false;
     if (requireNotes && !field1.trim()) {
       setError('Please add notes before clocking out');
       return false;
     }
 
-    setClockingOut(true);
+    clockingOutRef.current = true;
 
     try {
       const location = await getCurrentLocation();
@@ -368,11 +368,11 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
       setCurrentBreakStart(null);
       setTraveling(false);
       setCurrentTravelStart(null);
-      setClockingOut(false);
+      clockingOutRef.current = false;
       return true;
     } catch (err: any) {
       setError(err.message);
-      setClockingOut(false);
+      clockingOutRef.current = false;
       return false;
     }
   };
