@@ -383,15 +383,13 @@ export function HistoryView({
     setMapModal({
       locations: shift.locationHistory || [],
       title: dateStr,
-      clockInLocation: shift.clockInLocation,
-      clockOutLocation: shift.clockOutLocation
+      clockInLocation: shift.clockInLocation
     });
   };
 
   const getLocationCount = (shift: Shift): number => {
     let count = shift.locationHistory?.length || 0;
     if (shift.clockInLocation) count++;
-    if (shift.clockOutLocation) count++;
     return count;
   };
 
@@ -409,7 +407,6 @@ export function HistoryView({
           title={mapModal.title}
           theme={theme}
           clockInLocation={mapModal.clockInLocation}
-          clockOutLocation={mapModal.clockOutLocation}
         />
       )}
 
