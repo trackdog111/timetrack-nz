@@ -25,17 +25,19 @@ export function LiveView({ theme, isMobile, activeShifts, companySettings, getEm
       locations.push(shift.clockInLocation);
     }
     
-    // Add location history
+    // Add location history — only skip pure tracking duplicates at clock-in location
     if (shift.locationHistory?.length > 0) {
       shift.locationHistory.forEach(loc => {
-        // Get coordinates (handle both formats)
         const locLat = loc.latitude || (loc as any).lat;
         const locLng = loc.longitude || (loc as any).lng;
         const clockInLat = shift.clockInLocation?.latitude || (shift.clockInLocation as any)?.lat;
         const clockInLng = shift.clockInLocation?.longitude || (shift.clockInLocation as any)?.lng;
         
-        // Avoid duplicates with clockInLocation
-        if (!shift.clockInLocation || locLat !== clockInLat || locLng !== clockInLng) {
+        const sameAsClockIn = shift.clockInLocation && locLat === clockInLat && locLng === clockInLng;
+        const isEvent = loc.source && loc.source !== 'tracking' && loc.source !== 'clockIn';
+        
+        // Keep all events (break, travel etc) even if same location. Only skip tracking dupes.
+        if (!sameAsClockIn || isEvent) {
           locations.push(loc);
         }
       });
