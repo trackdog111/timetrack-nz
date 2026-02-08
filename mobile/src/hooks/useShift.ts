@@ -309,6 +309,57 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     return () => unsubscribe();
   }, [user]);
 
+  // Long shift warnings - notify at 10h and 12h
+  const warned10hRef = useRef(false);
+  const warned12hRef = useRef(false);
+
+  useEffect(() => {
+    if (!currentShift) {
+      warned10hRef.current = false;
+      warned12hRef.current = false;
+      return;
+    }
+
+    const checkShiftDuration = () => {
+      if (!currentShift?.clockIn?.toDate) return;
+      const clockInTime = currentShift.clockIn.toDate().getTime();
+      const hoursElapsed = (Date.now() - clockInTime) / 3600000;
+
+      if (hoursElapsed >= 12 && !warned12hRef.current) {
+        warned12hRef.current = true;
+        onToast?.('⚠️ 12 hours reached — consider clocking out');
+        // Browser notification
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Trackable NZ — 12 Hour Warning', {
+            body: 'Your shift has reached 12 hours. Consider clocking out.',
+            icon: '/favicon.ico'
+          });
+        }
+      } else if (hoursElapsed >= 10 && !warned10hRef.current) {
+        warned10hRef.current = true;
+        onToast?.('⏰ 10 hours on shift — 12h warning at 12 hours');
+        if ('Notification' in window && Notification.permission === 'granted') {
+          new Notification('Trackable NZ — 10 Hour Notice', {
+            body: 'You have been clocked in for 10 hours.',
+            icon: '/favicon.ico'
+          });
+        }
+      }
+    };
+
+    // Check immediately then every minute
+    checkShiftDuration();
+    const interval = setInterval(checkShiftDuration, 60000);
+    return () => clearInterval(interval);
+  }, [currentShift, onToast]);
+
+  // Request notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   // Upload photo to Firebase Storage
   const uploadClockInPhoto = async (photoBase64: string, shiftId: string): Promise<string | null> => {
     if (!user) return null;
