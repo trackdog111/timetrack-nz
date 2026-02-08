@@ -47,6 +47,7 @@ export interface Worksite {
   companyId: string;
   name: string;
   address?: string;
+  contractValue?: number;
   status: 'active' | 'archived';
   createdAt: Timestamp;
   updatedAt: Timestamp;
@@ -226,4 +227,19 @@ export interface Expense {
   createdAt: Timestamp;
   approvedAt?: Timestamp;
   approvedBy?: string;
+}
+
+// ==================== WORKSITE COST ====================
+
+export interface WorksiteCost {
+  id: string;
+  worksiteId: string;
+  date: Timestamp;
+  category: string;
+  reference: string;
+  description: string;
+  amount: number;
+  createdAt: Timestamp;
+  createdBy: string;
+  createdByEmail: string;
 }
