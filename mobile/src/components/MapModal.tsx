@@ -1,11 +1,5 @@
-// Trackable NZ - Mobile Map Modal Component
-// REFACTORED: Flexbox/sticky pattern for iOS Capacitor - NO position:fixed on layout elements
-// UPDATED: Removed tracking line - only show discrete location markers
-
 import { useState, useEffect, useRef } from 'react';
-import { createPortal } from 'react-dom';
-import { Theme } from '../theme';
-import { Location } from '../types';
+import { Location, Theme } from '../shared/types';
 
 interface MapModalProps {
   locations: Location[];
@@ -15,6 +9,23 @@ interface MapModalProps {
   clockInLocation?: Location;
   clockOutLocation?: Location;
 }
+
+// Helper to get lat/lng from location (handles both formats)
+const getLat = (loc: any): number | null => {
+  if (typeof loc?.lat === 'number') return loc.lat;
+  if (typeof loc?.latitude === 'number') return loc.latitude;
+  return null;
+};
+
+const getLng = (loc: any): number | null => {
+  if (typeof loc?.lng === 'number') return loc.lng;
+  if (typeof loc?.longitude === 'number') return loc.longitude;
+  return null;
+};
+
+const isValidLocation = (loc: any): boolean => {
+  return getLat(loc) !== null && getLng(loc) !== null;
+};
 
 export function MapModal({ locations, onClose, title, theme, clockInLocation, clockOutLocation }: MapModalProps) {
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
@@ -32,7 +43,6 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     breakStart: '#f59e0b',
     breakEnd: '#f59e0b'
   };
-  
   const markerLabels: Record<string, string> = { 
     clockIn: 'Clock In', 
     clockOut: 'Clock Out', 
@@ -43,23 +53,29 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     breakEnd: 'Break End'
   };
   
-  const allPoints: { loc: Location, type: string, displayLat: number, displayLng: number }[] = [];
+  const allPoints: { loc: Location, type: string, displayLat: number, displayLng: number, actualLat: number, actualLng: number }[] = [];
   
-  if (clockInLocation && clockInLocation.latitude && clockInLocation.longitude) {
-    allPoints.push({ loc: clockInLocation, type: 'clockIn', displayLat: clockInLocation.latitude, displayLng: clockInLocation.longitude });
+  if (clockInLocation && isValidLocation(clockInLocation)) {
+    const lat = getLat(clockInLocation)!;
+    const lng = getLng(clockInLocation)!;
+    allPoints.push({ loc: clockInLocation, type: 'clockIn', displayLat: lat, displayLng: lng, actualLat: lat, actualLng: lng });
   }
   
   (locations || []).forEach(loc => {
-    if (!loc || !loc.latitude || !loc.longitude) return;
+    if (!isValidLocation(loc)) return;
+    const lat = getLat(loc)!;
+    const lng = getLng(loc)!;
     const type = loc.source || 'tracking';
-    allPoints.push({ loc, type, displayLat: loc.latitude, displayLng: loc.longitude });
+    allPoints.push({ loc, type, displayLat: lat, displayLng: lng, actualLat: lat, actualLng: lng });
   });
   
-  if (clockOutLocation && clockOutLocation.latitude && clockOutLocation.longitude) {
-    allPoints.push({ loc: clockOutLocation, type: 'clockOut', displayLat: clockOutLocation.latitude, displayLng: clockOutLocation.longitude });
+  if (clockOutLocation && isValidLocation(clockOutLocation)) {
+    const lat = getLat(clockOutLocation)!;
+    const lng = getLng(clockOutLocation)!;
+    allPoints.push({ loc: clockOutLocation, type: 'clockOut', displayLat: lat, displayLng: lng, actualLat: lat, actualLng: lng });
   }
   
-  allPoints.sort((a, b) => a.loc.timestamp - b.loc.timestamp);
+  allPoints.sort((a, b) => (a.loc.timestamp || 0) - (b.loc.timestamp || 0));
   
   const offsetAmount = 0.00002;
   for (let i = 1; i < allPoints.length; i++) {
@@ -78,9 +94,9 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
   
   useEffect(() => {
     const injectCustomCSS = () => {
-      if (!document.getElementById('mobile-marker-css')) {
+      if (!document.getElementById('custom-marker-css')) {
         const style = document.createElement('style');
-        style.id = 'mobile-marker-css';
+        style.id = 'custom-marker-css';
         style.textContent = `
           .leaflet-div-icon { background: transparent !important; border: none !important; box-shadow: none !important; }
           .custom-marker { background: transparent !important; border: none !important; }
@@ -134,12 +150,14 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     mapInstanceRef.current = map;
     
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '© OSM'
+      attribution: '© OpenStreetMap contributors'
     }).addTo(map);
     
-    // NO LINE - just markers for discrete location stamps
+    // No path line between points — clean map with markers only
     
-    allPoints.forEach((point, index) => {
+    // Only show event markers (clock in/out, break, travel) — skip tracking breadcrumbs
+    const eventPoints = allPoints.filter(p => p.type !== 'tracking');
+    eventPoints.forEach((point, index) => {
       const color = markerColors[point.type] || markerColors.tracking;
       const label = markerLabels[point.type] || 'Location';
       const time = new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -164,185 +182,220 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
     };
   }, [leafletLoaded, allPoints.length]);
   
+  // Invalidate map size when list toggles
+  useEffect(() => {
+    if (mapInstanceRef.current) {
+      setTimeout(() => {
+        mapInstanceRef.current?.invalidateSize();
+      }, 100);
+    }
+  }, [showList]);
+  
   if (allPoints.length === 0) return null;
   
-  const uniqueTypes = [...new Set(allPoints.map(p => p.type))];
+  const lastPoint = allPoints[allPoints.length - 1];
   
-  const modalContent = (
-    <>
-      <style>{`
-        body.modal-open {
-          overflow: hidden !important;
-          position: fixed !important;
-          width: 100% !important;
-          height: 100% !important;
-        }
-      `}</style>
-      
+  return (
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: theme.bg, zIndex: 1000, display: 'flex', flexDirection: 'column' }}>
+      {/* Header - matches mobile */}
       <div style={{ 
-        display: 'flex',
-        flexDirection: 'column',
-        height: '100dvh',
-        width: '100vw',
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        background: theme.bg, 
-        zIndex: 9999,
-        overflow: 'hidden'
+        padding: '12px 20px', 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        background: theme.card,
+        borderBottom: `1px solid ${theme.cardBorder}`,
+        flexShrink: 0
       }}>
-        <header style={{ 
-          position: 'sticky',
-          top: 0,
-          background: theme.card,
-          zIndex: 100,
-          flexShrink: 0,
-          paddingTop: 'env(safe-area-inset-top, 47px)',
-          borderBottom: `1px solid ${theme.cardBorder}`
-        }}>
-          <div style={{ 
-            padding: '12px 16px',
-            display: 'flex', 
-            justifyContent: 'space-between',
-            alignItems: 'center'
-          }}>
-            <h2 style={{ color: theme.text, margin: 0, fontSize: '17px', fontWeight: '600' }}>{title}</h2>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <button
-                onClick={() => setShowList(!showList)}
-                style={{
-                  background: showList ? theme.primary : theme.cardAlt,
-                  color: showList ? 'white' : theme.text,
-                  border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
-                  padding: '8px 12px',
-                  borderRadius: '6px',
-                  fontSize: '13px',
-                  fontWeight: '600',
-                  cursor: 'pointer'
-                }}
-              >
-                {showList ? 'Hide List' : 'Show List'}
-              </button>
-              <button 
-                onClick={onClose} 
-                style={{ 
-                  background: theme.primary, 
-                  border: 'none', 
-                  fontSize: '13px', 
-                  cursor: 'pointer', 
-                  color: 'white', 
-                  padding: '8px 16px', 
-                  borderRadius: '6px', 
-                  fontWeight: '600' 
-                }}
-              >
-                Close
-              </button>
-            </div>
+        <div>
+          <h2 style={{ color: theme.text, margin: 0, fontSize: '16px', fontWeight: '600' }}>GPS Track</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#16a34a' }}></span>
+            <span style={{ color: theme.textMuted, fontSize: '13px' }}>{title || 'Clock In'}</span>
           </div>
-          
-          <div style={{ 
-            padding: '8px 16px 12px 16px',
-            display: 'flex', 
-            gap: '12px', 
-            flexWrap: 'wrap', 
-            alignItems: 'center'
-          }}>
-            {uniqueTypes.map(type => (
-              <div key={type} style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
-                <span style={{ 
-                  width: '10px', 
-                  height: '10px', 
-                  borderRadius: '50%', 
-                  background: markerColors[type] || markerColors.tracking 
-                }}></span>
-                <span style={{ color: theme.textMuted, fontSize: '11px' }}>
-                  {markerLabels[type] || 'Location'}
-                </span>
-              </div>
-            ))}
-          </div>
-        </header>
-        
-        <div 
-          ref={mapRef} 
-          style={{ 
-            flex: showList ? '0 0 50%' : 1, 
-            minHeight: '200px', 
-            background: '#e5e7eb' 
-          }} 
-        >
-          {!leafletLoaded && (
-            <div style={{ 
-              height: '100%', 
-              display: 'flex', 
-              alignItems: 'center', 
-              justifyContent: 'center', 
-              color: theme.textMuted 
-            }}>
-              Loading map...
-            </div>
-          )}
         </div>
-        
-        {showList && (
-          <div style={{ 
-            flex: 1,
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            WebkitOverflowScrolling: 'touch',
-            background: theme.card, 
-            borderTop: `1px solid ${theme.cardBorder}`,
-            paddingBottom: 'env(safe-area-inset-bottom, 20px)'
-          }}>
-            {allPoints.map((point, i) => (
-              <div 
-                key={i} 
-                onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
-                style={{ 
-                  display: 'flex', 
-                  justifyContent: 'space-between', 
-                  alignItems: 'center',
-                  padding: '10px 16px',
-                  background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
-                  cursor: 'pointer',
-                  borderBottom: `1px solid ${theme.cardBorder}`
-                }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <span style={{ 
-                    width: '22px', 
-                    height: '22px', 
-                    borderRadius: '50%', 
-                    background: markerColors[point.type] || markerColors.tracking, 
-                    color: 'white', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center', 
-                    fontSize: '10px',
-                    fontWeight: '600'
-                  }}>{i + 1}</span>
-                  <span style={{ color: theme.text, fontSize: '13px', fontWeight: '500' }}>
-                    {markerLabels[point.type] || 'Location'}
-                  </span>
-                </div>
-                <span style={{ color: theme.textMuted, fontSize: '12px' }}>
-                  {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-            ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span style={{ color: theme.textMuted, fontSize: '12px' }}>
+            📍 {lastPoint.actualLat.toFixed(5)}, {lastPoint.actualLng.toFixed(5)}
+          </span>
+          <button
+            onClick={() => setShowList(!showList)}
+            style={{
+              background: showList ? theme.primary : theme.cardAlt,
+              color: showList ? 'white' : theme.text,
+              border: showList ? 'none' : `1px solid ${theme.cardBorder}`,
+              padding: '6px 12px',
+              borderRadius: '6px',
+              fontSize: '12px',
+              fontWeight: '600',
+              cursor: 'pointer'
+            }}
+          >
+            {showList ? 'Hide List' : 'Show List'}
+          </button>
+          <button 
+            onClick={onClose} 
+            style={{ 
+              background: 'none', 
+              border: 'none', 
+              fontSize: '14px', 
+              cursor: 'pointer', 
+              color: theme.primary, 
+              fontWeight: '600' 
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+      
+      {/* Map - takes remaining space, or half when list visible */}
+      <div 
+        ref={mapRef} 
+        style={{ 
+          flex: showList ? '0 0 50%' : '1 1 auto',
+          minHeight: '200px', 
+          background: '#e5e7eb' 
+        }} 
+      >
+        {!leafletLoaded && (
+          <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: theme.textMuted }}>
+            Loading map...
           </div>
         )}
       </div>
-    </>
+      
+      {/* Location List - half screen when visible */}
+      {showList && (
+        <div style={{ 
+          flex: '0 0 50%',
+          overflowY: 'auto', 
+          background: theme.card, 
+          borderTop: `1px solid ${theme.cardBorder}` 
+        }}>
+          {allPoints.filter(p => p.type !== 'tracking').map((point, i) => (
+            <div 
+              key={i} 
+              onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
+              style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                padding: '12px 20px', 
+                background: selectedIndex === i ? theme.primary + '20' : (i % 2 === 0 ? theme.cardAlt : theme.card), 
+                cursor: 'pointer',
+                borderBottom: `1px solid ${theme.cardBorder}`
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ 
+                  width: '24px', 
+                  height: '24px', 
+                  borderRadius: '50%', 
+                  background: markerColors[point.type] || markerColors.tracking, 
+                  color: 'white', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center', 
+                  fontSize: '11px',
+                  fontWeight: '600'
+                }}>{i + 1}</span>
+                <span style={{ color: theme.text, fontSize: '14px', fontWeight: '500' }}>{markerLabels[point.type] || 'Location'}</span>
+              </div>
+              <span style={{ color: theme.textMuted, fontSize: '13px' }}>
+                {new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
+}
 
-  useEffect(() => {
-    document.body.classList.add('modal-open');
-    return () => {
-      document.body.classList.remove('modal-open');
-    };
-  }, []);
+interface LocationMapProps {
+  locations: Location[];
+  height?: string;
+}
 
-  return createPortal(modalContent, document.body);
+export function LocationMap({ locations, height = '200px' }: LocationMapProps) {
+  if (!locations || locations.length === 0) {
+    return (
+      <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
+        No location data
+      </div>
+    );
+  }
+  
+  // Find valid locations with lat/lng (handles both formats)
+  const validLocations = locations.filter(loc => isValidLocation(loc));
+  if (validLocations.length === 0) {
+    return (
+      <div style={{ height, background: '#f3f4f6', borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6b7280' }}>
+        No valid location data
+      </div>
+    );
+  }
+  
+  const lastLoc = validLocations[validLocations.length - 1];
+  const lat = getLat(lastLoc)!;
+  const lng = getLng(lastLoc)!;
+  
+  // Use static map image from OpenStreetMap tile server
+  const zoom = 15;
+  
+  // Calculate tile coordinates
+  const n = Math.pow(2, zoom);
+  const xtile = Math.floor((lng + 180) / 360 * n);
+  const ytile = Math.floor((1 - Math.log(Math.tan(lat * Math.PI / 180) + 1 / Math.cos(lat * Math.PI / 180)) / Math.PI) / 2 * n);
+  
+  return (
+    <div style={{ height, borderRadius: '8px', overflow: 'hidden', position: 'relative', background: '#e5e7eb' }}>
+      <img 
+        src={`https://tile.openstreetmap.org/${zoom}/${xtile}/${ytile}.png`}
+        alt="Map"
+        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        onError={(e) => {
+          // Fallback to embed if tile fails
+          const target = e.target as HTMLImageElement;
+          target.style.display = 'none';
+          const parent = target.parentElement;
+          if (parent) {
+            const iframe = document.createElement('iframe');
+            iframe.src = `https://www.openstreetmap.org/export/embed.html?bbox=${lng - 0.005},${lat - 0.005},${lng + 0.005},${lat + 0.005}&layer=mapnik&marker=${lat},${lng}`;
+            iframe.style.cssText = 'width:100%;height:100%;border:none;position:absolute;top:0;left:0;';
+            iframe.title = 'Map';
+            parent.appendChild(iframe);
+          }
+        }}
+      />
+      {/* Location marker overlay */}
+      <div style={{
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)',
+        width: '20px',
+        height: '20px',
+        background: '#2563eb',
+        border: '3px solid white',
+        borderRadius: '50%',
+        boxShadow: '0 2px 6px rgba(0,0,0,0.3)'
+      }} />
+      {/* Point count badge */}
+      <div style={{
+        position: 'absolute',
+        bottom: '8px',
+        right: '8px',
+        background: 'rgba(0,0,0,0.6)',
+        color: 'white',
+        padding: '4px 8px',
+        borderRadius: '4px',
+        fontSize: '11px',
+        fontWeight: '500'
+      }}>
+        {validLocations.length} {validLocations.length === 1 ? 'pt' : 'pts'}
+      </div>
+    </div>
+  );
 }

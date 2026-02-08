@@ -153,17 +153,11 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
       attribution: '© OpenStreetMap contributors'
     }).addTo(map);
     
-    if (allPoints.length > 1) {
-      const pathCoords = allPoints.map(p => [p.actualLat, p.actualLng]);
-      L.polyline(pathCoords, { 
-        color: '#6366f1', 
-        weight: 3, 
-        opacity: 0.7,
-        dashArray: '10, 10'
-      }).addTo(map);
-    }
+    // No path line between points — clean map with markers only
     
-    allPoints.forEach((point, index) => {
+    // Only show event markers (clock in/out, break, travel) — skip tracking breadcrumbs
+    const eventPoints = allPoints.filter(p => p.type !== 'tracking');
+    eventPoints.forEach((point, index) => {
       const color = markerColors[point.type] || markerColors.tracking;
       const label = markerLabels[point.type] || 'Location';
       const time = new Date(point.loc.timestamp).toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -279,7 +273,7 @@ export function MapModal({ locations, onClose, title, theme, clockInLocation, cl
           background: theme.card, 
           borderTop: `1px solid ${theme.cardBorder}` 
         }}>
-          {allPoints.map((point, i) => (
+          {allPoints.filter(p => p.type !== 'tracking').map((point, i) => (
             <div 
               key={i} 
               onClick={() => setSelectedIndex(selectedIndex === i ? null : i)} 
