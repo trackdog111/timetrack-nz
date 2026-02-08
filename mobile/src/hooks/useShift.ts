@@ -334,7 +334,7 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
 
   // Clock in - NOW WITH OPTIONAL PHOTO AND AUTO-TRAVEL ANCHOR
   // UPDATED: Include companyId for multi-tenant
-  const clockIn = async (photoBase64?: string) => {
+  const clockIn = async (photoBase64?: string, worksiteId?: string, worksiteName?: string) => {
     if (!user) {
       setError('Not logged in');
       return false;
@@ -362,7 +362,9 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
         breaks: [],
         travelSegments: [],
         jobLog: { field1: '', field2: '', field3: '' },
-        status: 'active'
+        status: 'active',
+        ...(worksiteId ? { worksiteId } : {}),
+        ...(worksiteName ? { worksiteName } : {})
       });
 
       // If photo provided, upload and update shift with URL
