@@ -22,6 +22,7 @@ interface ClockViewProps {
   autoTravelEnabled?: boolean;
   autoTravelActive?: boolean;
   worksites?: Worksite[];
+  requireWorksite?: boolean;
   onClockIn: (photoBase64?: string, worksiteId?: string, worksiteName?: string) => void;
   clockingIn?: boolean;
   onClockOut: () => void;
@@ -74,6 +75,7 @@ export function ClockView({
   paidRestMinutes,
   photoVerification,
   worksites = [],
+  requireWorksite = false,
   onClockIn,
   clockingIn,
   onClockOut,
@@ -101,6 +103,7 @@ export function ClockView({
   const [showMapModal, setShowMapModal] = useState(false);
   const [manualMinutes, setManualMinutes] = useState('');
   const [selectedWorksiteId, setSelectedWorksiteId] = useState<string>('');
+  const [customWorksiteName, setCustomWorksiteName] = useState<string>('');
   
   // Camera state
   const [showCamera, setShowCamera] = useState(false);
@@ -214,19 +217,36 @@ export function ClockView({
     startCamera();
   }, [startCamera]);
 
+  // Resolve worksite from selection or custom name
+  const getWorksiteForClockIn = useCallback(() => {
+    if (selectedWorksiteId === '__custom__') {
+      return { id: undefined, name: customWorksiteName.trim() || undefined };
+    }
+    const ws = worksites.find(w => w.id === selectedWorksiteId);
+    return { id: ws?.id, name: ws?.name };
+  }, [selectedWorksiteId, customWorksiteName, worksites]);
+
+  // Check if worksite requirement is met
+  const isWorksiteValid = useCallback(() => {
+    if (!requireWorksite) return true;
+    if (selectedWorksiteId && selectedWorksiteId !== '__custom__') return true;
+    if (selectedWorksiteId === '__custom__' && customWorksiteName.trim()) return true;
+    return false;
+  }, [requireWorksite, selectedWorksiteId, customWorksiteName]);
+
   // Confirm and clock in with photo
   const confirmClockIn = useCallback(() => {
-    const ws = worksites.find(w => w.id === selectedWorksiteId);
-    onClockIn(capturedPhoto || undefined, ws?.id, ws?.name);
+    const { id, name } = getWorksiteForClockIn();
+    onClockIn(capturedPhoto || undefined, id, name);
     stopCamera();
-  }, [capturedPhoto, onClockIn, stopCamera, selectedWorksiteId, worksites]);
+  }, [capturedPhoto, onClockIn, stopCamera, getWorksiteForClockIn]);
 
   // Skip photo and clock in without
   const skipPhoto = useCallback(() => {
-    const ws = worksites.find(w => w.id === selectedWorksiteId);
-    onClockIn(undefined, ws?.id, ws?.name);
+    const { id, name } = getWorksiteForClockIn();
+    onClockIn(undefined, id, name);
     stopCamera();
-  }, [onClockIn, stopCamera, selectedWorksiteId, worksites]);
+  }, [onClockIn, stopCamera, getWorksiteForClockIn]);
 
   const handleAddPresetBreak = async (minutes: number) => {
     const success = await onAddPresetBreak(minutes);
@@ -464,25 +484,69 @@ export function ClockView({
             <h2 style={{ color: theme.text, fontSize: '20px', fontWeight: '600', marginBottom: '16px' }}>
               Ready to start?
             </h2>
-            {worksites.length > 0 && (
+            {(worksites.length > 0 || requireWorksite) && (
               <div style={{ marginBottom: '16px' }}>
-                <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>Worksite</label>
-                <select
-                  value={selectedWorksiteId}
-                  onChange={e => setSelectedWorksiteId(e.target.value)}
-                  style={{ ...styles.input, appearance: 'auto' as any }}
-                >
-                  <option value="">— No worksite —</option>
-                  {worksites.map(w => (
-                    <option key={w.id} value={w.id}>{w.name}{w.address ? ` (${w.address})` : ''}</option>
-                  ))}
-                </select>
+                <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>
+                  Worksite{requireWorksite ? ' *' : ''}
+                </label>
+                {worksites.length > 0 ? (
+                  <select
+                    value={selectedWorksiteId}
+                    onChange={e => {
+                      setSelectedWorksiteId(e.target.value);
+                      if (e.target.value !== '__custom__') setCustomWorksiteName('');
+                    }}
+                    style={{ ...styles.input, appearance: 'auto' as any }}
+                  >
+                    <option value="">{requireWorksite ? '— Select a worksite —' : '— No worksite —'}</option>
+                    {worksites.map(w => (
+                      <option key={w.id} value={w.id}>{w.name}{w.address ? ` (${w.address})` : ''}</option>
+                    ))}
+                    <option value="__custom__">My worksite isn't listed...</option>
+                  </select>
+                ) : (
+                  <>
+                    {/* No worksites exist yet — show text input when required */}
+                    <input
+                      value={customWorksiteName}
+                      onChange={e => {
+                        setCustomWorksiteName(e.target.value);
+                        setSelectedWorksiteId('__custom__');
+                      }}
+                      placeholder="Enter worksite name..."
+                      style={styles.input}
+                    />
+                    <p style={{ color: theme.textMuted, fontSize: '11px', marginTop: '4px' }}>No worksites set up yet — type your worksite name</p>
+                  </>
+                )}
+                {selectedWorksiteId === '__custom__' && worksites.length > 0 && (
+                  <input
+                    value={customWorksiteName}
+                    onChange={e => setCustomWorksiteName(e.target.value)}
+                    placeholder="Enter worksite name..."
+                    style={{ ...styles.input, marginTop: '8px' }}
+                    autoFocus
+                  />
+                )}
+                {requireWorksite && !isWorksiteValid() && selectedWorksiteId !== '' && (
+                  <p style={{ color: theme.danger, fontSize: '12px', marginTop: '4px' }}>Please enter a worksite name</p>
+                )}
               </div>
             )}
             <button 
-              onClick={photoVerification ? startCamera : () => {
-                const ws = worksites.find(w => w.id === selectedWorksiteId);
-                onClockIn(undefined, ws?.id, ws?.name);
+              onClick={photoVerification ? () => {
+                if (requireWorksite && !isWorksiteValid()) {
+                  showToast('Please select a worksite before clocking in');
+                  return;
+                }
+                startCamera();
+              } : () => {
+                if (requireWorksite && !isWorksiteValid()) {
+                  showToast('Please select a worksite before clocking in');
+                  return;
+                }
+                const { id, name } = getWorksiteForClockIn();
+                onClockIn(undefined, id, name);
               }} 
               disabled={clockingIn}
               style={{ ...styles.btn, width: '100%', padding: '20px', fontSize: '18px', background: clockingIn ? theme.textMuted : theme.success, opacity: clockingIn ? 0.7 : 1, cursor: clockingIn ? 'not-allowed' : 'pointer' }}

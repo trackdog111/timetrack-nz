@@ -84,12 +84,13 @@ export interface Shift {
 // ==================== EMPLOYEE COSTING ====================
 
 export interface EmployeeCosting {
+  workerType?: 'paye' | 'contractor_gst' | 'contractor_no_gst';
   hourlyRate?: number;
-  kiwiSaverOption?: 'none' | '3' | '3.5' | '4' | 'custom';
-  kiwiSaverCustom?: number;
-  holidayPayOption?: '8' | 'custom';
-  holidayPayCustom?: number;
-  accLevy?: number;
+  kiwiSaverOption?: 'none' | '3' | '3.5' | '4' | 'custom' | null;
+  kiwiSaverCustom?: number | null;
+  holidayPayOption?: '8' | 'custom' | null;
+  holidayPayCustom?: number | null;
+  accLevy?: number | null;
 }
 
 // ==================== EMPLOYEE ====================
@@ -137,6 +138,7 @@ export interface CompanySettings {
   paidRestMinutes: number;
   payWeekEndDay: number;
   photoVerification: boolean;
+  requireWorksite?: boolean;
 }
 
 export interface Invite {

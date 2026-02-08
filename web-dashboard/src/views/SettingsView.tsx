@@ -279,6 +279,18 @@ export function SettingsView({
             <span style={{ color: theme.text, fontSize: '14px' }}>Require employees to take a selfie when clocking in</span>
           </label>
         </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '8px' }}>Worksite Selection at Clock-In</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px', background: theme.cardAlt, borderRadius: '8px' }}>
+            <Toggle 
+              checked={editingCompanySettings.requireWorksite === true} 
+              onChange={(v) => setEditingCompanySettings({ ...editingCompanySettings, requireWorksite: v })} 
+            />
+            <span style={{ color: theme.text, fontSize: '14px' }}>Require employees to select a worksite before clocking in</span>
+          </div>
+          <p style={{ color: theme.textMuted, fontSize: '11px', marginTop: '4px' }}>Employees can also type a custom worksite name if theirs isn't listed</p>
+        </div>
         
         <button onClick={saveCompanySettings} disabled={savingCompanySettings} style={{ ...styles.btn, opacity: savingCompanySettings ? 0.7 : 1 }}>
           {savingCompanySettings ? 'Saving...' : 'Save Settings'}
