@@ -1,5 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import { Location, Theme } from '../shared/types';
+import { Location } from '../types';
+
+interface Theme {
+  bg: string;
+  card: string;
+  cardAlt: string;
+  cardBorder: string;
+  text: string;
+  textMuted: string;
+  primary: string;
+}
 
 interface MapModalProps {
   locations: Location[];
