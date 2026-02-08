@@ -148,14 +148,11 @@ export function AnalyticsView({
   const [contractValueInput, setContractValueInput] = useState('');
   const [savingContract, setSavingContract] = useState(false);
 
-  // Saved categories
-  const [savedCategories, setSavedCategories] = useState<string[]>([]);
-  const [showManageCategories, setShowManageCategories] = useState(false);
-  const [newCategoryInput, setNewCategoryInput] = useState('');
-
-  // Saved suppliers/descriptions
+  // Saved subcontractors & suppliers
+  const [savedSubcontractors, setSavedSubcontractors] = useState<string[]>([]);
   const [savedSuppliers, setSavedSuppliers] = useState<string[]>([]);
-  const [showManageSuppliers, setShowManageSuppliers] = useState(false);
+  const [showManage, setShowManage] = useState(false);
+  const [newSubcontractorInput, setNewSubcontractorInput] = useState('');
   const [newSupplierInput, setNewSupplierInput] = useState('');
 
   // ==================== STYLES ====================
@@ -245,7 +242,7 @@ export function AnalyticsView({
     return onSnapshot(doc(db, 'companies', companyId), (snap) => {
       if (snap.exists()) {
         const data = snap.data();
-        setSavedCategories(data.costCategories || []);
+        setSavedSubcontractors(data.costSubcontractors || []);
         setSavedSuppliers(data.costSuppliers || []);
       }
     });
@@ -254,10 +251,10 @@ export function AnalyticsView({
   // ==================== UNIQUE CATEGORIES (saved + from history) ====================
 
   const existingCategories = useMemo(() => {
-    const cats = new Set<string>(savedCategories);
+    const cats = new Set<string>([...savedSubcontractors, ...savedSuppliers]);
     worksiteCosts.forEach(c => { if (c.category) cats.add(c.category); });
     return Array.from(cats).sort();
-  }, [worksiteCosts, savedCategories]);
+  }, [worksiteCosts, savedSubcontractors, savedSuppliers]);
 
   // ==================== COMPUTED ANALYTICS ====================
 
@@ -435,25 +432,25 @@ export function AnalyticsView({
     setSavingContract(false);
   };
 
-  const addSavedCategory = async () => {
-    const cat = newCategoryInput.trim();
-    if (!cat || !companyId || savedCategories.includes(cat)) return;
+  const addSavedSubcontractor = async () => {
+    const val = newSubcontractorInput.trim();
+    if (!val || !companyId || savedSubcontractors.includes(val)) return;
     try {
-      const updated = [...savedCategories, cat].sort();
-      await updateDoc(doc(db, 'companies', companyId), { costCategories: updated });
-      setNewCategoryInput('');
+      const updated = [...savedSubcontractors, val].sort();
+      await updateDoc(doc(db, 'companies', companyId), { costSubcontractors: updated });
+      setNewSubcontractorInput('');
     } catch (err) {
-      console.error('Failed to save category:', err);
+      console.error('Failed to save subcontractor:', err);
     }
   };
 
-  const deleteSavedCategory = async (cat: string) => {
+  const deleteSavedSubcontractor = async (val: string) => {
     if (!companyId) return;
     try {
-      const updated = savedCategories.filter(c => c !== cat);
-      await updateDoc(doc(db, 'companies', companyId), { costCategories: updated });
+      const updated = savedSubcontractors.filter(c => c !== val);
+      await updateDoc(doc(db, 'companies', companyId), { costSubcontractors: updated });
     } catch (err) {
-      console.error('Failed to delete category:', err);
+      console.error('Failed to delete subcontractor:', err);
     }
   };
 
@@ -810,13 +807,10 @@ export function AnalyticsView({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '8px' }}>
               <h3 style={{ color: theme.text, margin: 0, fontSize: '16px' }}>🏗️ Project Costing by Worksite</h3>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={() => { setShowManageCategories(!showManageCategories); setShowAddCost(false); setShowManageSuppliers(false); }} style={styles.btnOutline}>
-                  {showManageCategories ? '✕ Close' : '⚙ Categories'}
+                <button onClick={() => { setShowManage(!showManage); setShowAddCost(false); }} style={styles.btnOutline}>
+                  {showManage ? '✕ Close' : '⚙ Manage'}
                 </button>
-                <button onClick={() => { setShowManageSuppliers(!showManageSuppliers); setShowAddCost(false); setShowManageCategories(false); }} style={styles.btnOutline}>
-                  {showManageSuppliers ? '✕ Close' : '⚙ Suppliers'}
-                </button>
-                <button onClick={() => { setShowAddCost(!showAddCost); setShowManageCategories(false); setShowManageSuppliers(false); }} style={styles.btnSm}>
+                <button onClick={() => { setShowAddCost(!showAddCost); setShowManage(false); }} style={styles.btnSm}>
                   {showAddCost ? '✕ Close' : '+ Add Cost'}
                 </button>
               </div>
@@ -839,15 +833,20 @@ export function AnalyticsView({
                     <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Date</label>
                     <input type="date" value={costDate} onChange={e => setCostDate(e.target.value)} style={styles.input} />
                   </div>
-                  <div style={{ flex: '1', minWidth: '140px' }}>
-                    <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Category *</label>
+                  <div style={{ flex: '1', minWidth: '160px' }}>
+                    <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Subcontractor / Supplier *</label>
                     <select
                       value={costCategory}
                       onChange={e => setCostCategory(e.target.value)}
                       style={styles.input}
                     >
-                      <option value="">Select category</option>
-                      {savedCategories.map(c => <option key={c} value={c}>{c}</option>)}
+                      <option value="">Select</option>
+                      {savedSubcontractors.length > 0 && <optgroup label="Subcontractors">
+                        {savedSubcontractors.map(c => <option key={`sub-${c}`} value={c}>{c}</option>)}
+                      </optgroup>}
+                      {savedSuppliers.length > 0 && <optgroup label="Suppliers">
+                        {savedSuppliers.map(s => <option key={`sup-${s}`} value={s}>{s}</option>)}
+                      </optgroup>}
                     </select>
                   </div>
                   <div style={{ minWidth: '120px' }}>
@@ -861,15 +860,8 @@ export function AnalyticsView({
                     <input value={costReference} onChange={e => setCostReference(e.target.value)} placeholder="e.g. INV-00123" style={styles.input} />
                   </div>
                   <div style={{ flex: '2', minWidth: '200px' }}>
-                    <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Supplier / Description</label>
-                    <select
-                      value={costDescription}
-                      onChange={e => setCostDescription(e.target.value)}
-                      style={styles.input}
-                    >
-                      <option value="">Select or leave blank</option>
-                      {savedSuppliers.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <label style={{ color: theme.textMuted, fontSize: '12px', display: 'block', marginBottom: '4px' }}>Description</label>
+                    <input value={costDescription} onChange={e => setCostDescription(e.target.value)} placeholder="What is this cost for?" style={styles.input} />
                   </div>
                   <div style={{ display: 'flex', alignItems: 'end' }}>
                     <button
@@ -884,83 +876,73 @@ export function AnalyticsView({
               </div>
             )}
 
-            {/* Manage Categories */}
-            {showManageCategories && (
+            {/* Manage Subcontractors & Suppliers */}
+            {showManage && (
               <div style={{ background: theme.cardAlt, borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
-                <div style={{ color: theme.text, fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>Manage Cost Categories</div>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <input
-                    value={newCategoryInput}
-                    onChange={e => setNewCategoryInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') addSavedCategory(); }}
-                    placeholder="New category name"
-                    style={{ ...styles.input, flex: '1' }}
-                  />
-                  <button
-                    onClick={addSavedCategory}
-                    disabled={!newCategoryInput.trim() || savedCategories.includes(newCategoryInput.trim())}
-                    style={{ ...styles.btnSm, opacity: (!newCategoryInput.trim() || savedCategories.includes(newCategoryInput.trim())) ? 0.5 : 1 }}
-                  >
-                    Save
-                  </button>
-                </div>
-                {savedCategories.length === 0 ? (
-                  <div style={{ color: theme.textMuted, fontSize: '13px', fontStyle: 'italic' }}>No categories saved yet. Add some above.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {savedCategories.map(cat => (
-                      <div key={cat} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: theme.card, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', padding: '6px 10px' }}>
-                        <span style={{ color: theme.text, fontSize: '13px' }}>{cat}</span>
-                        <button
-                          onClick={() => deleteSavedCategory(cat)}
-                          style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: '1' }}
-                        >
-                          ✕
-                        </button>
+                <div style={{ display: 'flex', gap: isMobile ? '16px' : '32px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: '1', minWidth: '240px' }}>
+                    <div style={{ color: theme.text, fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>Subcontractors</div>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                      <input
+                        value={newSubcontractorInput}
+                        onChange={e => setNewSubcontractorInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') addSavedSubcontractor(); }}
+                        placeholder="e.g. Plumber, Electrician"
+                        style={{ ...styles.input, flex: '1' }}
+                      />
+                      <button
+                        onClick={addSavedSubcontractor}
+                        disabled={!newSubcontractorInput.trim() || savedSubcontractors.includes(newSubcontractorInput.trim())}
+                        style={{ ...styles.btnSm, opacity: (!newSubcontractorInput.trim() || savedSubcontractors.includes(newSubcontractorInput.trim())) ? 0.5 : 1 }}
+                      >
+                        Save
+                      </button>
+                    </div>
+                    {savedSubcontractors.length === 0 ? (
+                      <div style={{ color: theme.textMuted, fontSize: '13px', fontStyle: 'italic' }}>No subcontractors yet</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {savedSubcontractors.map(val => (
+                          <div key={val} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: theme.card, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', padding: '6px 10px' }}>
+                            <span style={{ color: theme.text, fontSize: '13px' }}>{val}</span>
+                            <button onClick={() => deleteSavedSubcontractor(val)} style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: '1' }}>✕</button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
-              </div>
-            )}
-
-            {/* Manage Suppliers */}
-            {showManageSuppliers && (
-              <div style={{ background: theme.cardAlt, borderRadius: '10px', padding: '16px', marginBottom: '16px' }}>
-                <div style={{ color: theme.text, fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>Manage Suppliers</div>
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
-                  <input
-                    value={newSupplierInput}
-                    onChange={e => setNewSupplierInput(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') addSavedSupplier(); }}
-                    placeholder="e.g. Placemakers, Akarana"
-                    style={{ ...styles.input, flex: '1' }}
-                  />
-                  <button
-                    onClick={addSavedSupplier}
-                    disabled={!newSupplierInput.trim() || savedSuppliers.includes(newSupplierInput.trim())}
-                    style={{ ...styles.btnSm, opacity: (!newSupplierInput.trim() || savedSuppliers.includes(newSupplierInput.trim())) ? 0.5 : 1 }}
-                  >
-                    Save
-                  </button>
-                </div>
-                {savedSuppliers.length === 0 ? (
-                  <div style={{ color: theme.textMuted, fontSize: '13px', fontStyle: 'italic' }}>No suppliers saved yet. Add some above.</div>
-                ) : (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                    {savedSuppliers.map(sup => (
-                      <div key={sup} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: theme.card, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', padding: '6px 10px' }}>
-                        <span style={{ color: theme.text, fontSize: '13px' }}>{sup}</span>
-                        <button
-                          onClick={() => deleteSavedSupplier(sup)}
-                          style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: '1' }}
-                        >
-                          ✕
-                        </button>
+                  <div style={{ flex: '1', minWidth: '240px' }}>
+                    <div style={{ color: theme.text, fontWeight: '600', fontSize: '14px', marginBottom: '12px' }}>Suppliers</div>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                      <input
+                        value={newSupplierInput}
+                        onChange={e => setNewSupplierInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') addSavedSupplier(); }}
+                        placeholder="e.g. Placemakers, Akarana"
+                        style={{ ...styles.input, flex: '1' }}
+                      />
+                      <button
+                        onClick={addSavedSupplier}
+                        disabled={!newSupplierInput.trim() || savedSuppliers.includes(newSupplierInput.trim())}
+                        style={{ ...styles.btnSm, opacity: (!newSupplierInput.trim() || savedSuppliers.includes(newSupplierInput.trim())) ? 0.5 : 1 }}
+                      >
+                        Save
+                      </button>
+                    </div>
+                    {savedSuppliers.length === 0 ? (
+                      <div style={{ color: theme.textMuted, fontSize: '13px', fontStyle: 'italic' }}>No suppliers yet</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {savedSuppliers.map(sup => (
+                          <div key={sup} style={{ display: 'flex', alignItems: 'center', gap: '6px', background: theme.card, border: `1px solid ${theme.cardBorder}`, borderRadius: '6px', padding: '6px 10px' }}>
+                            <span style={{ color: theme.text, fontSize: '13px' }}>{sup}</span>
+                            <button onClick={() => deleteSavedSupplier(sup)} style={{ background: 'none', border: 'none', color: theme.danger, cursor: 'pointer', fontSize: '14px', padding: '0 2px', lineHeight: '1' }}>✕</button>
+                          </div>
+                        ))}
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
+                </div>
               </div>
             )}
 
