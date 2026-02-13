@@ -45,7 +45,7 @@ export function EditShiftModal({ shift, onClose, onSave, theme, user, companySet
   
   const applyRounding = (roundTo: 15 | 30) => {
     const newClockIn = roundTime(buildDateFromTime(clockIn, editClockInHour, editClockInMinute, editClockInAmPm), roundTo, 'down');
-    const newClockOut = roundTime(buildDateFromTime(clockIn, editClockOutHour, editClockOutMinute, editClockOutAmPm), roundTo, 'up');
+    const newClockOut = roundTime(buildDateFromTime(clockOut, editClockOutHour, editClockOutMinute, editClockOutAmPm), roundTo, 'up');
     
     const inComps = getTimeComponents(newClockIn);
     const outComps = getTimeComponents(newClockOut);
@@ -82,15 +82,20 @@ export function EditShiftModal({ shift, onClose, onSave, theme, user, companySet
     
     try {
       const newClockIn = buildDateFromTime(clockIn, editClockInHour, editClockInMinute, editClockInAmPm);
-      let newClockOut = buildDateFromTime(clockIn, editClockOutHour, editClockOutMinute, editClockOutAmPm);
+      let newClockOut = buildDateFromTime(clockOut, editClockOutHour, editClockOutMinute, editClockOutAmPm);
       
       if (newClockOut <= newClockIn) {
         newClockOut.setDate(newClockOut.getDate() + 1);
       }
       
       const durationHours = (newClockOut.getTime() - newClockIn.getTime()) / 3600000;
-      if (durationHours > 24) {
-        setError('Shift cannot exceed 24 hours');
+      if (durationHours > 16) {
+        setError('Shift cannot exceed 16 hours. If this shift is genuine, contact your manager.');
+        setSaving(false);
+        return;
+      }
+      if (durationHours <= 0) {
+        setError('Clock out must be after clock in');
         setSaving(false);
         return;
       }
