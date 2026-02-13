@@ -104,7 +104,6 @@ export function WorksiteDetailModal({
       if (sh.status !== 'completed' || !sh.clockIn?.toDate || !sh.clockOut?.toDate) return false;
       const d = sh.clockIn.toDate();
       if (d < cutoffDate) return false;
-      // Match this worksite (or 'unassigned')
       if (worksiteId === 'unassigned') {
         return !sh.worksiteId;
       }
@@ -240,6 +239,277 @@ export function WorksiteDetailModal({
 
   const maxEmpHours = Math.max(...byEmployee.map(e => e.hours), 1);
 
+  // ==================== PDF EXPORT ====================
+
+  const exportWorksitePDF = () => {
+    const now = new Date();
+    const periodStart = new Date(cutoffDate);
+    const fmtD = (d: Date) => d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    const subCats = byCategory.filter(c => c.isSubcontractor);
+    const supCats = byCategory.filter(c => c.isSupplier);
+    const subTotal = subCats.reduce((s, c) => s + c.amount, 0);
+    const supTotal = supCats.reduce((s, c) => s + c.amount, 0);
+
+    const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8">
+<title>Worksite Report - ${worksiteName}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #1a1a2e; font-size: 13px; line-height: 1.5; }
+  .page { max-width: 800px; margin: 0 auto; padding: 32px; }
+  
+  .header { background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%); color: white; padding: 28px 32px; border-radius: 12px; margin-bottom: 24px; }
+  .header h1 { font-size: 24px; font-weight: 800; margin-bottom: 4px; }
+  .header .subtitle { opacity: 0.9; font-size: 14px; }
+  .header .meta { display: flex; gap: 24px; margin-top: 12px; font-size: 13px; opacity: 0.85; flex-wrap: wrap; }
+  
+  .contract-banner { display: flex; justify-content: space-between; align-items: center; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px; padding: 16px 24px; margin-bottom: 20px; flex-wrap: wrap; gap: 16px; }
+  .contract-banner.negative { background: #fef2f2; border-color: #fecaca; }
+  .contract-item { text-align: center; }
+  .contract-item .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+  .contract-item .value { font-size: 22px; font-weight: 800; color: #111; }
+  .contract-item .value.green { color: #16a34a; }
+  .contract-item .value.red { color: #dc2626; }
+  
+  .section { margin-bottom: 24px; }
+  .section h2 { font-size: 16px; font-weight: 700; color: #1a1a2e; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 2px solid #e5e7eb; }
+  
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 14px 16px; }
+  .stat-box .label { font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-box .value { font-size: 20px; font-weight: 700; color: #111; margin-top: 2px; }
+  .stat-box .sub { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+  
+  table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+  th { padding: 10px 8px; text-align: left; font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 2px solid #e5e7eb; }
+  td { padding: 10px 8px; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  .text-right { text-align: right; }
+  .text-muted { color: #6b7280; }
+  .text-bold { font-weight: 700; }
+  .text-green { color: #16a34a; }
+  .text-red { color: #dc2626; }
+  .text-blue { color: #2563eb; }
+  
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-paye { background: #dcfce7; color: #16a34a; }
+  .badge-contractor { background: #fef3c7; color: #d97706; }
+  
+  .total-row { border-top: 2px solid #e5e7eb; }
+  .total-row td { padding-top: 12px; font-weight: 700; font-size: 14px; }
+  
+  .daily-item { display: flex; gap: 16px; padding: 8px 0; border-bottom: 1px solid #f3f4f6; align-items: center; }
+  .daily-date { width: 80px; flex-shrink: 0; }
+  .daily-date .day { font-weight: 600; font-size: 13px; }
+  .daily-date .date { font-size: 12px; color: #6b7280; }
+  .daily-workers { flex: 1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .daily-chip { background: #f3f4f6; border: 1px solid #e5e7eb; border-radius: 6px; padding: 3px 10px; font-size: 12px; }
+  .daily-total { font-weight: 700; color: #2563eb; font-size: 14px; min-width: 50px; text-align: right; }
+  
+  .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #e5e7eb; text-align: center; color: #9ca3af; font-size: 11px; }
+  
+  .actions { margin-bottom: 20px; text-align: center; }
+  .actions button { padding: 12px 32px; border-radius: 8px; border: none; background: #22c55e; color: white; font-size: 15px; font-weight: 700; cursor: pointer; margin: 0 8px; }
+  .actions button.secondary { background: #6b7280; }
+  
+  @media print {
+    .actions { display: none; }
+    .page { padding: 16px; }
+    .header { break-inside: avoid; }
+    .section { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="actions">
+    <button onclick="window.print()">Print / Save PDF</button>
+    <button class="secondary" onclick="window.close()">Close</button>
+  </div>
+  
+  <div class="header">
+    <h1>${worksiteName}</h1>
+    ${worksite?.address ? `<div class="subtitle">${worksite.address}</div>` : ''}
+    <div class="meta">
+      <span>Period: ${fmtD(periodStart)} — ${fmtD(now)}</span>
+      <span>${stats.numShifts} shifts over ${stats.numDays} days</span>
+      <span>${byEmployee.length} worker${byEmployee.length !== 1 ? 's' : ''}</span>
+      <span>Generated: ${fmtD(now)}</span>
+    </div>
+  </div>
+  
+  ${stats.contractValue > 0 ? `
+  <div class="contract-banner${stats.margin < 0 ? ' negative' : ''}">
+    <div class="contract-item">
+      <div class="label">Contract Value</div>
+      <div class="value">$${stats.contractValue.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</div>
+    </div>
+    <div class="contract-item">
+      <div class="label">Total Spend</div>
+      <div class="value">$${stats.totalCost.toFixed(2)}</div>
+    </div>
+    <div class="contract-item">
+      <div class="label">Remaining</div>
+      <div class="value ${stats.margin >= 0 ? 'green' : 'red'}">$${stats.margin.toFixed(2)}</div>
+    </div>
+    ${stats.marginPct !== null ? `
+    <div class="contract-item">
+      <div class="label">Margin</div>
+      <div class="value ${stats.margin >= 0 ? 'green' : 'red'}">${stats.marginPct.toFixed(1)}%</div>
+    </div>` : ''}
+  </div>` : ''}
+  
+  <div class="stats-grid">
+    <div class="stat-box"><div class="label">Total Hours</div><div class="value">${stats.totalHours.toFixed(1)}</div><div class="sub">${stats.numShifts} shifts</div></div>
+    <div class="stat-box"><div class="label">Labour Cost</div><div class="value">$${stats.totalLabourCost.toFixed(0)}</div><div class="sub">${stats.numDays} workdays</div></div>
+    <div class="stat-box"><div class="label">Other Costs</div><div class="value">$${stats.manualTotal.toFixed(0)}</div><div class="sub">${wsCosts.length} entries</div></div>
+    <div class="stat-box"><div class="label">Total Cost</div><div class="value text-blue">$${stats.totalCost.toFixed(0)}</div><div class="sub">All inclusive</div></div>
+    <div class="stat-box"><div class="label">Avg Hours/Day</div><div class="value">${stats.avgHoursPerDay.toFixed(1)}</div><div class="sub">${byEmployee.length} workers</div></div>
+  </div>
+  
+  ${byEmployee.length > 0 ? `
+  <div class="section">
+    <h2>Labour Breakdown by Employee</h2>
+    <table>
+      <thead><tr>
+        <th>Employee</th><th>Type</th><th class="text-right">Hours</th><th class="text-right">Rate/hr</th><th class="text-right">On-costs/hr</th><th class="text-right">Total Rate</th><th class="text-right">Cost</th><th class="text-right">Shifts</th>
+      </tr></thead>
+      <tbody>
+        ${byEmployee.map(emp => {
+          const costInfo = getEmployeeCostPerHour(emp.emp);
+          const wt = emp.emp.costing?.workerType;
+          const typeLabel = wt === 'paye' ? 'PAYE' : wt === 'contractor_gst' ? 'Contractor GST' : wt === 'contractor_no_gst' ? 'Contractor' : 'Not Set';
+          const badgeClass = wt === 'paye' ? 'badge-paye' : 'badge-contractor';
+          return `<tr>
+            <td class="text-bold">${emp.emp.name || emp.emp.email?.split('@')[0] || 'Unknown'}</td>
+            <td><span class="badge ${badgeClass}">${typeLabel}</span></td>
+            <td class="text-right">${emp.hours.toFixed(1)}</td>
+            <td class="text-right">$${costInfo.base.toFixed(2)}</td>
+            <td class="text-right">${costInfo.onCosts > 0 ? '$' + costInfo.onCosts.toFixed(2) : '-'}</td>
+            <td class="text-right text-bold">$${costInfo.total.toFixed(2)}</td>
+            <td class="text-right text-bold">$${emp.cost.toFixed(2)}</td>
+            <td class="text-right text-muted">${emp.shifts}</td>
+          </tr>`;
+        }).join('')}
+        <tr class="total-row">
+          <td colspan="2">Total Labour</td>
+          <td class="text-right">${stats.totalHours.toFixed(1)}</td>
+          <td colspan="3"></td>
+          <td class="text-right text-green">$${stats.totalLabourCost.toFixed(2)}</td>
+          <td class="text-right text-muted">${stats.numShifts}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>` : ''}
+  
+  ${subCats.length > 0 ? `
+  <div class="section">
+    <h2>Subcontractor Costs</h2>
+    <table>
+      <thead><tr><th>Subcontractor</th><th>Date</th><th>Reference</th><th>Description</th><th class="text-right">Amount</th></tr></thead>
+      <tbody>
+        ${subCats.map(cat => cat.entries.sort((a, b) => {
+          const da = a.date?.toDate ? a.date.toDate().getTime() : 0;
+          const db2 = b.date?.toDate ? b.date.toDate().getTime() : 0;
+          return db2 - da;
+        }).map(entry => {
+          const d: Date = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date as any);
+          return `<tr>
+            <td class="text-bold">${entry.category}</td>
+            <td class="text-muted">${d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+            <td class="text-muted">${entry.reference || '-'}</td>
+            <td class="text-muted">${entry.description || '-'}</td>
+            <td class="text-right text-bold">$${entry.amount.toFixed(2)}</td>
+          </tr>`;
+        }).join('')).join('')}
+        <tr class="total-row">
+          <td colspan="4">Total Subcontractors</td>
+          <td class="text-right text-green">$${subTotal.toFixed(2)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>` : ''}
+  
+  ${supCats.length > 0 ? `
+  <div class="section">
+    <h2>Supplier Costs</h2>
+    <table>
+      <thead><tr><th>Supplier</th><th>Date</th><th>Reference</th><th>Description</th><th class="text-right">Amount</th></tr></thead>
+      <tbody>
+        ${supCats.map(cat => cat.entries.sort((a, b) => {
+          const da = a.date?.toDate ? a.date.toDate().getTime() : 0;
+          const db2 = b.date?.toDate ? b.date.toDate().getTime() : 0;
+          return db2 - da;
+        }).map(entry => {
+          const d: Date = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date as any);
+          return `<tr>
+            <td class="text-bold">${entry.category}</td>
+            <td class="text-muted">${d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+            <td class="text-muted">${entry.reference || '-'}</td>
+            <td class="text-muted">${entry.description || '-'}</td>
+            <td class="text-right text-bold">$${entry.amount.toFixed(2)}</td>
+          </tr>`;
+        }).join('')).join('')}
+        <tr class="total-row">
+          <td colspan="4">Total Suppliers</td>
+          <td class="text-right text-green">$${supTotal.toFixed(2)}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>` : ''}
+  
+  <div class="section">
+    <h2>Cost Summary</h2>
+    <table>
+      <tbody>
+        <tr><td>Labour Cost</td><td class="text-right text-bold">$${stats.totalLabourCost.toFixed(2)}</td></tr>
+        ${subTotal > 0 ? `<tr><td>Subcontractor Costs</td><td class="text-right text-bold">$${subTotal.toFixed(2)}</td></tr>` : ''}
+        ${supTotal > 0 ? `<tr><td>Supplier Costs</td><td class="text-right text-bold">$${supTotal.toFixed(2)}</td></tr>` : ''}
+        <tr class="total-row"><td class="text-bold" style="font-size:15px">Total Cost</td><td class="text-right text-bold text-blue" style="font-size:15px">$${stats.totalCost.toFixed(2)}</td></tr>
+        ${stats.contractValue > 0 ? `
+        <tr><td>Contract Value</td><td class="text-right text-bold">$${stats.contractValue.toFixed(2)}</td></tr>
+        <tr><td class="text-bold" style="font-size:15px">Margin</td><td class="text-right text-bold ${stats.margin >= 0 ? 'text-green' : 'text-red'}" style="font-size:15px">${stats.margin >= 0 ? '+' : ''}$${stats.margin.toFixed(2)}${stats.marginPct !== null ? ' (' + stats.marginPct.toFixed(1) + '%)' : ''}</td></tr>
+        ` : ''}
+      </tbody>
+    </table>
+  </div>
+  
+  ${dailyTimeline.length > 0 ? `
+  <div class="section">
+    <h2>Daily Activity (Last ${dailyTimeline.length} Days)</h2>
+    ${dailyTimeline.map(day => {
+      const d = new Date(day.date);
+      const totalHrs = day.shifts.reduce((s, sh) => s + sh.hours, 0);
+      return `<div class="daily-item">
+        <div class="daily-date">
+          <div class="day">${d.toLocaleDateString('en-NZ', { weekday: 'short' })}</div>
+          <div class="date">${d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })}</div>
+        </div>
+        <div class="daily-workers">
+          ${day.shifts.map(sh => `<span class="daily-chip">${sh.empName} <span class="text-muted">${sh.hours.toFixed(1)}h</span></span>`).join('')}
+        </div>
+        <div class="daily-total">${totalHrs.toFixed(1)}h</div>
+      </div>`;
+    }).join('')}
+  </div>` : ''}
+  
+  <div class="footer">
+    <strong>Trackable NZ</strong> — Worksite Project Report<br>
+    Generated ${now.toLocaleDateString('en-NZ', { day: 'numeric', month: 'long', year: 'numeric' })} at ${now.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit' })}<br>
+    All amounts exclude GST
+  </div>
+</div>
+</body></html>`;
+
+    const w = window.open('', '_blank');
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+    }
+  };
+
   // ==================== RENDER ====================
 
   return (
@@ -288,13 +558,22 @@ export function WorksiteDetailModal({
                 <p style={{ color: theme.textMuted, fontSize: '13px', margin: 0 }}>{worksite.address}</p>
               )}
             </div>
-            <button onClick={onClose} style={{
-              background: theme.cardAlt, border: `1px solid ${theme.cardBorder}`,
-              borderRadius: '8px', padding: '8px 16px', cursor: 'pointer',
-              color: theme.text, fontWeight: '600', fontSize: '14px',
-            }}>
-              ✕ Close
-            </button>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={exportWorksitePDF} style={{
+                background: theme.danger, border: 'none',
+                borderRadius: '8px', padding: '8px 16px', cursor: 'pointer',
+                color: 'white', fontWeight: '600', fontSize: '14px',
+              }}>
+                📄 Export PDF
+              </button>
+              <button onClick={onClose} style={{
+                background: theme.cardAlt, border: `1px solid ${theme.cardBorder}`,
+                borderRadius: '8px', padding: '8px 16px', cursor: 'pointer',
+                color: theme.text, fontWeight: '600', fontSize: '14px',
+              }}>
+                ✕ Close
+              </button>
+            </div>
           </div>
 
           {/* Period filter + Tabs */}
