@@ -239,7 +239,7 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
     ? async () => { showToast('Demo: Notes saved (view only)'); } 
     : shiftHook.saveFields;
   const addManualShift = isDemoMode 
-    ? async (_date: string, _startHour: string, _startMinute: string, _startAmPm: 'AM' | 'PM', _endHour: string, _endMinute: string, _endAmPm: 'AM' | 'PM', _breaks: number[], _travel: number[], _notes: string) => { showDemoToast('Adding shift'); return false; } 
+    ? async (_date: string, _startHour: string, _startMinute: string, _startAmPm: 'AM' | 'PM', _endHour: string, _endMinute: string, _endAmPm: 'AM' | 'PM', _breaks: number[], _travel: number[], _notes: string, _worksiteId?: string, _worksiteName?: string) => { showDemoToast('Adding shift'); return false; } 
     : shiftHook.addManualShift;
   const addTravelToShift = isDemoMode 
     ? async (_shiftId: string, _shiftDate: Date, _startHour: string, _startMinute: string, _startAmPm: 'AM' | 'PM', _endHour: string, _endMinute: string, _endAmPm: 'AM' | 'PM') => { showDemoToast('Adding travel'); return false; } 

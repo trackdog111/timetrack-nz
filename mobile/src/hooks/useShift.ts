@@ -738,7 +738,9 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
     endAmPm: 'AM' | 'PM',
     breaks: number[],
     travel: number[],
-    notes: string
+    notes: string,
+    worksiteId?: string,
+    worksiteName?: string
   ) => {
     if (!user || !companyId) return false;  // UPDATED: Require companyId
 
@@ -770,8 +772,8 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
         return { startTime: now, endTime: now, durationMinutes: mins };
       });
 
-      await addDoc(collection(db, 'shifts'), {
-        companyId,  // NEW: Include companyId
+      const shiftDoc: any = {
+        companyId,
         userId: user.uid,
         userEmail: user.email,
         clockIn: Timestamp.fromDate(clockIn),
@@ -782,7 +784,29 @@ export function useShift(user: User | null, settings: EmployeeSettings, companyI
         jobLog: { field1: notes, field2: '', field3: '' },
         status: 'completed',
         manualEntry: true
-      });
+      };
+      if (worksiteId) shiftDoc.worksiteId = worksiteId;
+      if (worksiteName) shiftDoc.worksiteName = worksiteName;
+
+      const shiftRef = await addDoc(collection(db, 'shifts'), shiftDoc);
+
+      // Auto-create worksite if custom name was typed
+      if (worksiteName && !worksiteId) {
+        try {
+          const wsRef = await addDoc(collection(db, 'worksites'), {
+            companyId,
+            name: worksiteName,
+            status: 'active',
+            createdAt: Timestamp.now(),
+            updatedAt: Timestamp.now(),
+            createdBy: user.uid,
+            autoCreated: true
+          });
+          await updateDoc(shiftRef, { worksiteId: wsRef.id });
+        } catch (wsErr) {
+          console.error('Error auto-creating worksite:', wsErr);
+        }
+      }
 
       return true;
     } catch (err: any) {

@@ -42,7 +42,9 @@ interface ClockViewProps {
     endAmPm: 'AM' | 'PM',
     breaks: number[],
     travel: number[],
-    notes: string
+    notes: string,
+    worksiteId?: string,
+    worksiteName?: string
   ) => Promise<boolean>;
   showToast: (message: string) => void;
   // Job log fields
@@ -274,7 +276,12 @@ export function ClockView({
   };
 
   const handleAddManualShift = async () => {
+    if (requireWorksite && !isWorksiteValid()) {
+      showToast('Please select a worksite before adding a shift');
+      return;
+    }
     setAddingShift(true);
+    const { id, name } = getWorksiteForClockIn();
     const success = await onAddManualShift(
       manualDate,
       manualStartHour,
@@ -285,7 +292,9 @@ export function ClockView({
       manualEndAmPm,
       manualBreaks,
       manualTravel,
-      manualNotes
+      manualNotes,
+      id,
+      name
     );
     
     if (success) {
