@@ -72,7 +72,7 @@ export function WorksiteDetailModal({
   onClose, onDeleteCost, deletingCostId
 }: WorksiteDetailModalProps) {
 
-  const [tab, setTab] = useState<'overview' | 'trades' | 'team' | 'costs'>('overview');
+  const [tab, setTab] = useState<'overview' | 'subcontractors' | 'suppliers' | 'team' | 'costs'>('overview');
   const [period, setPeriod] = useState<number>(42); // days
 
   // ==================== STYLES (match AnalyticsView) ====================
@@ -302,7 +302,8 @@ export function WorksiteDetailModal({
             <div style={{ display: 'flex', gap: '4px', background: theme.cardAlt, borderRadius: '8px', padding: '3px' }}>
               {[
                 { id: 'overview', label: 'Overview' },
-                { id: 'trades', label: 'Trades' },
+                { id: 'subcontractors', label: 'Subcontractors' },
+                { id: 'suppliers', label: 'Suppliers' },
                 { id: 'team', label: 'Team' },
                 { id: 'costs', label: 'Costs' },
               ].map(t => (
@@ -483,34 +484,29 @@ export function WorksiteDetailModal({
             </>
           )}
 
-          {/* ==================== TRADES TAB ==================== */}
-          {tab === 'trades' && (
-            <>
-              <div style={styles.card}>
-                <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Cost by Subcontractor / Supplier</h3>
-                {byCategory.length === 0 ? (
+          {/* ==================== SUBCONTRACTORS TAB ==================== */}
+          {tab === 'subcontractors' && (
+            <div style={styles.card}>
+              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Subcontractors</h3>
+              {(() => {
+                const subCats = byCategory.filter(c => c.isSubcontractor);
+                if (subCats.length === 0) return (
                   <div style={{ color: theme.textMuted, textAlign: 'center', padding: '30px 0', fontSize: '14px' }}>
-                    No cost entries for this worksite yet. Use "+ Add Cost" on the Analytics page to add entries.
+                    No subcontractor costs for this worksite yet.
                   </div>
-                ) : (
+                );
+                const maxAmt = Math.max(...subCats.map(c => c.amount), 1);
+                const total = subCats.reduce((s, c) => s + c.amount, 0);
+                return (
                   <>
-                    {/* Category bars */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {byCategory.map((cat, i) => {
-                        const maxAmt = Math.max(...byCategory.map(c => c.amount), 1);
+                      {subCats.map((cat, i) => {
                         const pct = (cat.amount / maxAmt) * 100;
                         return (
                           <div key={cat.category}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                 <span style={{ color: theme.text, fontSize: '14px', fontWeight: '600' }}>{cat.category}</span>
-                                <span style={{
-                                  fontSize: '10px', padding: '2px 8px', borderRadius: '8px', fontWeight: '600',
-                                  background: cat.isSubcontractor ? '#dbeafe' : cat.isSupplier ? '#fef3c7' : theme.cardAlt,
-                                  color: cat.isSubcontractor ? '#2563eb' : cat.isSupplier ? '#d97706' : theme.textMuted,
-                                }}>
-                                  {cat.isSubcontractor ? 'Subcontractor' : cat.isSupplier ? 'Supplier' : 'Other'}
-                                </span>
                                 <span style={{ color: theme.textMuted, fontSize: '12px' }}>{cat.count} entr{cat.count === 1 ? 'y' : 'ies'}</span>
                               </div>
                               <span style={{ color: theme.text, fontSize: '15px', fontWeight: '700' }}>${cat.amount.toFixed(2)}</span>
@@ -518,8 +514,6 @@ export function WorksiteDetailModal({
                             <div style={{ height: '8px', borderRadius: '4px', background: theme.cardAlt, overflow: 'hidden' }}>
                               <div style={{ height: '100%', width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length], borderRadius: '4px' }} />
                             </div>
-
-                            {/* Individual entries under this category */}
                             <div style={{ marginTop: '8px', paddingLeft: '12px' }}>
                               {cat.entries.sort((a, b) => {
                                 const da = a.date?.toDate ? a.date.toDate().getTime() : 0;
@@ -557,59 +551,91 @@ export function WorksiteDetailModal({
                         );
                       })}
                     </div>
-
-                    {/* Totals */}
                     <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: `2px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: theme.text, fontSize: '14px', fontWeight: '700' }}>Total Other Costs</span>
-                      <span style={{ color: theme.primary, fontSize: '16px', fontWeight: '700' }}>${stats.manualTotal.toFixed(2)}</span>
+                      <span style={{ color: theme.text, fontSize: '14px', fontWeight: '700' }}>Total Subcontractors</span>
+                      <span style={{ color: theme.primary, fontSize: '16px', fontWeight: '700' }}>${total.toFixed(2)}</span>
                     </div>
                   </>
-                )}
-              </div>
+                );
+              })()}
+            </div>
+          )}
 
-              {/* Labour cost by worker type for this worksite */}
-              <div style={styles.card}>
-                <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Labour Cost by Worker Type</h3>
-                {byEmployee.length === 0 ? (
-                  <div style={{ color: theme.textMuted, textAlign: 'center', padding: '20px 0', fontSize: '14px' }}>No shift data</div>
-                ) : (() => {
-                  const byType: Map<string, { hours: number; cost: number; emps: typeof byEmployee }> = new Map();
-                  byEmployee.forEach(emp => {
-                    const wt = emp.emp?.costing?.workerType || 'unset';
-                    const label = wt === 'paye' ? 'PAYE' : wt === 'contractor_gst' ? 'Contractor (GST)' : wt === 'contractor_no_gst' ? 'Contractor' : 'Not Set';
-                    const data = byType.get(label) || { hours: 0, cost: 0, emps: [] };
-                    data.hours += emp.hours;
-                    data.cost += emp.cost;
-                    data.emps.push(emp);
-                    byType.set(label, data);
-                  });
-                  return (
+          {/* ==================== SUPPLIERS TAB ==================== */}
+          {tab === 'suppliers' && (
+            <div style={styles.card}>
+              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Suppliers</h3>
+              {(() => {
+                const supCats = byCategory.filter(c => c.isSupplier);
+                if (supCats.length === 0) return (
+                  <div style={{ color: theme.textMuted, textAlign: 'center', padding: '30px 0', fontSize: '14px' }}>
+                    No supplier costs for this worksite yet.
+                  </div>
+                );
+                const maxAmt = Math.max(...supCats.map(c => c.amount), 1);
+                const total = supCats.reduce((s, c) => s + c.amount, 0);
+                return (
+                  <>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                      {Array.from(byType.entries()).sort(([, a], [, b]) => b.cost - a.cost).map(([label, data], i) => (
-                        <div key={label}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                            <span style={{ color: theme.text, fontSize: '14px', fontWeight: '600' }}>{label}</span>
-                            <span style={{ color: theme.textMuted, fontSize: '13px' }}>${data.cost.toFixed(0)} · {data.hours.toFixed(1)}h</span>
-                          </div>
-                          <div style={{ height: '8px', borderRadius: '4px', background: theme.cardAlt, overflow: 'hidden' }}>
-                            <div style={{ height: '100%', width: `${stats.totalLabourCost > 0 ? (data.cost / stats.totalLabourCost) * 100 : 0}%`, background: CHART_COLORS[i % CHART_COLORS.length], borderRadius: '4px' }} />
-                          </div>
-                          {/* Employees in this type */}
-                          <div style={{ paddingLeft: '12px', marginTop: '6px' }}>
-                            {data.emps.map(emp => (
-                              <div key={emp.emp.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', fontSize: '12px' }}>
-                                <span style={{ color: theme.textMuted }}>{emp.emp.name || emp.emp.email?.split('@')[0]}</span>
-                                <span style={{ color: theme.textMuted }}>{emp.hours.toFixed(1)}h · ${emp.cost.toFixed(0)} · ${emp.emp.costing?.hourlyRate || 0}/hr</span>
+                      {supCats.map((cat, i) => {
+                        const pct = (cat.amount / maxAmt) * 100;
+                        return (
+                          <div key={cat.category}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ color: theme.text, fontSize: '14px', fontWeight: '600' }}>{cat.category}</span>
+                                <span style={{ color: theme.textMuted, fontSize: '12px' }}>{cat.count} entr{cat.count === 1 ? 'y' : 'ies'}</span>
                               </div>
-                            ))}
+                              <span style={{ color: theme.text, fontSize: '15px', fontWeight: '700' }}>${cat.amount.toFixed(2)}</span>
+                            </div>
+                            <div style={{ height: '8px', borderRadius: '4px', background: theme.cardAlt, overflow: 'hidden' }}>
+                              <div style={{ height: '100%', width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length], borderRadius: '4px' }} />
+                            </div>
+                            <div style={{ marginTop: '8px', paddingLeft: '12px' }}>
+                              {cat.entries.sort((a, b) => {
+                                const da = a.date?.toDate ? a.date.toDate().getTime() : 0;
+                                const db2 = b.date?.toDate ? b.date.toDate().getTime() : 0;
+                                return db2 - da;
+                              }).map(entry => {
+                                const d: Date = entry.date?.toDate ? entry.date.toDate() : new Date(entry.date as any);
+                                return (
+                                  <div key={entry.id} style={{
+                                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                                    padding: '6px 0', borderBottom: `1px solid ${theme.cardBorder}`,
+                                  }}>
+                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                      <span style={{ color: theme.textMuted, fontSize: '12px', minWidth: '70px' }}>
+                                        {d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })}
+                                      </span>
+                                      {entry.reference && <span style={{ color: theme.textMuted, fontSize: '12px' }}>{entry.reference}</span>}
+                                      {entry.description && <span style={{ color: theme.textMuted, fontSize: '12px' }}>{entry.description}</span>}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                      <span style={{ color: theme.text, fontWeight: '600', fontSize: '13px' }}>${entry.amount.toFixed(2)}</span>
+                                      <button
+                                        onClick={() => onDeleteCost(worksiteId, entry.id)}
+                                        disabled={deletingCostId === entry.id}
+                                        style={{ ...styles.btnDanger, fontSize: '11px', padding: '3px 8px', opacity: deletingCostId === entry.id ? 0.5 : 1 }}
+                                      >
+                                        {deletingCostId === entry.id ? '...' : '✕'}
+                                      </button>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                  );
-                })()}
-              </div>
-            </>
+                    <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: `2px solid ${theme.cardBorder}`, display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: theme.text, fontSize: '14px', fontWeight: '700' }}>Total Suppliers</span>
+                      <span style={{ color: theme.primary, fontSize: '16px', fontWeight: '700' }}>${total.toFixed(2)}</span>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
           )}
 
           {/* ==================== TEAM TAB ==================== */}
