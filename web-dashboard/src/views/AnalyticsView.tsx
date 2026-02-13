@@ -7,6 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend
 } from 'recharts';
+import { WorksiteDetailModal } from './WorksiteDetailModal';
 
 // ==================== TYPES ====================
 
@@ -142,6 +143,7 @@ export function AnalyticsView({
   const [addingCost, setAddingCost] = useState(false);
   const [showAddCost, setShowAddCost] = useState(false);
   const [deletingCostId, setDeletingCostId] = useState<string | null>(null);
+  const [detailWorksiteId, setDetailWorksiteId] = useState<string | null>(null);
 
   // Contract value editing
   const [editingContract, setEditingContract] = useState<string | null>(null);
@@ -964,7 +966,7 @@ export function AnalyticsView({
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', cursor: 'pointer', flexWrap: 'wrap', gap: '8px', background: isExpanded ? theme.cardAlt : 'transparent' }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                          <span style={{ color: theme.text, fontWeight: '600', fontSize: '14px' }}>{ws.name}</span>
+                          <span onClick={(e) => { e.stopPropagation(); setDetailWorksiteId(ws.id); }} style={{ color: theme.primary, fontWeight: '600', fontSize: '14px', cursor: 'pointer', textDecoration: 'underline' }}>{ws.name}</span>
                           <span style={{ color: theme.textMuted, fontSize: '12px' }}>{ws.shifts} shifts · {ws.hours.toFixed(1)}h</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
@@ -1160,6 +1162,28 @@ export function AnalyticsView({
               </div>
             </div>
           )}
+          {detailWorksiteId && (() => {
+        const ws = worksiteProjectCosts.find(w => w.id === detailWorksiteId);
+        if (!ws) return null;
+        return (
+          <WorksiteDetailModal
+            theme={theme}
+            isMobile={isMobile}
+            worksite={ws.worksite || ({} as any)}
+            worksiteId={ws.id}
+            worksiteName={ws.name}
+            allShifts={allShifts}
+            employees={employees}
+            worksiteCosts={worksiteCosts}
+            companySettings={companySettings}
+            subcontractors={savedSubcontractors}
+            suppliers={savedSuppliers}
+            onClose={() => setDetailWorksiteId(null)}
+            onDeleteCost={deleteCost}
+            deletingCostId={deletingCostId}
+          />
+        );
+      })()}
         </div>
       )}
     </div>
