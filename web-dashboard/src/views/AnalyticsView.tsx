@@ -966,7 +966,7 @@ export function AnalyticsView({
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 16px', cursor: 'pointer', flexWrap: 'wrap', gap: '8px', background: isExpanded ? theme.cardAlt : 'transparent' }}
                       >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-                          <span onClick={(e) => { e.stopPropagation(); setDetailWorksiteId(ws.id); }} style={{ color: theme.primary, fontWeight: '600', fontSize: '14px', cursor: 'pointer', textDecoration: 'underline' }}>{ws.name}</span>
+                          <span style={{ color: theme.text, fontWeight: '600', fontSize: '14px' }}>{ws.name}</span><button onClick={(e) => { e.stopPropagation(); setDetailWorksiteId(ws.id); }} style={{ marginLeft: '10px', padding: '3px 10px', borderRadius: '6px', border: `1px solid ${theme.primary}`, background: 'transparent', color: theme.primary, cursor: 'pointer', fontWeight: '600', fontSize: '11px' }}>{String.fromCodePoint(0x1F4CA)} Details</button>
                           <span style={{ color: theme.textMuted, fontSize: '12px' }}>{ws.shifts} shifts · {ws.hours.toFixed(1)}h</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
