@@ -227,6 +227,8 @@ export interface Expense {
   createdAt: Timestamp;
   approvedAt?: Timestamp;
   approvedBy?: string;
+  worksiteId?: string;
+  worksiteName?: string;
 }
 
 // ==================== WORKSITE COST ====================

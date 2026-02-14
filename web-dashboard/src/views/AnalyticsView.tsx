@@ -360,8 +360,13 @@ export function AnalyticsView({
       const worksite = worksites.find(w => w.id === ws.id);
       const manualCosts = worksiteCosts.filter(c => c.worksiteId === ws.id);
       const manualTotal = manualCosts.reduce((sum, c) => sum + c.amount, 0);
+
+      // Employee-submitted expenses linked to this worksite
+      const wsExpenses = expenses.filter(e => e.worksiteId === ws.id);
+      const expenseTotal = wsExpenses.reduce((sum, e) => sum + e.amount, 0);
+
       const contractValue = (worksite as any)?.contractValue || 0;
-      const totalCost = ws.cost + manualTotal;
+      const totalCost = ws.cost + manualTotal + expenseTotal;
       const margin = contractValue - totalCost;
 
       // Group manual costs by category
@@ -369,19 +374,26 @@ export function AnalyticsView({
       manualCosts.forEach(c => {
         byCategory.set(c.category, (byCategory.get(c.category) || 0) + c.amount);
       });
+      // Add employee expenses by category
+      wsExpenses.forEach(e => {
+        const cat = `Expense: ${e.category}`;
+        byCategory.set(cat, (byCategory.get(cat) || 0) + e.amount);
+      });
 
       return {
         ...ws,
         worksite,
         manualCosts,
         manualTotal,
+        wsExpenses,
+        expenseTotal,
         contractValue,
         totalCost,
         margin,
         costByCategory: Array.from(byCategory.entries()).map(([cat, amt]) => ({ category: cat, amount: amt })),
       };
     });
-  }, [analytics.byWorksite, worksites, worksiteCosts]);
+  }, [analytics.byWorksite, worksites, worksiteCosts, expenses]);
 
   // ==================== ACTIONS ====================
 
@@ -1042,6 +1054,12 @@ export function AnalyticsView({
                               <div style={{ color: theme.textMuted, fontSize: '11px' }}>Other Costs</div>
                               <div style={{ color: theme.text, fontWeight: '600', fontSize: '16px' }}>${ws.manualTotal.toFixed(2)}</div>
                             </div>
+                            {ws.expenseTotal > 0 && (
+                              <div>
+                                <div style={{ color: theme.textMuted, fontSize: '11px' }}>Employee Expenses</div>
+                                <div style={{ color: theme.warning, fontWeight: '600', fontSize: '16px' }}>${ws.expenseTotal.toFixed(2)}</div>
+                              </div>
+                            )}
                             <div>
                               <div style={{ color: theme.textMuted, fontSize: '11px' }}>Total Cost</div>
                               <div style={{ color: theme.primary, fontWeight: '700', fontSize: '16px' }}>${ws.totalCost.toFixed(2)}</div>
