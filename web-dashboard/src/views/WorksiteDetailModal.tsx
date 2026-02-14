@@ -4,7 +4,7 @@
 // Uses same theme/styles as AnalyticsView
 
 import React, { useState, useMemo } from 'react';
-import { Theme, Shift, Employee, Worksite } from '../shared/types';
+import { Theme, Shift, Employee, Worksite, Expense } from '../shared/types';
 import { getHours, calcBreaks, calcTravel, fmtDur } from '../shared/utils';
 import { WorksiteCost } from './AnalyticsView';
 import {
@@ -29,6 +29,7 @@ interface WorksiteDetailModalProps {
   onClose: () => void;
   onDeleteCost: (worksiteId: string, costId: string) => void;
   deletingCostId: string | null;
+  expenses?: Expense[];
 }
 
 // ==================== COLOURS ====================
@@ -69,10 +70,10 @@ function getShiftWorkedHours(shift: Shift, paidRestMinutes: number): number {
 export function WorksiteDetailModal({
   theme, isMobile, worksite, worksiteId, worksiteName, allShifts, employees,
   worksiteCosts, companySettings, subcontractors, suppliers,
-  onClose, onDeleteCost, deletingCostId
+  onClose, onDeleteCost, deletingCostId, expenses = []
 }: WorksiteDetailModalProps) {
 
-  const [tab, setTab] = useState<'overview' | 'subcontractors' | 'suppliers' | 'team' | 'costs'>('overview');
+  const [tab, setTab] = useState<'overview' | 'subcontractors' | 'suppliers' | 'team' | 'expenses' | 'costs'>('overview');
   const [period, setPeriod] = useState<number>(42); // days
 
   // ==================== STYLES (match AnalyticsView) ====================
@@ -116,6 +117,31 @@ export function WorksiteDetailModal({
     return worksiteCosts.filter(c => c.worksiteId === worksiteId);
   }, [worksiteCosts, worksiteId]);
 
+  // Filter employee expenses for this worksite
+  const wsExpenses = useMemo(() => {
+    return expenses.filter(e => e.worksiteId === worksiteId);
+  }, [expenses, worksiteId]);
+
+  const expenseTotal = useMemo(() => {
+    return wsExpenses.reduce((sum, e) => sum + e.amount, 0);
+  }, [wsExpenses]);
+
+  // Group expenses by category
+  const expenseByCategory = useMemo(() => {
+    const cats: Map<string, { amount: number; count: number; entries: Expense[] }> = new Map();
+    wsExpenses.forEach(e => {
+      const key = e.category || 'Other';
+      const data = cats.get(key) || { amount: 0, count: 0, entries: [] };
+      data.amount += e.amount;
+      data.count += 1;
+      data.entries.push(e);
+      cats.set(key, data);
+    });
+    return Array.from(cats.entries()).map(([category, data]) => ({
+      category, ...data,
+    })).sort((a, b) => b.amount - a.amount);
+  }, [wsExpenses]);
+
   // ==================== COMPUTED DATA ====================
 
   const empMap = useMemo(() => new Map(employees.map(e => [e.id, e])), [employees]);
@@ -147,7 +173,7 @@ export function WorksiteDetailModal({
 
     const manualTotal = wsCosts.reduce((sum, c) => sum + c.amount, 0);
     const contractValue = (worksite as any)?.contractValue || 0;
-    const totalCost = totalLabourCost + manualTotal;
+    const totalCost = totalLabourCost + manualTotal + expenseTotal;
     const margin = contractValue - totalCost;
     const marginPct = contractValue > 0 ? (margin / contractValue) * 100 : null;
 
@@ -157,7 +183,7 @@ export function WorksiteDetailModal({
       manualTotal, contractValue, totalCost, margin, marginPct,
       avgHoursPerDay: daysWorked.size > 0 ? totalHours / daysWorked.size : 0,
     };
-  }, [worksiteShifts, wsCosts, empMap, companySettings, worksite]);
+  }, [worksiteShifts, wsCosts, empMap, companySettings, worksite, expenseTotal]);
 
   // By employee
   const byEmployee = useMemo(() => {
@@ -584,6 +610,7 @@ export function WorksiteDetailModal({
                 { id: 'subcontractors', label: 'Subcontractors' },
                 { id: 'suppliers', label: 'Suppliers' },
                 { id: 'team', label: 'Team' },
+                { id: 'expenses', label: `Expenses${wsExpenses.length > 0 ? ' (' + wsExpenses.length + ')' : ''}` },
                 { id: 'costs', label: 'Costs' },
               ].map(t => (
                 <button
@@ -665,6 +692,7 @@ export function WorksiteDetailModal({
                   { label: 'Total Hours', value: stats.totalHours.toFixed(1), sub: `${stats.numShifts} shifts`, color: theme.primary },
                   { label: 'Labour Cost', value: `$${stats.totalLabourCost.toFixed(0)}`, sub: `${stats.numDays} workdays`, color: theme.success },
                   { label: 'Other Costs', value: `$${stats.manualTotal.toFixed(0)}`, sub: `${wsCosts.length} entries`, color: theme.warning },
+                  ...(expenseTotal > 0 ? [{ label: 'Emp. Expenses', value: `$${expenseTotal.toFixed(0)}`, sub: `${wsExpenses.length} claims`, color: '#f97316' }] : []),
                   { label: 'Avg Hours/Day', value: stats.avgHoursPerDay.toFixed(1), sub: `${byEmployee.length} workers`, color: '#8b5cf6' },
                   { label: 'Break Time', value: `${stats.totalBreakPaid + stats.totalBreakUnpaid}m`, sub: `${stats.totalBreakPaid}m paid`, color: '#ef4444' },
                 ].map(s => (
@@ -703,11 +731,13 @@ export function WorksiteDetailModal({
                           data={[
                             { name: 'Labour', value: Math.round(stats.totalLabourCost) },
                             ...(stats.manualTotal > 0 ? [{ name: 'Other', value: Math.round(stats.manualTotal) }] : []),
+                            ...(expenseTotal > 0 ? [{ name: 'Expenses', value: Math.round(expenseTotal) }] : []),
                           ]}
                           cx="50%" cy="50%" innerRadius={45} outerRadius={75} paddingAngle={3} dataKey="value"
                         >
                           <Cell fill={theme.success} />
                           {stats.manualTotal > 0 && <Cell fill={theme.warning} />}
+                          {expenseTotal > 0 && <Cell fill="#f97316" />}
                         </Pie>
                         <Tooltip {...tooltipStyle} formatter={(value: any) => [`$${value}`, '']} />
                       </PieChart>
@@ -724,6 +754,12 @@ export function WorksiteDetailModal({
                       <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                         <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: theme.warning }} />
                         <span style={{ color: theme.textMuted, fontSize: '12px' }}>Other ${stats.manualTotal.toFixed(0)}</span>
+                      </div>
+                    )}
+                    {expenseTotal > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <div style={{ width: '10px', height: '10px', borderRadius: '3px', background: '#f97316' }} />
+                        <span style={{ color: theme.textMuted, fontSize: '12px' }}>Expenses ${expenseTotal.toFixed(0)}</span>
                       </div>
                     )}
                   </div>
@@ -917,6 +953,90 @@ export function WorksiteDetailModal({
             </div>
           )}
 
+          {/* ==================== EXPENSES TAB ==================== */}
+          {tab === 'expenses' && (
+            <div style={styles.card}>
+              <h3 style={{ color: theme.text, marginBottom: '16px', fontSize: '16px' }}>Employee Expenses</h3>
+              {wsExpenses.length === 0 ? (
+                <div style={{ color: theme.textMuted, textAlign: 'center', padding: '30px 0', fontSize: '14px' }}>
+                  No employee expenses linked to this worksite yet.
+                </div>
+              ) : (
+                <>
+                  {/* Category breakdown */}
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ color: theme.textMuted, fontSize: '12px', fontWeight: '500', marginBottom: '10px' }}>By Category</div>
+                    <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                      {expenseByCategory.map(cat => (
+                        <div key={cat.category} style={{ background: theme.cardAlt, padding: '8px 14px', borderRadius: '8px', border: `1px solid ${theme.cardBorder}` }}>
+                          <span style={{ color: theme.text, fontSize: '13px', fontWeight: '600' }}>{cat.category}</span>
+                          <span style={{ color: theme.textMuted, fontSize: '13px', marginLeft: '8px' }}>${cat.amount.toFixed(2)}</span>
+                          <span style={{ color: theme.textMuted, fontSize: '11px', marginLeft: '4px' }}>({cat.count})</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Expense entries table */}
+                  <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '550px' }}>
+                      <thead>
+                        <tr style={{ borderBottom: `2px solid ${theme.cardBorder}` }}>
+                          {['Date', 'Employee', 'Category', 'Note', 'Status', 'Amount'].map(h => (
+                            <th key={h} style={{ padding: '10px 8px', textAlign: h === 'Amount' ? 'right' : 'left', color: theme.textMuted, fontSize: '12px', fontWeight: '500' }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wsExpenses.sort((a, b) => {
+                          const da = a.date?.toDate ? a.date.toDate().getTime() : 0;
+                          const db2 = b.date?.toDate ? b.date.toDate().getTime() : 0;
+                          return db2 - da;
+                        }).map(exp => {
+                          const d: Date = exp.date?.toDate ? exp.date.toDate() : new Date(exp.date as any);
+                          return (
+                            <tr key={exp.id} style={{ borderBottom: `1px solid ${theme.cardBorder}` }}>
+                              <td style={{ padding: '10px 8px', color: theme.textMuted, fontSize: '13px' }}>
+                                {d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}
+                              </td>
+                              <td style={{ padding: '10px 8px', color: theme.text, fontSize: '13px', fontWeight: '500' }}>{exp.odName}</td>
+                              <td style={{ padding: '10px 8px' }}>
+                                <span style={{ fontSize: '12px', padding: '2px 8px', borderRadius: '6px', fontWeight: '500', background: '#fff7ed', color: '#ea580c' }}>
+                                  {exp.category}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px 8px', color: theme.textMuted, fontSize: '13px' }}>{exp.note || '-'}</td>
+                              <td style={{ padding: '10px 8px' }}>
+                                <span style={{
+                                  fontSize: '11px', padding: '2px 8px', borderRadius: '6px', fontWeight: '600',
+                                  background: exp.status === 'approved' ? theme.successBg : theme.warningBg,
+                                  color: exp.status === 'approved' ? theme.success : theme.warning,
+                                }}>
+                                  {exp.status === 'approved' ? '✓ Approved' : '⏳ Pending'}
+                                </span>
+                              </td>
+                              <td style={{ padding: '10px 8px', color: theme.text, fontWeight: '600', fontSize: '13px', textAlign: 'right' }}>
+                                ${exp.amount.toFixed(2)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ borderTop: `2px solid ${theme.cardBorder}` }}>
+                          <td colSpan={5} style={{ padding: '10px 8px', color: theme.text, fontWeight: '700', fontSize: '14px' }}>Total Expenses</td>
+                          <td style={{ padding: '10px 8px', color: '#f97316', fontWeight: '700', fontSize: '15px', textAlign: 'right' }}>
+                            ${expenseTotal.toFixed(2)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* ==================== TEAM TAB ==================== */}
           {tab === 'team' && (
             <div style={styles.card}>
@@ -1005,6 +1125,12 @@ export function WorksiteDetailModal({
                   <div style={{ color: theme.textMuted, fontSize: '12px' }}>Other Costs</div>
                   <div style={{ color: theme.warning, fontSize: '22px', fontWeight: '700' }}>${stats.manualTotal.toFixed(2)}</div>
                 </div>
+                {expenseTotal > 0 && (
+                  <div>
+                    <div style={{ color: theme.textMuted, fontSize: '12px' }}>Employee Expenses</div>
+                    <div style={{ color: '#f97316', fontSize: '22px', fontWeight: '700' }}>${expenseTotal.toFixed(2)}</div>
+                  </div>
+                )}
                 <div>
                   <div style={{ color: theme.textMuted, fontSize: '12px' }}>Total Cost</div>
                   <div style={{ color: theme.primary, fontSize: '22px', fontWeight: '700' }}>${stats.totalCost.toFixed(2)}</div>

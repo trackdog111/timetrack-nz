@@ -1199,6 +1199,7 @@ export function AnalyticsView({
             onClose={() => setDetailWorksiteId(null)}
             onDeleteCost={deleteCost}
             deletingCostId={deletingCostId}
+            expenses={expenses}
           />
         );
       })()}
