@@ -1,6 +1,5 @@
 // Trackable NZ - Expenses Hook
 // Manages expense submissions for employees
-// UPDATED: Added worksiteId/worksiteName to submitExpense for site costing
 
 import { useState, useEffect } from 'react';
 import { User } from 'firebase/auth';
@@ -62,9 +61,7 @@ export function useExpenses(user: User | null, companyId: string | null) {
     category: ExpenseCategory,
     date: Date,
     photoBase64?: string,
-    note?: string,
-    worksiteId?: string,
-    worksiteName?: string
+    note?: string
   ): Promise<boolean> => {
     if (!user || !companyId) return false;
 
@@ -98,12 +95,6 @@ export function useExpenses(user: User | null, companyId: string | null) {
         expenseData.photoUrl = photoUrl;
       }
 
-      // Link to worksite if provided
-      if (worksiteId) {
-        expenseData.worksiteId = worksiteId;
-        expenseData.worksiteName = worksiteName || '';
-      }
-
       await addDoc(collection(db, 'expenses'), expenseData);
 
       setSubmitting(false);
@@ -121,27 +112,17 @@ export function useExpenses(user: User | null, companyId: string | null) {
     amount: number,
     category: ExpenseCategory,
     date: Date,
-    note?: string,
-    worksiteId?: string,
-    worksiteName?: string
+    note?: string
   ): Promise<boolean> => {
     if (!user || !companyId) return false;
 
     try {
-      const updateData: any = {
+      await updateDoc(doc(db, 'expenses', expenseId), {
         amount,
         category,
         date: Timestamp.fromDate(date),
         note: note || ''
-      };
-
-      // Update worksite link if provided
-      if (worksiteId !== undefined) {
-        updateData.worksiteId = worksiteId || null;
-        updateData.worksiteName = worksiteName || null;
-      }
-
-      await updateDoc(doc(db, 'expenses', expenseId), updateData);
+      });
       return true;
     } catch (error) {
       console.error('Error updating expense:', error);

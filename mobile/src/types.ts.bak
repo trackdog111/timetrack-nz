@@ -1,6 +1,5 @@
 // Trackable NZ - Type Definitions
 // UPDATED: Added Worksite types, added worksiteId to Shift, added Expense types
-// UPDATED: Added worksiteId/worksiteName to Expense for site costing link
 
 export interface Location {
   latitude: number;
@@ -155,8 +154,6 @@ export interface Expense {
   createdAt: any;
   approvedAt?: any;
   approvedBy?: string;
-  worksiteId?: string;       // NEW: Links expense to worksite for site costing
-  worksiteName?: string;     // NEW: Denormalized name for display
 }
 
 export type ExpenseCategory = 

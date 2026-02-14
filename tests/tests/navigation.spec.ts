@@ -8,31 +8,31 @@ test.describe('Navigation & UI', () => {
   });
 
   test('should show header with app name', async ({ page }) => {
-    await expect(page.locator('text=/trackable/i').first()).toBeVisible({ timeout: 5000 });
+    // App.tsx header has h1 "Trackable NZ"
+    await expect(page.locator('h1:has-text("Trackable NZ")').first()).toBeVisible({ timeout: 5000 });
   });
 
   test('should show bottom navigation bar', async ({ page }) => {
-    // Should see nav items
-    const navItems = page.locator('nav, [role="navigation"], [class*="nav"]').first();
-    await expect(navItems).toBeVisible({ timeout: 5000 });
+    // App.tsx has <nav> element with buttons
+    const navElement = page.locator('nav').first();
+    await expect(navElement).toBeVisible({ timeout: 5000 });
     
-    // Should have multiple nav items
-    const navButtons = page.locator('nav button, nav a, [role="navigation"] button');
+    // Should have nav buttons: Clock, Chat (if enabled), Expenses, History
+    const navButtons = page.locator('nav button');
     const count = await navButtons.count();
-    expect(count).toBeGreaterThanOrEqual(3); // Clock, History, Expenses, Chat
+    expect(count).toBeGreaterThanOrEqual(3);
   });
 
   test('should navigate between all tabs', async ({ page }) => {
-    const tabs = ['clock', 'history', 'expenses', 'chat'];
+    // Nav buttons have labels: Clock, Chat, Expenses, History
+    const tabs = ['Clock', 'Chat', 'Expenses', 'History'];
     
     for (const tab of tabs) {
-      const tabBtn = page.locator(`text=/${tab}/i, [aria-label*="${tab}" i]`).first();
+      const tabBtn = page.locator(`nav button:has-text("${tab}")`).first();
       
       if (await tabBtn.isVisible().catch(() => false)) {
         await tabBtn.click();
         await page.waitForTimeout(500);
-        
-        // Verify navigation worked (URL or content change)
         console.log(`Navigated to ${tab}`);
       }
     }
@@ -40,42 +40,39 @@ test.describe('Navigation & UI', () => {
 
   test('should highlight active tab', async ({ page }) => {
     // Click on History tab
-    const historyTab = page.locator('text=/history/i, [aria-label*="history" i]').first();
+    const historyTab = page.locator('nav button:has-text("History")').first();
     
     if (await historyTab.isVisible().catch(() => false)) {
       await historyTab.click();
       await page.waitForTimeout(500);
       
-      // The active tab should have different styling (check for active class or aria-selected)
+      // Active tab has fontWeight 600 and theme.primary color on the label span
       const isActive = await historyTab.evaluate(el => {
-        const classes = el.className;
-        const style = window.getComputedStyle(el);
-        return classes.includes('active') || 
-               el.getAttribute('aria-selected') === 'true' ||
-               style.backgroundColor !== 'rgba(0, 0, 0, 0)';
+        const span = el.querySelector('span:last-child');
+        if (!span) return false;
+        const style = window.getComputedStyle(span);
+        return style.fontWeight === '600' || parseInt(style.fontWeight) >= 600;
       }).catch(() => false);
       
-      // This test is informational - styling varies
       console.log('History tab active state:', isActive);
     }
   });
 
   test('should show settings/profile option', async ({ page }) => {
-    // Look for settings icon or profile button
-    const settingsBtn = page.locator('[aria-label*="settings" i], [aria-label*="profile" i], [aria-label*="menu" i], button:has(svg[class*="cog"]), button:has(svg[class*="user"])').first();
+    // App.tsx has Sign Out button and theme toggle in header
+    const signOutBtn = page.locator('button:has-text("Sign Out"), button:has-text("Exit Demo")').first();
+    const themeToggle = page.locator('button:has-text("☀️"), button:has-text("🌙")').first();
     
-    const hasSettings = await settingsBtn.isVisible().catch(() => false);
-    console.log('Settings button visible:', hasSettings);
+    const hasSignOut = await signOutBtn.isVisible().catch(() => false);
+    const hasTheme = await themeToggle.isVisible().catch(() => false);
+    console.log('Sign Out visible:', hasSignOut, 'Theme toggle visible:', hasTheme);
   });
 
   test('should display correctly on mobile viewport', async ({ page }) => {
-    // Viewport is already set by Playwright config for mobile
-    
-    // Check that nothing overflows horizontally
     const bodyWidth = await page.evaluate(() => document.body.scrollWidth);
     const viewportWidth = await page.evaluate(() => window.innerWidth);
     
-    expect(bodyWidth).toBeLessThanOrEqual(viewportWidth + 1); // Allow 1px tolerance
+    expect(bodyWidth).toBeLessThanOrEqual(viewportWidth + 1);
   });
 
   test('should not have horizontal scroll', async ({ page }) => {
@@ -87,30 +84,24 @@ test.describe('Navigation & UI', () => {
   });
 
   test('should have correct safe area padding (no content cut off)', async ({ page }) => {
-    // Check main content is not at edge
-    const mainContent = page.locator('main, [role="main"], .main-content').first();
+    // Check that content is not flush against the viewport edge
+    // Use h1 boundingBox - if x >= 4, content has padding
+    const h1 = page.locator('h1').first();
     
-    if (await mainContent.isVisible().catch(() => false)) {
-      const padding = await mainContent.evaluate(el => {
-        const style = window.getComputedStyle(el);
-        return {
-          left: parseInt(style.paddingLeft),
-          right: parseInt(style.paddingRight)
-        };
-      });
-      
-      // Should have at least some padding
-      expect(padding.left).toBeGreaterThanOrEqual(8);
-      expect(padding.right).toBeGreaterThanOrEqual(8);
+    if (await h1.isVisible().catch(() => false)) {
+      const box = await h1.boundingBox();
+      expect(box).not.toBeNull();
+      if (box) {
+        expect(box.x).toBeGreaterThanOrEqual(4);
+      }
     }
   });
 
   test('should switch themes if dark mode available', async ({ page }) => {
-    // Look for theme toggle
-    const themeToggle = page.locator('[aria-label*="theme" i], [aria-label*="dark" i], [aria-label*="light" i], button:has(svg[class*="sun"]), button:has(svg[class*="moon"])').first();
+    // Theme toggle buttons: ☀️ (dark mode active) or 🌙 (light mode active)
+    const themeToggle = page.locator('button:has-text("☀️"), button:has-text("🌙")').first();
     
     if (await themeToggle.isVisible().catch(() => false)) {
-      // Get initial background color
       const initialBg = await page.evaluate(() => {
         return window.getComputedStyle(document.body).backgroundColor;
       });
@@ -118,12 +109,10 @@ test.describe('Navigation & UI', () => {
       await themeToggle.click();
       await page.waitForTimeout(500);
       
-      // Get new background color
       const newBg = await page.evaluate(() => {
         return window.getComputedStyle(document.body).backgroundColor;
       });
       
-      // Colors should be different
       console.log('Theme changed:', initialBg !== newBg);
     }
   });

@@ -1,10 +1,9 @@
 // Trackable NZ - Expenses View Component
 // Allows employees to submit and view expense reimbursement claims
-// UPDATED: Auto-links expense to current worksite from active shift, dropdown fallback
 
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import { Theme, createStyles } from '../theme';
-import { Expense, ExpenseCategory, EXPENSE_CATEGORIES, Shift, Worksite } from '../types';
+import { Expense, ExpenseCategory, EXPENSE_CATEGORIES } from '../types';
 
 interface ExpensesViewProps {
   theme: Theme;
@@ -16,23 +15,17 @@ interface ExpensesViewProps {
     category: ExpenseCategory,
     date: Date,
     photoBase64?: string,
-    note?: string,
-    worksiteId?: string,
-    worksiteName?: string
+    note?: string
   ) => Promise<boolean>;
   onUpdateExpense: (
     expenseId: string,
     amount: number,
     category: ExpenseCategory,
     date: Date,
-    note?: string,
-    worksiteId?: string,
-    worksiteName?: string
+    note?: string
   ) => Promise<boolean>;
   onDeleteExpense: (expenseId: string) => Promise<boolean>;
   showToast: (message: string) => void;
-  currentShift: Shift | null;
-  worksites: Worksite[];
 }
 
 export function ExpensesView({
@@ -43,9 +36,7 @@ export function ExpensesView({
   onSubmitExpense,
   onUpdateExpense,
   onDeleteExpense,
-  showToast,
-  currentShift,
-  worksites
+  showToast
 }: ExpensesViewProps) {
   const styles = createStyles(theme);
   
@@ -57,7 +48,6 @@ export function ExpensesView({
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [selectedWorksiteId, setSelectedWorksiteId] = useState<string>('');
   
   // Camera state
   const [showCamera, setShowCamera] = useState(false);
@@ -67,32 +57,6 @@ export function ExpensesView({
   const streamRef = useRef<MediaStream | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-set worksite from active shift when form opens
-  useEffect(() => {
-    if (showForm && !editingExpense) {
-      if (currentShift?.worksiteId) {
-        setSelectedWorksiteId(currentShift.worksiteId);
-      } else {
-        setSelectedWorksiteId('');
-      }
-    }
-  }, [showForm, currentShift, editingExpense]);
-
-  // Get the selected worksite name
-  const getWorksiteName = (worksiteId: string): string => {
-    if (!worksiteId) return '';
-    // Check current shift first
-    if (currentShift?.worksiteId === worksiteId && currentShift?.worksiteName) {
-      return currentShift.worksiteName;
-    }
-    // Fall back to worksites list
-    const ws = worksites.find(w => w.id === worksiteId);
-    return ws?.name || '';
-  };
-
-  // Is the worksite auto-linked from active shift?
-  const isAutoLinked = !!(currentShift?.worksiteId && selectedWorksiteId === currentShift.worksiteId && !editingExpense);
-
   // Reset form
   const resetForm = () => {
     setAmount('');
@@ -101,7 +65,6 @@ export function ExpensesView({
     setNote('');
     setPhoto(null);
     setEditingExpense(null);
-    setSelectedWorksiteId('');
     setShowForm(false);
   };
 
@@ -113,8 +76,7 @@ export function ExpensesView({
     const expenseDate = expense.date.toDate ? expense.date.toDate() : new Date(expense.date);
     setDate(expenseDate.toISOString().split('T')[0]);
     setNote(expense.note || '');
-    setPhoto(null);
-    setSelectedWorksiteId(expense.worksiteId || '');
+    setPhoto(null); // Can't edit photo, would need to re-upload
     setShowForm(true);
   };
 
@@ -216,9 +178,6 @@ export function ExpensesView({
       return;
     }
     
-    const wsId = selectedWorksiteId || undefined;
-    const wsName = wsId ? getWorksiteName(wsId) : undefined;
-    
     let success: boolean;
     
     if (editingExpense) {
@@ -228,9 +187,7 @@ export function ExpensesView({
         amountNum,
         category,
         new Date(date),
-        note || undefined,
-        wsId,
-        wsName
+        note || undefined
       );
       if (success) {
         showToast('Expense updated');
@@ -244,9 +201,7 @@ export function ExpensesView({
         category,
         new Date(date),
         photo || undefined,
-        note || undefined,
-        wsId,
-        wsName
+        note || undefined
       );
       if (success) {
         showToast('Expense submitted');
@@ -406,57 +361,6 @@ export function ExpensesView({
           <h3 style={{ color: theme.text, fontWeight: '600', marginBottom: '16px' }}>
             {editingExpense ? 'Edit Expense' : 'New Expense'}
           </h3>
-
-          {/* Worksite - auto-linked or dropdown */}
-          <div style={{ marginBottom: '16px' }}>
-            <label style={{ display: 'block', color: theme.textMuted, fontSize: '13px', marginBottom: '6px' }}>
-              Worksite
-            </label>
-            {isAutoLinked ? (
-              <div style={{
-                padding: '12px 14px',
-                borderRadius: '10px',
-                background: theme.successBg || 'rgba(34,197,94,0.1)',
-                border: `1px solid ${theme.success}`,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center'
-              }}>
-                <div>
-                  <span style={{ color: theme.text, fontSize: '15px', fontWeight: '500' }}>
-                    {currentShift?.worksiteName || 'Current site'}
-                  </span>
-                  <span style={{ color: theme.success, fontSize: '12px', display: 'block', marginTop: '2px' }}>
-                    Auto-linked from active shift
-                  </span>
-                </div>
-                <button
-                  onClick={() => setSelectedWorksiteId('')}
-                  style={{
-                    background: 'none',
-                    border: 'none',
-                    color: theme.textMuted,
-                    fontSize: '12px',
-                    cursor: 'pointer',
-                    textDecoration: 'underline'
-                  }}
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              <select
-                value={selectedWorksiteId}
-                onChange={(e) => setSelectedWorksiteId(e.target.value)}
-                style={styles.select}
-              >
-                <option value="">No worksite (general expense)</option>
-                {worksites.map(ws => (
-                  <option key={ws.id} value={ws.id}>{ws.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
 
           {/* Amount */}
           <div style={{ marginBottom: '16px' }}>
@@ -736,17 +640,6 @@ export function ExpensesView({
                   <p style={{ color: theme.textMuted, fontSize: '14px', marginBottom: '2px' }}>
                     {expense.category}
                   </p>
-                  {/* Show worksite name if linked */}
-                  {expense.worksiteName && (
-                    <p style={{ 
-                      color: theme.primary, 
-                      fontSize: '13px', 
-                      marginBottom: '2px',
-                      fontWeight: '500'
-                    }}>
-                      📍 {expense.worksiteName}
-                    </p>
-                  )}
                   {expense.note && (
                     <p style={{ 
                       color: theme.textLight, 

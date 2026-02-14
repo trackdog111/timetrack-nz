@@ -137,10 +137,10 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
   const expensesLoading = isDemoMode ? false : expensesHook.loading;
   const expenseSubmitting = isDemoMode ? false : expensesHook.submitting;
   const submitExpense = isDemoMode 
-    ? async (_amount: number, _category: any, _date: Date, _photoBase64?: string, _note?: string, _worksiteId?: string, _worksiteName?: string) => { showDemoToast('Submitting expenses'); return false; } 
+    ? async (_amount: number, _category: any, _date: Date, _photoBase64?: string, _note?: string) => { showDemoToast('Submitting expenses'); return false; } 
     : expensesHook.submitExpense;
   const updateExpense = isDemoMode
-    ? async (_expenseId: string, _amount: number, _category: any, _date: Date, _note?: string, _worksiteId?: string, _worksiteName?: string) => { showDemoToast('Updating expenses'); return false; }
+    ? async (_expenseId: string, _amount: number, _category: any, _date: Date, _note?: string) => { showDemoToast('Updating expenses'); return false; }
     : expensesHook.updateExpense;
   const deleteExpense = isDemoMode
     ? async (_expenseId: string) => { showDemoToast('Deleting expenses'); return false; }
@@ -583,8 +583,6 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
               onUpdateExpense={updateExpense}
               onDeleteExpense={deleteExpense}
               showToast={showToast}
-              currentShift={currentShift}
-              worksites={worksites}
             />
           )}
         </main>

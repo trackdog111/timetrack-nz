@@ -1,0 +1,60 @@
+# Page snapshot
+
+```yaml
+- generic [ref=e1]:
+  - generic [ref=e3]:
+    - banner [ref=e4]:
+      - generic [ref=e5]:
+        - heading "Trackable NZ" [level=1] [ref=e6]
+        - generic [ref=e7]:
+          - button "🌙" [ref=e8] [cursor=pointer]
+          - button "Sign Out" [ref=e9] [cursor=pointer]
+    - main [ref=e10]:
+      - generic [ref=e11]:
+        - heading "Shift History" [level=2] [ref=e12]
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - button "This Week" [ref=e15] [cursor=pointer]
+            - button "Last Week" [ref=e16] [cursor=pointer]
+            - button "This Month" [ref=e17] [cursor=pointer]
+            - button "Last Month" [ref=e18] [cursor=pointer]
+          - generic [ref=e19]:
+            - generic [ref=e20]:
+              - generic [ref=e21]: From
+              - textbox [ref=e22]
+            - generic [ref=e23]:
+              - generic [ref=e24]: To
+              - textbox [ref=e25]
+        - paragraph [ref=e26]: Week ends on Tuesday
+        - generic [ref=e28] [cursor=pointer]:
+          - generic [ref=e29]:
+            - generic [ref=e30]: ▶
+            - generic [ref=e31]:
+              - paragraph [ref=e32]: "Week Ending: 17 Feb 2026"
+              - paragraph [ref=e33]: 11 shifts
+          - generic [ref=e34]:
+            - paragraph [ref=e35]: 2h 14m
+            - paragraph [ref=e36]: total
+        - button "ℹ️ NZ Break Rules Enhanced ▼" [ref=e39] [cursor=pointer]:
+          - generic [ref=e40]:
+            - generic [ref=e41]: ℹ️
+            - generic [ref=e42]: NZ Break Rules
+            - generic [ref=e43]: Enhanced
+          - generic [ref=e44]: ▼
+    - navigation [ref=e45]:
+      - generic [ref=e46]:
+        - button "⏱️ Clock" [ref=e47] [cursor=pointer]:
+          - generic [ref=e48]: ⏱️
+          - generic [ref=e49]: Clock
+        - button "💬 Chat" [ref=e50] [cursor=pointer]:
+          - generic [ref=e51]: 💬
+          - generic [ref=e52]: Chat
+        - button "🧾 Expenses" [ref=e53] [cursor=pointer]:
+          - generic [ref=e54]: 🧾
+          - generic [ref=e55]: Expenses
+        - button "📋 History" [active] [ref=e56] [cursor=pointer]:
+          - generic [ref=e57]: 📋
+          - generic [ref=e58]: History
+  - iframe [ref=e59]:
+    
+```
