@@ -55,7 +55,9 @@ export function calcBreaks(breaks: Break[], hours: number, paidRestMinutes: numb
   const total = breaks.reduce((s, b) => s + (b.durationMinutes || 0), 0);
   const ent = getBreakEntitlements(hours, paidRestMinutes);
   const paid = Math.min(total, ent.paidMinutes);
-  return { paid, unpaid: Math.max(0, total - paid), total };
+  const unpaid = Math.max(0, total - paid);
+  const unusedPaid = Math.max(0, ent.paidMinutes - paid);
+  return { paid, unpaid, total, unusedPaid };
 }
 
 export function calcTravel(travelSegments: TravelSegment[]): number {
