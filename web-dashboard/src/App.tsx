@@ -21,9 +21,10 @@ const WorksitesPage = lazy(() => import('./views/WorksitesPage'));
 
 // Stripe Price IDs (Sandbox)
 const STRIPE_PRICES: Record<string, string> = {
-  starter: 'price_1SgOk9GhfEWT71HcsjwPtwLl',
-  team: 'price_1SgOlCGhfEWT71HcePBlIBnX',
-  business: 'price_1SgOmmGhfEWT71HcwAGqz1QA'
+  starter: 'price_1T0wJsGhfEWT71HcNzr6zayz',
+  team: 'price_1T0wM2GhfEWT71HcnFpJvHCo',
+  business: 'price_1T0wNgGhfEWT71HcB0zCP2HO',
+  enterprise: 'price_1T0wOyGhfEWT71Hc1mMkLGDp'
 };
 
 export default function App() {
@@ -134,7 +135,7 @@ export default function App() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const plan = params.get('plan');
-    if (plan && ['starter', 'team', 'business'].includes(plan)) {
+    if (plan && ['starter', 'team', 'business', 'enterprise'].includes(plan)) {
       setSelectedPlan(plan);
       setAuthMode('signup');  // Auto-switch to signup if coming from landing page
     }
@@ -707,7 +708,7 @@ export default function App() {
             {companyPlan.charAt(0).toUpperCase() + companyPlan.slice(1)} Plan
           </p>
           <p style={{ color: theme.textMuted, margin: '4px 0 0', fontSize: '14px' }}>
-            ${companyPlan === 'starter' ? '14.95' : companyPlan === 'team' ? '29.95' : '49.95'}/month
+            ${companyPlan === 'starter' ? '23.95' : companyPlan === 'team' ? '39.95' : companyPlan === 'business' ? '59.95' : '89.95'}/month
           </p>
         </div>
         <button 
