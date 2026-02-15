@@ -131,6 +131,7 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
 
   // Worksites hook
   const { worksites } = useWorksites(isDemoMode ? null : companyId);
+  const activeWorksites = isDemoMode ? demo.getWorksites() : worksites;
   
   // Use demo or real expenses
   const expenses = isDemoMode ? demo.getExpenses() : expensesHook.expenses;
@@ -498,7 +499,7 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
               settings={activeSettings}
               paidRestMinutes={activeLabels.paidRestMinutes}
               photoVerification={activeSettings.photoVerification || false}
-              worksites={worksites}
+              worksites={activeWorksites}
               requireWorksite={activeSettings.requireWorksite || false}
               onClockIn={clockIn}
               clockingIn={isDemoMode ? false : shiftHook.clockingIn}
@@ -584,7 +585,7 @@ function AppContent({ authHook }: { authHook: ReturnType<typeof useAuth> }) {
               onDeleteExpense={deleteExpense}
               showToast={showToast}
               currentShift={currentShift}
-              worksites={worksites}
+              worksites={activeWorksites}
             />
           )}
         </main>

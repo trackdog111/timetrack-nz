@@ -9,6 +9,7 @@ import {
   demoExpenses, 
   demoEmployees,
   demoCompanyLabels,
+  demoWorksites,
   DEMO_USER_ID,
   DEMO_USER_EMAIL,
   DEMO_USER_NAME
@@ -25,6 +26,7 @@ interface DemoContextType {
   getExpenses: () => Expense[];
   getEmployees: () => Employee[];
   getCompanyLabels: () => CompanyLabels;
+  getWorksites: () => any[];
 }
 
 const DemoContext = createContext<DemoContextType | null>(null);
@@ -65,6 +67,11 @@ export function DemoProvider({
     return demoCompanyLabels;
   };
 
+  const getWorksites = () => {
+    if (!isDemoMode) return [];
+    return demoWorksites;
+  };
+
   return (
     <DemoContext.Provider value={{
       isDemoMode,
@@ -76,7 +83,8 @@ export function DemoProvider({
       getChatMessages,
       getExpenses,
       getEmployees,
-      getCompanyLabels
+      getCompanyLabels,
+      getWorksites
     }}>
       {children}
     </DemoContext.Provider>

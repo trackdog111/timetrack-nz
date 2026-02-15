@@ -147,6 +147,8 @@ export const demoShifts: Shift[] = [
       }
     ],
     travelSegments: [],
+    worksiteId: 'demo-worksite-1',
+    worksiteName: 'Newmarket Apartments',
     jobLog: {
       field1: 'Installing kitchen cabinets - Level 3',
       field2: 'Cabinet hardware, screws, brackets',
@@ -221,6 +223,8 @@ export const demoShifts: Shift[] = [
       }
     ],
     travelSegments: [],
+    worksiteId: 'demo-worksite-2',
+    worksiteName: 'CBD Office Tower',
     jobLog: {
       field1: 'Completed bathroom renovation - final inspection passed',
       field2: 'Tiles, grout, silicone, tapware',
@@ -314,6 +318,8 @@ export const demoShifts: Shift[] = [
         }
       }
     ],
+    worksiteId: 'demo-worksite-3',
+    worksiteName: 'Greenlane Renovation',
     jobLog: {
       field1: 'Scaffolding setup for exterior paint job',
       field2: 'Scaffold frames x12, planks x8, safety mesh',
@@ -388,6 +394,8 @@ export const demoShifts: Shift[] = [
       }
     ],
     travelSegments: [],
+    worksiteId: 'demo-worksite-4',
+    worksiteName: 'Mt Eden Residential',
     jobLog: {
       field1: 'Residential deck construction - day 2 of 3',
       field2: 'Kwila decking boards, joist hangers, coach bolts',
@@ -446,6 +454,8 @@ export const demoShifts: Shift[] = [
       }
     ],
     travelSegments: [],
+    worksiteId: 'demo-worksite-5',
+    worksiteName: 'Ponsonby Commercial Fit-out',
     jobLog: {
       field1: 'Commercial fit-out - electrical rough-in coordination',
       field2: 'Cable ties, conduit, junction boxes',
@@ -506,6 +516,8 @@ export const demoExpenses: Expense[] = [
     amount: 85.50,
     category: 'Materials',
     note: 'Extra screws and brackets from Bunnings',
+    worksiteId: 'demo-worksite-2',
+    worksiteName: 'CBD Office Tower',
     date: daysAgo(1, 12),
     status: 'approved',
     createdAt: daysAgo(1, 15),
@@ -521,6 +533,8 @@ export const demoExpenses: Expense[] = [
     amount: 62.00,
     category: 'Fuel',
     note: 'Site travel - Greenlane to Ellerslie return',
+    worksiteId: 'demo-worksite-3',
+    worksiteName: 'Greenlane Renovation',
     date: daysAgo(2, 14),
     status: 'approved',
     createdAt: daysAgo(2, 14),
@@ -536,9 +550,65 @@ export const demoExpenses: Expense[] = [
     amount: 24.50,
     category: 'Parking',
     note: 'CBD parking - Wilson carpark',
+    worksiteId: 'demo-worksite-2',
+    worksiteName: 'CBD Office Tower',
     date: daysAgo(1, 8),
     status: 'pending',
     createdAt: daysAgo(1, 16)
+  }
+];
+
+// Demo Worksites
+export const demoWorksites = [
+  {
+    id: 'demo-worksite-1',
+    companyId: DEMO_COMPANY_ID,
+    name: 'Newmarket Apartments',
+    address: '42 Broadway, Newmarket, Auckland 1023',
+    latitude: aucklandLocations.newmarket.latitude,
+    longitude: aucklandLocations.newmarket.longitude,
+    status: 'active',
+    createdAt: daysAgo(60)
+  },
+  {
+    id: 'demo-worksite-2',
+    companyId: DEMO_COMPANY_ID,
+    name: 'CBD Office Tower',
+    address: '15 Queen Street, Auckland CBD 1010',
+    latitude: aucklandLocations.cbd.latitude,
+    longitude: aucklandLocations.cbd.longitude,
+    status: 'active',
+    createdAt: daysAgo(45)
+  },
+  {
+    id: 'demo-worksite-3',
+    companyId: DEMO_COMPANY_ID,
+    name: 'Greenlane Renovation',
+    address: '88 Great South Rd, Greenlane, Auckland 1051',
+    latitude: aucklandLocations.greenlane.latitude,
+    longitude: aucklandLocations.greenlane.longitude,
+    status: 'active',
+    createdAt: daysAgo(30)
+  },
+  {
+    id: 'demo-worksite-4',
+    companyId: DEMO_COMPANY_ID,
+    name: 'Mt Eden Residential',
+    address: '7 Valley Rd, Mt Eden, Auckland 1024',
+    latitude: aucklandLocations.mtEden.latitude,
+    longitude: aucklandLocations.mtEden.longitude,
+    status: 'active',
+    createdAt: daysAgo(20)
+  },
+  {
+    id: 'demo-worksite-5',
+    companyId: DEMO_COMPANY_ID,
+    name: 'Ponsonby Commercial Fit-out',
+    address: '120 Ponsonby Rd, Ponsonby, Auckland 1011',
+    latitude: aucklandLocations.ponsonby.latitude,
+    longitude: aucklandLocations.ponsonby.longitude,
+    status: 'active',
+    createdAt: daysAgo(15)
   }
 ];
 
